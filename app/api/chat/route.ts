@@ -8,43 +8,41 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
-  // Extract the frontend-generated sessionId alongside the messages
-  const { messages, sessionId } = await req.json();
+  // THE ACTUAL FIX: Extract 'id' directly from the JSON payload
+  const { messages, id: sessionId } = await req.json();
 
-  // 1. Create the session and log any errors
-  const { error: sessionError } = await supabase
+  if (!sessionId) {
+    return new Response("Missing Session ID", { status: 400 });
+  }
+
+  // 1. "Register" the session
+  await supabase
     .from('chat_sessions')
     .upsert({ id: sessionId }, { onConflict: 'id' });
-    
-  if (sessionError) console.error("Session Upsert Error:", sessionError);
 
-  // 2. Save the User's Message
+  // 2. Save User Message
   const lastUserMessage = messages[messages.length - 1];
-  const { error: userMsgError } = await supabase.from('chat_messages').insert({
+  await supabase.from('chat_messages').insert({
     session_id: sessionId,
     role: 'user',
-    content: lastUserMessage.parts
+    content: lastUserMessage.parts || [{ type: 'text', text: lastUserMessage.content }]
   });
-  
-  if (userMsgError) console.error("User Message Insert Error:", userMsgError);
 
-  // 3. Start the AI Stream
+  // 3. Start AI Stream
   const result = streamText({
     model: ollama('llama3.2:1b'),
-    system: "You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations, drawing connections to theoretical physics, loop quantum gravity, and network science whenever relevant.",
+    system: "You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.",
     messages: await convertToModelMessages(messages),
   });
 
   return result.toUIMessageStreamResponse({
     onFinish: async ({ responseMessage }) => {
-      // 4. Save the Assistant's Message when the stream completes
-      const { error: assistantMsgError } = await supabase.from('chat_messages').insert({
+      // 4. Save Assistant Message
+      await supabase.from('chat_messages').insert({
         session_id: sessionId,
         role: 'assistant',
-        content: responseMessage.parts
+        content: responseMessage.parts || [{ type: 'text', text: responseMessage.content }]
       });
-      
-      if (assistantMsgError) console.error("Assistant Message Insert Error:", assistantMsgError);
     },
   });
 }
