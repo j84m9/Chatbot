@@ -1,17 +1,25 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
   const [sessions, setSessions] = useState<any[]>([]);
+  
+  // 1. Create the invisible anchor reference
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { messages, setMessages, sendMessage } = useChat({
     id: chatId
   });
 
   const [input, setInput] = useState('');
+
+  // 2. The Auto-scroll effect: watches the messages array and scrolls to the bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const fetchSessions = async () => {
     try {
@@ -29,7 +37,6 @@ export default function Chat() {
     fetchSessions();
   }, []);
 
-  // FIXED: Added a 10ms delay to outrun the SDK's internal wipe feature
   const loadChat = async (id: string) => {
     try {
       const response = await fetch(`/api/messages?sessionId=${id}`);
@@ -54,11 +61,9 @@ export default function Chat() {
     e.preventDefault();
     if (!input.trim()) return;
     
-    // Send the message
     sendMessage({ text: input }); 
     setInput(''); 
     
-    // Refresh the sidebar after 1 second so the new title appears!
     setTimeout(fetchSessions, 1000); 
   };
 
@@ -99,7 +104,6 @@ export default function Chat() {
                     : 'hover:bg-[#2a2b2d] text-gray-300'
                 }`}
               >
-                {/* Dynamically render the title, fallback to the date if title is missing */}
                 {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
               </button>
             ))
@@ -132,6 +136,10 @@ export default function Chat() {
                 </div>
               </div>
             ))}
+            
+            {/* 3. The Invisible Anchor */}
+            <div ref={messagesEndRef} />
+            
           </div>
         </div>
 
