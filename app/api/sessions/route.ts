@@ -7,10 +7,9 @@ const supabase = createClient(
 );
 
 export async function GET() {
-  // Fetch sessions, ordered by the most recently created
   const { data, error } = await supabase
     .from('chat_sessions')
-    .select('id, created_at')
+    .select('id, created_at, title') // <-- Now pulling the title!
     .order('created_at', { ascending: false });
 
   if (error) {

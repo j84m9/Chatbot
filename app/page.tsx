@@ -1,42 +1,65 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Chat() {
-  // 1. Generate a stable session ID
-  const sessionId = useRef(crypto.randomUUID()).current;
+  const [chatId, setChatId] = useState(() => crypto.randomUUID());
   const [sessions, setSessions] = useState<any[]>([]);
 
-  // 2. Clean useChat hook using the default Vercel AI SDK pattern
-  const { messages, sendMessage } = useChat({
-    id: sessionId
+  const { messages, setMessages, sendMessage } = useChat({
+    id: chatId
   });
 
   const [input, setInput] = useState('');
 
-  // 3. Load past sessions for the sidebar
-  useEffect(() => {
-    async function loadSessions() {
-      try {
-        const response = await fetch('/api/sessions');
-        if (response.ok) {
-          const data = await response.json();
-          setSessions(data);
-        }
-      } catch (error) {
-        console.error("Failed to load sessions:", error);
+  const fetchSessions = async () => {
+    try {
+      const response = await fetch('/api/sessions');
+      if (response.ok) {
+        const data = await response.json();
+        setSessions(data);
       }
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
     }
-    loadSessions();
+  };
+
+  useEffect(() => {
+    fetchSessions();
   }, []);
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  // FIXED: Added a 10ms delay to outrun the SDK's internal wipe feature
+  const loadChat = async (id: string) => {
+    try {
+      const response = await fetch(`/api/messages?sessionId=${id}`);
+      if (response.ok) {
+        const history = await response.json();
+        setChatId(id); 
+        setTimeout(() => {
+          setMessages(history);
+        }, 10);
+      }
+    } catch (error) {
+      console.error("Failed to load chat history:", error);
+    }
+  };
+
+  const startNewChat = () => {
+    setChatId(crypto.randomUUID());
+    setMessages([]);
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
     
+    // Send the message
     sendMessage({ text: input }); 
     setInput(''); 
+    
+    // Refresh the sidebar after 1 second so the new title appears!
+    setTimeout(fetchSessions, 1000); 
   };
 
   const formatTime = (dateString: string) => {
@@ -51,7 +74,7 @@ export default function Chat() {
       <div className="w-64 flex-shrink-0 bg-[#1e1f20] border-r border-[#333537] flex flex-col">
         <div className="p-4">
           <button 
-            onClick={() => window.location.reload()} 
+            onClick={startNewChat} 
             className="w-full flex items-center justify-center gap-2 bg-[#333537] hover:bg-[#4a4d51] text-gray-200 py-3 rounded-lg transition-colors font-medium"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -69,9 +92,15 @@ export default function Chat() {
             sessions.map((session) => (
               <button 
                 key={session.id}
-                className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#333537] text-gray-300 text-sm truncate transition-colors"
+                onClick={() => loadChat(session.id)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${
+                  chatId === session.id 
+                    ? 'bg-[#333537] text-white font-medium' 
+                    : 'hover:bg-[#2a2b2d] text-gray-300'
+                }`}
               >
-                Chat from {formatTime(session.created_at)}
+                {/* Dynamically render the title, fallback to the date if title is missing */}
+                {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
               </button>
             ))
           )}
