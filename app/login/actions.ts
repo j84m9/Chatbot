@@ -30,6 +30,7 @@ export async function signup(formData: FormData) {
   // 1. Grab all the form data
   const email = formData.get('email') as string
   const password = formData.get('password') as string
+  const username = formData.get('username') as string
   const firstName = formData.get('firstName') as string
   const lastName = formData.get('lastName') as string
   const dob = formData.get('dob') as string
@@ -55,9 +56,10 @@ export async function signup(formData: FormData) {
 
   const { error: profileError } = await dbAdmin.from('profiles').insert({
     user_id: authData.user.id,
+    username: username,
     first_name: firstName,
     last_name: lastName,
-    // If optional fields are empty strings, convert them to null so Postgres doesn't crash
+    // Convert empty strings from the form into true nulls for Postgres
     dob: dob ? dob : null, 
     phone: phone ? phone : null 
   })
