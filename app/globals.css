@@ -26,3 +26,68 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Lightning icon pulse */
+@keyframes lightning {
+  0% { transform: scale(1); filter: brightness(1); }
+  10% { transform: scale(1.4); filter: brightness(3) drop-shadow(0 0 16px rgba(129, 140, 248, 1)); }
+  25% { transform: scale(0.9); filter: brightness(1); }
+  40% { transform: scale(1.2); filter: brightness(2) drop-shadow(0 0 10px rgba(129, 140, 248, 0.7)); }
+  60% { transform: scale(1); filter: brightness(1); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+/* Icon container flash */
+@keyframes flash {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  25% { opacity: 0; }
+  35% { opacity: 0.5; }
+  50% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Full screen flash */
+@keyframes screen-flash {
+  0% { background: transparent; }
+  5% { background: rgba(129, 140, 248, 0.15); }
+  15% { background: transparent; }
+  25% { background: rgba(129, 140, 248, 0.08); }
+  35% { background: transparent; }
+  100% { background: transparent; }
+}
+
+/* Bolt path drawing */
+@keyframes bolt-draw {
+  0% { stroke-dashoffset: 1600; opacity: 0; }
+  5% { opacity: 1; }
+  30% { stroke-dashoffset: 0; opacity: 1; }
+  50% { opacity: 1; }
+  70% { opacity: 0.3; }
+  100% { opacity: 0; }
+}
+
+/* Bolt glow effect */
+@keyframes bolt-glow {
+  0% { stroke-dashoffset: 1600; opacity: 0; }
+  5% { opacity: 0.6; }
+  30% { stroke-dashoffset: 0; opacity: 0.6; }
+  50% { opacity: 0.4; }
+  70% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Bolt container entrance */
+@keyframes bolt-strike {
+  0% { opacity: 0; }
+  3% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.animate-lightning { animation: lightning 0.8s ease-out; }
+.animate-flash { animation: flash 0.8s ease-out; }
+.animate-screen-flash { animation: screen-flash 1.2s ease-out; }
+.animate-bolt-strike { animation: bolt-strike 1.2s ease-out; }
+.animate-bolt-draw { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: bolt-draw 1.2s ease-out forwards; }
+.animate-bolt-glow { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: bolt-glow 1.2s ease-out forwards; }

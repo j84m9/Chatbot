@@ -14,6 +14,7 @@ export default function Chat() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
+  const [lightningStrike, setLightningStrike] = useState(false);
   
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -268,11 +269,17 @@ export default function Chat() {
             
             {messages.length === 0 && (
                <div className="flex flex-col items-center justify-center text-center mt-32 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                 <div className="w-16 h-16 dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl flex items-center justify-center mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-indigo-400">
+                 <button
+                   onClick={() => { setLightningStrike(true); setTimeout(() => setLightningStrike(false), 1200); }}
+                   className="w-16 h-16 dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl flex items-center justify-center mb-6 cursor-pointer relative overflow-hidden active:scale-95 transition-transform"
+                 >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-8 h-8 text-indigo-400 relative z-10 ${lightningStrike ? 'animate-lightning' : ''}`}>
                       <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z" clipRule="evenodd" />
                     </svg>
-                 </div>
+                    {lightningStrike && (
+                      <div className="absolute inset-0 bg-indigo-400/30 animate-flash rounded-2xl" />
+                    )}
+                 </button>
                  <h2 className="text-3xl font-medium dark:text-gray-200 text-gray-800 tracking-tight">
                    Hi {userProfile?.first_name || 'there'}, how can I help?
                  </h2>
@@ -337,6 +344,40 @@ export default function Chat() {
             </div>
           </div>
         </div>
+
+        {/* Full-page lightning bolt strike */}
+        {lightningStrike && (
+          <div className="absolute inset-0 z-50 pointer-events-none">
+            {/* Screen flash */}
+            <div className="absolute inset-0 animate-screen-flash" />
+            {/* Lightning bolt SVG */}
+            <svg className="absolute left-1/2 -translate-x-1/2 top-0 h-full w-40 animate-bolt-strike" viewBox="0 0 160 800" fill="none" preserveAspectRatio="none">
+              <path
+                d="M80 0 L85 180 L120 185 L75 400 L105 405 L70 600 L100 605 L80 800"
+                stroke="url(#bolt-gradient)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                fill="none"
+                className="animate-bolt-draw"
+              />
+              <path
+                d="M80 0 L85 180 L120 185 L75 400 L105 405 L70 600 L100 605 L80 800"
+                stroke="rgba(129, 140, 248, 0.3)"
+                strokeWidth="12"
+                strokeLinecap="round"
+                fill="none"
+                className="animate-bolt-glow"
+              />
+              <defs>
+                <linearGradient id="bolt-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(199, 210, 254, 0.9)" />
+                  <stop offset="50%" stopColor="rgba(129, 140, 248, 1)" />
+                  <stop offset="100%" stopColor="rgba(79, 70, 229, 0.8)" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+        )}
       </div>
     </div>
   );
