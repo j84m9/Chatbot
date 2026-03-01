@@ -89,7 +89,7 @@ export default function LoginPage() {
           {/* Upgraded Primary Button */}
           <button 
             formAction={isSignUp ? signup : login} 
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 mt-8 active:scale-[0.98]"
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 mt-8 active:scale-[0.98] cursor-pointer"
           >
             {isSignUp ? 'Create Account' : 'Log In'}
           </button>
@@ -99,7 +99,7 @@ export default function LoginPage() {
             <button 
               type="button" 
               onClick={() => setIsSignUp(!isSignUp)}
-              className="text-sm text-gray-400 hover:text-indigo-400 transition-colors font-medium"
+              className="text-sm text-gray-400 hover:text-indigo-400 transition-colors font-medium cursor-pointer"
             >
               {isSignUp ? 'Already have an account? Log In' : "Don't have an account? Sign Up"}
             </button>

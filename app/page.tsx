@@ -114,7 +114,7 @@ export default function Chat() {
         <div className="p-4">
           <button 
             onClick={startNewChat} 
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/10 font-medium active:scale-[0.98]"
+            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/10 font-medium active:scale-[0.98] cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
@@ -132,9 +132,9 @@ export default function Chat() {
               <button 
                 key={session.id}
                 onClick={() => loadChat(session.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm truncate transition-colors ${
-                  chatId === session.id 
-                    ? 'bg-[#2a2b2d] text-indigo-300 font-medium' 
+                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm truncate transition-colors cursor-pointer ${
+                  chatId === session.id
+                    ? 'bg-[#2a2b2d] text-indigo-300 font-medium'
                     : 'hover:bg-[#1e1f20] text-gray-400 hover:text-gray-200'
                 }`}
               >
@@ -164,7 +164,7 @@ export default function Chat() {
           </div>
           <button 
             onClick={handleLogout}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#2a2b2d] text-gray-400 hover:text-white text-sm transition-colors flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#2a2b2d] text-gray-400 hover:text-white text-sm transition-colors flex items-center gap-2 cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
@@ -244,7 +244,7 @@ export default function Chat() {
               <button 
                 type="submit" 
                 disabled={!inputValue.trim() || isLoading} 
-                className="absolute right-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl disabled:opacity-0 transition-all duration-200 active:scale-95"
+                className="absolute right-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl disabled:opacity-0 transition-all duration-200 active:scale-95 cursor-pointer"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                   <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
