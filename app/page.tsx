@@ -13,8 +13,14 @@ export default function Chat() {
   const [inputValue, setInputValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [lightningStrike, setLightningStrike] = useState(false);
+
+  // Edit & copy message state
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   // BYOK state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
@@ -27,6 +33,7 @@ export default function Chat() {
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // --- VERCEL AI SDK V5 UPDATES ---
   const { messages, setMessages, status, sendMessage } = useChat({
@@ -71,6 +78,7 @@ export default function Chat() {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (settingsOpen && settingsRef.current?.contains(target)) return;
+      if (menuOpenId && menuRef.current?.contains(target)) return;
       setMenuOpenId(null);
       setSettingsOpen(false);
     };
@@ -209,6 +217,55 @@ export default function Chat() {
     setTimeout(fetchSessions, 1000); 
   };
 
+  const startEditing = (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    const text = msg.parts?.map(p => p.type === 'text' ? p.text : '').join('') || '';
+    setEditingMessageId(messageId);
+    setEditText(text);
+  };
+
+  const cancelEditing = () => {
+    setEditingMessageId(null);
+    setEditText('');
+  };
+
+  const submitEdit = () => {
+    if (!editingMessageId || !editText.trim()) return;
+    // Find the index of the message being edited
+    const idx = messages.findIndex(m => m.id === editingMessageId);
+    if (idx === -1) return;
+    // Truncate to messages before the edited one
+    const prior = messages.slice(0, idx);
+    setMessages(prior);
+    setEditingMessageId(null);
+    setEditText('');
+    // Send the edited text as a new message
+    setTimeout(() => {
+      sendMessage({ text: editText });
+      setTimeout(fetchSessions, 1000);
+    }, 10);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitEdit();
+    }
+    if (e.key === 'Escape') {
+      cancelEditing();
+    }
+  };
+
+  const copyMessage = (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    const text = msg.parts?.map(p => p.type === 'text' ? p.text : '').join('') || '';
+    navigator.clipboard.writeText(text);
+    setCopiedMessageId(messageId);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -218,23 +275,35 @@ export default function Chat() {
     <div className="flex h-screen w-full dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans overflow-hidden">
       
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl">
-        <div className="p-4">
-          <button 
-            onClick={startNewChat} 
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/10 font-medium active:scale-[0.98] cursor-pointer"
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl transition-[width] duration-300 overflow-hidden`}>
+        {/* Top bar: hamburger + new chat */}
+        <div className={`flex gap-2 ${sidebarCollapsed ? 'flex-col items-center px-2 pt-3 pb-1' : 'flex-row items-center p-3'}`}>
+          <button
+            onClick={() => { setSidebarCollapsed(!sidebarCollapsed); if (!sidebarCollapsed) setSettingsOpen(false); }}
+            className="flex-shrink-0 p-2.5 rounded-xl dark:hover:bg-[#2a2b2d] hover:bg-gray-100 dark:text-gray-400 text-gray-600 transition-colors cursor-pointer"
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+          <button
+            onClick={startNewChat}
+            className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-lg shadow-indigo-500/10 font-medium active:scale-[0.98] cursor-pointer flex-1 px-3 py-2.5"
+            title="New Chat"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 flex-shrink-0">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            New Chat
+            {!sidebarCollapsed && <span>New Chat</span>}
           </button>
         </div>
-        
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-2 mt-2">Recent</div>
+
+        {/* Session list */}
+        <div className={`flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-2 mt-2 whitespace-nowrap">Recent</div>
           {sessions.length === 0 ? (
-            <div className="text-gray-500 text-sm px-3 italic">No past sessions</div>
+            <div className="text-gray-500 text-sm px-3 italic whitespace-nowrap">No past sessions</div>
           ) : (
             sessions.map((session) => (
               <div key={session.id} className="relative group">
@@ -257,7 +326,7 @@ export default function Chat() {
                   </svg>
                 </button>
                 {menuOpenId === session.id && (
-                  <div className="absolute right-0 top-full mt-1 bg-[#1e1f20] border border-[#333537] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div ref={menuRef} className="absolute right-0 top-full mt-1 bg-[#1e1f20] border border-[#333537] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
                     <button
                       onClick={() => deleteChat(session.id)}
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 w-full text-left cursor-pointer transition-colors"
@@ -275,12 +344,16 @@ export default function Chat() {
         </div>
 
         {/* User Profile Box */}
-        <div className="p-4 border-t border-[#2a2b2d] dark:bg-[#1a1b1c] bg-gray-100 flex flex-col gap-3 relative">
-          <div className="flex items-center gap-3 px-1">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-md uppercase">
+        <div className="border-t border-[#2a2b2d] dark:bg-[#1a1b1c] bg-gray-100 flex flex-col gap-3 relative p-3 overflow-hidden">
+          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 px-1'}`}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setSettingsOpen(!settingsOpen); }}
+              className="w-8 h-8 flex-shrink-0 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-md uppercase cursor-pointer"
+              title="Settings"
+            >
               {userProfile?.username?.charAt(0) || userProfile?.first_name?.charAt(0) || userProfile?.email?.charAt(0) || '?'}
-            </div>
-            <div className="flex flex-col truncate flex-1">
+            </button>
+            <div className={`flex flex-col truncate flex-1 min-w-0 transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>
               <span className="text-sm font-medium dark:text-gray-200 text-gray-800 truncate">
                 {!userProfile ? 'Loading...' : userProfile.username ? userProfile.username : userProfile.first_name ? `${userProfile.first_name} ${userProfile.last_name}` : userProfile.email}
               </span>
@@ -290,7 +363,7 @@ export default function Chat() {
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); setSettingsOpen(!settingsOpen); }}
-              className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-500 dark:hover:text-gray-200 hover:text-gray-700 transition-colors cursor-pointer"
+              className={`p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-500 dark:hover:text-gray-200 hover:text-gray-700 transition-all cursor-pointer flex-shrink-0 ${sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
@@ -301,7 +374,7 @@ export default function Chat() {
 
           {/* Settings Dropdown */}
           {settingsOpen && (
-            <div ref={settingsRef} className="absolute bottom-full left-4 right-4 mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150">
+            <div ref={settingsRef} className={`absolute bottom-full mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150 ${sidebarCollapsed ? 'left-2 right-auto w-56' : 'left-4 right-4'}`}>
               <div className="text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider mb-2 px-1">Settings</div>
 
               {/* Dark Mode Toggle */}
@@ -374,12 +447,13 @@ export default function Chat() {
 
           <button
             onClick={handleLogout}
-            className="w-full text-left px-3 py-2 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900 text-sm transition-colors flex items-center gap-2 cursor-pointer"
+            className={`text-left rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900 text-sm transition-all flex items-center gap-2 cursor-pointer ${sidebarCollapsed ? 'justify-center p-1.5' : 'w-full px-3 py-2'}`}
+            title="Sign Out"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 flex-shrink-0">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
             </svg>
-            Sign Out
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>Sign Out</span>
           </button>
         </div>
       </div>
@@ -416,19 +490,80 @@ export default function Chat() {
             )}
 
             {messages.map((m) => (
-              <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`}>
-                <div className={`
-                  px-6 py-3.5 max-w-[85%] sm:max-w-[75%] shadow-md text-base leading-relaxed
-                  ${m.role === 'user' 
-                    ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-3xl rounded-br-sm" 
-                    : "dark:bg-[#1e1f20] bg-white dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-3xl rounded-bl-sm"}
-                `}>
-                  <div className="whitespace-pre-wrap">
-                    {m.parts?.map((part, index) =>
-                      part.type === 'text' ? <span key={index}>{part.text}</span> : null
+              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in duration-300 group/msg`}>
+                {/* Inline edit mode */}
+                {m.role === 'user' && editingMessageId === m.id ? (
+                  <div className="max-w-[85%] sm:max-w-[75%] w-full">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={handleEditKeyDown}
+                      autoFocus
+                      rows={3}
+                      className="w-full px-4 py-3 text-base dark:bg-[#1e1f20] bg-white dark:text-gray-100 text-gray-800 border-2 border-indigo-500 rounded-2xl outline-none resize-none"
+                    />
+                    <div className="flex justify-end gap-2 mt-2">
+                      <button
+                        onClick={cancelEditing}
+                        className="text-sm px-3 py-1.5 rounded-lg dark:text-gray-400 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-200 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitEdit}
+                        disabled={!editText.trim()}
+                        className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={`
+                    px-6 py-3.5 max-w-[85%] sm:max-w-[75%] shadow-md text-base leading-relaxed
+                    ${m.role === 'user'
+                      ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-3xl rounded-br-sm"
+                      : "dark:bg-[#1e1f20] bg-white dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-3xl rounded-bl-sm"}
+                  `}>
+                    <div className="whitespace-pre-wrap">
+                      {m.parts?.map((part, index) =>
+                        part.type === 'text' ? <span key={index}>{part.text}</span> : null
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons — below bubble */}
+                {editingMessageId !== m.id && (
+                  <div className={`flex gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
+                    <button
+                      onClick={() => copyMessage(m.id)}
+                      className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-400 hover:text-gray-200 transition-all cursor-pointer"
+                      title="Copy"
+                    >
+                      {copiedMessageId === m.id ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-green-400">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+                        </svg>
+                      )}
+                    </button>
+                    {m.role === 'user' && !isLoading && (
+                      <button
+                        onClick={() => startEditing(m.id)}
+                        className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-400 hover:text-gray-200 transition-all cursor-pointer"
+                        title="Edit & resend"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                        </svg>
+                      </button>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             ))}
             
@@ -460,7 +595,7 @@ export default function Chat() {
               <button 
                 type="submit" 
                 disabled={!inputValue.trim() || isLoading} 
-                className="absolute right-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl disabled:opacity-0 transition-all duration-200 active:scale-95 cursor-pointer"
+                className={`absolute right-2 p-2.5 transition-colors duration-200 active:scale-95 cursor-pointer ${inputValue.trim() ? 'text-indigo-500 hover:text-indigo-400' : 'text-gray-400'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                   <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
