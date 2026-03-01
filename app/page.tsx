@@ -277,7 +277,7 @@ export default function Chat() {
     <div className="flex h-screen w-full dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans overflow-hidden">
       
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl transition-[width] duration-300 overflow-hidden`}>
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl transition-[width] duration-300`}>
         {/* Top bar: hamburger + new chat */}
         <div className={`flex gap-2 ${sidebarCollapsed ? 'flex-col items-center px-2 pt-3 pb-1' : 'flex-row items-center p-3'}`}>
           <button
@@ -376,74 +376,85 @@ export default function Chat() {
 
           {/* Settings Dropdown */}
           {settingsOpen && (
-            <div ref={settingsRef} className={`absolute bottom-full mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150 ${sidebarCollapsed ? 'left-2 right-auto w-56' : 'left-4 right-4'}`}>
-              <div className="text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider mb-2 px-1">Settings</div>
-
-              {/* Dark Mode Toggle */}
-              <div className="flex items-center justify-between px-1 py-2">
-                <span className="text-sm dark:text-gray-200 text-gray-700">Dark Mode</span>
-                <button
-                  onClick={toggleDarkMode}
-                  className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${darkMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
-                >
-                  <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
-                </button>
+            <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-72 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 overflow-hidden">
+              {/* Header */}
+              <div className="px-4 pt-4 pb-2">
+                <h3 className="text-sm font-semibold dark:text-gray-200 text-gray-800">Settings</h3>
               </div>
 
-              <div className="border-t dark:border-[#333537] border-gray-200 my-2" />
+              <div className="px-4 pb-3 space-y-3">
+                {/* Dark Mode Toggle */}
+                <div className="flex items-center justify-between py-1">
+                  <span className="text-sm dark:text-gray-300 text-gray-600">Dark Mode</span>
+                  <button
+                    onClick={toggleDarkMode}
+                    className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${darkMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                  >
+                    <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                  </button>
+                </div>
 
-              {/* Provider Dropdown */}
-              <div className="px-1 py-2">
-                <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">Provider</label>
-                <select
-                  value={selectedProvider}
-                  onChange={(e) => handleProviderChange(e.target.value)}
-                  className="w-full text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  {Object.entries(providerNames).map(([key, name]) => (
-                    <option key={key} value={key}>{name}</option>
-                  ))}
-                </select>
-              </div>
+                <div className="border-t dark:border-[#2a2b2d] border-gray-100" />
 
-              {/* Model Dropdown */}
-              <div className="px-1 py-2">
-                <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">Model</label>
-                <select
-                  value={selectedModel}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  {(modelCatalog[selectedProvider] || []).map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
+                {/* Provider */}
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 block">Provider</label>
+                  <select
+                    value={selectedProvider}
+                    onChange={(e) => handleProviderChange(e.target.value)}
+                    className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
+                  >
+                    {Object.entries(providerNames).map(([key, name]) => (
+                      <option key={key} value={key}>{name}</option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* API Key Input (hidden for Ollama) */}
-              {selectedProvider !== 'ollama' && (
-                <div className="px-1 py-2">
-                  <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">
-                    API Key {savedApiKeys[selectedProvider] && <span className="text-green-400 ml-1">(saved: {savedApiKeys[selectedProvider]})</span>}
-                  </label>
-                  <div className="flex gap-2">
+                {/* Model */}
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 block">Model</label>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
+                  >
+                    {(modelCatalog[selectedProvider] || []).map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* API Key (hidden for Ollama) */}
+                {selectedProvider !== 'ollama' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-medium dark:text-gray-400 text-gray-500">API Key</label>
+                      {savedApiKeys[selectedProvider] && (
+                        <span className="text-xs text-green-500 flex items-center gap-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                            <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                          </svg>
+                          Saved ({savedApiKeys[selectedProvider]})
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="password"
                       value={apiKeyInput}
                       onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="Enter API key..."
-                      className="flex-1 text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500"
+                      placeholder={savedApiKeys[selectedProvider] ? 'Enter new key to replace...' : 'Enter API key...'}
+                      className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-colors"
                     />
                     <button
                       onClick={handleSaveApiKey}
                       disabled={!apiKeyInput.trim()}
-                      className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
+                      className="w-full mt-2 text-sm py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
                     >
-                      Save
+                      Save Key
                     </button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
