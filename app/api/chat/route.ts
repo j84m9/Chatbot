@@ -4,7 +4,10 @@ import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 export async function POST(req: Request) {
-  const { messages, id: sessionId } = await req.json();
+  // Grab the session ID from the URL now!
+  const url = new URL(req.url);
+  const sessionId = url.searchParams.get('id');
+  const { messages } = await req.json();
   
   // 1. Securely verify the user
   const authClient = await createAuthClient();
