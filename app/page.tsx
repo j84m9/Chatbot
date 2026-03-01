@@ -9,15 +9,24 @@ export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
   const [sessions, setSessions] = useState<any[]>([]);
   const [userProfile, setUserProfile] = useState<any>(null);
-  
+
   const [inputValue, setInputValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [lightningStrike, setLightningStrike] = useState(false);
-  
+
+  // BYOK state
+  const [selectedProvider, setSelectedProvider] = useState('ollama');
+  const [selectedModel, setSelectedModel] = useState('llama3.2:1b');
+  const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string }[]>>({});
+  const [providerNames, setProviderNames] = useState<Record<string, string>>({});
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [savedApiKeys, setSavedApiKeys] = useState<Record<string, string | null>>({});
+
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   // --- VERCEL AI SDK V5 UPDATES ---
   const { messages, setMessages, status, sendMessage } = useChat({
@@ -59,9 +68,14 @@ export default function Chat() {
   }, [messages, isLoading]);
 
   useEffect(() => {
-    const handleClickOutside = () => { setMenuOpenId(null); setSettingsOpen(false); };
-    if (menuOpenId || settingsOpen) document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (settingsOpen && settingsRef.current?.contains(target)) return;
+      setMenuOpenId(null);
+      setSettingsOpen(false);
+    };
+    if (menuOpenId || settingsOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpenId, settingsOpen]);
 
   useEffect(() => {
@@ -77,6 +91,63 @@ export default function Chat() {
     localStorage.setItem('theme', next ? 'dark' : 'light');
     document.documentElement.classList.toggle('dark', next);
   };
+
+  // Fetch model catalog + user settings on mount
+  useEffect(() => {
+    fetch('/api/models').then(r => r.json()).then(data => {
+      setModelCatalog(data.models);
+      setProviderNames(data.providers);
+    });
+    fetch('/api/settings').then(r => r.json()).then(data => {
+      if (data.selected_provider) setSelectedProvider(data.selected_provider);
+      if (data.selected_model) setSelectedModel(data.selected_model);
+      setSavedApiKeys({
+        openai: data.openai_api_key,
+        anthropic: data.anthropic_api_key,
+        google: data.google_api_key,
+      });
+    });
+  }, []);
+
+  const apiKeyField = `${selectedProvider}_api_key` as const;
+
+  const saveSettings = async (updates: Record<string, any>) => {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setSavedApiKeys({
+        openai: data.openai_api_key,
+        anthropic: data.anthropic_api_key,
+        google: data.google_api_key,
+      });
+    }
+  };
+
+  const handleProviderChange = (provider: string) => {
+    setSelectedProvider(provider);
+    const firstModel = modelCatalog[provider]?.[0]?.id || '';
+    setSelectedModel(firstModel);
+    setApiKeyInput('');
+    saveSettings({ selected_provider: provider, selected_model: firstModel });
+  };
+
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model);
+    saveSettings({ selected_model: model });
+  };
+
+  const handleSaveApiKey = () => {
+    saveSettings({ [apiKeyField]: apiKeyInput });
+    setApiKeyInput('');
+  };
+
+  // Derive current model label for the header
+  const currentModelLabel = modelCatalog[selectedProvider]?.find(m => m.id === selectedModel)?.label || selectedModel;
+  const currentProviderLabel = providerNames[selectedProvider] || selectedProvider;
 
   const fetchSessions = async () => {
     try {
@@ -230,8 +301,10 @@ export default function Chat() {
 
           {/* Settings Dropdown */}
           {settingsOpen && (
-            <div onClick={(e) => e.stopPropagation()} className="absolute bottom-full left-4 right-4 mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150">
+            <div ref={settingsRef} className="absolute bottom-full left-4 right-4 mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150">
               <div className="text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider mb-2 px-1">Settings</div>
+
+              {/* Dark Mode Toggle */}
               <div className="flex items-center justify-between px-1 py-2">
                 <span className="text-sm dark:text-gray-200 text-gray-700">Dark Mode</span>
                 <button
@@ -241,6 +314,61 @@ export default function Chat() {
                   <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
                 </button>
               </div>
+
+              <div className="border-t dark:border-[#333537] border-gray-200 my-2" />
+
+              {/* Provider Dropdown */}
+              <div className="px-1 py-2">
+                <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">Provider</label>
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  className="w-full text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {Object.entries(providerNames).map(([key, name]) => (
+                    <option key={key} value={key}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Model Dropdown */}
+              <div className="px-1 py-2">
+                <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">Model</label>
+                <select
+                  value={selectedModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="w-full text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500 cursor-pointer"
+                >
+                  {(modelCatalog[selectedProvider] || []).map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* API Key Input (hidden for Ollama) */}
+              {selectedProvider !== 'ollama' && (
+                <div className="px-1 py-2">
+                  <label className="text-xs dark:text-gray-400 text-gray-500 mb-1 block">
+                    API Key {savedApiKeys[selectedProvider] && <span className="text-green-400 ml-1">(saved: {savedApiKeys[selectedProvider]})</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      placeholder="Enter API key..."
+                      className="flex-1 text-sm dark:bg-[#151617] bg-gray-100 dark:text-gray-200 text-gray-800 border dark:border-[#333537] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      onClick={handleSaveApiKey}
+                      disabled={!apiKeyInput.trim()}
+                      className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -261,7 +389,7 @@ export default function Chat() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-32 bg-indigo-500/5 blur-[80px] pointer-events-none"></div>
 
         <header className="flex-shrink-0 p-5 text-lg font-semibold dark:text-gray-200 text-gray-800 bg-transparent relative z-10 border-b dark:border-white/5 border-gray-200">
-          Llama 3.2 <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-full ml-2 font-medium">1B Model</span>
+          {currentProviderLabel} <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-full ml-2 font-medium">{currentModelLabel}</span>
         </header>
 
         <div className="flex-1 overflow-y-auto w-full scroll-smooth px-4">
@@ -325,7 +453,7 @@ export default function Chat() {
               <input
                 className="w-full py-4 pl-6 pr-14 outline-none dark:text-gray-100 text-gray-800 bg-transparent placeholder-gray-500 text-base"
                 value={inputValue}
-                placeholder="Ask Llama anything... (e.g., 'How do I optimize a PyTorch model?')"
+                placeholder={`Ask ${currentProviderLabel} anything...`}
                 onChange={(e) => setInputValue(e.target.value)}
                 disabled={isLoading}
               />

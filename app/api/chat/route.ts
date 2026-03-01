@@ -1,7 +1,7 @@
-import { ollama } from 'ai-sdk-ollama';
 import { streamText, convertToModelMessages } from 'ai';
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { getModel } from '@/utils/ai/provider';
 
 export async function POST(req: Request) {
   // Grab the session ID from the URL now!
@@ -54,16 +54,38 @@ export async function POST(req: Request) {
 
   if (msgError) console.error("User Msg Save Error:", msgError);
 
-  // 5. Start Stream
+  // 5. Fetch user settings and resolve the model
+  const { data: settings } = await dbAdmin
+    .from('user_settings')
+    .select('*')
+    .eq('user_id', user.id)
+    .single();
+
+  const provider = settings?.selected_provider || 'ollama';
+  const modelId = settings?.selected_model || 'llama3.2:1b';
+  const keyMap: Record<string, string | null> = {
+    openai: settings?.openai_api_key,
+    anthropic: settings?.anthropic_api_key,
+    google: settings?.google_api_key,
+  };
+
+  let model;
+  try {
+    model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
+  } catch (err: any) {
+    return new Response(err.message, { status: 400 });
+  }
+
+  // 6. Start Stream
   const result = streamText({
-    model: ollama('llama3.2:1b'),
+    model,
     system: "You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.",
     messages: await convertToModelMessages(messages),
   });
 
   return result.toUIMessageStreamResponse({
     onFinish: async ({ responseMessage }) => {
-      // 6. Save Assistant Message using admin client
+      // 7. Save Assistant Message using admin client
       const { error: assistantMsgError } = await dbAdmin.from('chat_messages').insert({
         session_id: sessionId,
         role: 'assistant',
