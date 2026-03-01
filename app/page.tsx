@@ -35,8 +35,9 @@ export default function Chat() {
           .select('*')
           .eq('user_id', user.id)
           .single()
-          .then(({ data }) => {
-            setUserProfile(data || { email: user.email });
+          .then(({ data, error }) => {
+            if (error) console.error('Profile fetch error:', error.message);
+            setUserProfile(data ? { ...data, email: user.email } : { email: user.email });
           });
       } else {
         window.location.href = '/login';
@@ -143,18 +144,21 @@ export default function Chat() {
           )}
         </div>
 
-        {/* User Profile Box */}
+        {/* Bulletproof User Profile Box */}
         <div className="p-4 border-t border-[#2a2b2d] bg-[#1a1b1c] flex flex-col gap-3">
           <div className="flex items-center gap-3 px-1">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-md">
-              {userProfile?.first_name?.charAt(0) || userProfile?.email?.charAt(0) || '?'}
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-md uppercase">
+              {/* Grab the first letter of the username, fallback to first name, then email */}
+              {userProfile?.username?.charAt(0) || userProfile?.first_name?.charAt(0) || userProfile?.email?.charAt(0) || '?'}
             </div>
             <div className="flex flex-col truncate">
+              {/* Top Line: Prioritize Username, fallback to First Last */}
               <span className="text-sm font-medium text-gray-200 truncate">
-                {userProfile ? (userProfile.first_name ? `${userProfile.first_name} ${userProfile.last_name}` : 'Llama User') : 'Loading...'}
+                {!userProfile ? 'Loading...' : userProfile.username ? userProfile.username : userProfile.first_name ? `${userProfile.first_name} ${userProfile.last_name}` : userProfile.email}
               </span>
+              {/* Bottom Line: Just show the email */}
               <span className="text-xs text-gray-500 truncate">
-                {userProfile?.username ? `@${userProfile.username}` : (userProfile?.email || 'Authenticating...')}
+                {userProfile?.email || 'Authenticating...'}
               </span>
             </div>
           </div>
@@ -204,7 +208,7 @@ export default function Chat() {
                     : "bg-[#1e1f20] text-gray-200 border border-[#2a2b2d] rounded-3xl rounded-bl-sm"}
                 `}>
                   <div className="whitespace-pre-wrap">
-                    {m.content || m.parts?.map((part, index) => 
+                    {m.parts?.map((part, index) =>
                       part.type === 'text' ? <span key={index}>{part.text}</span> : null
                     )}
                   </div>
