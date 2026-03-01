@@ -2,12 +2,16 @@
 
 import { useChat } from '@ai-sdk/react';
 import { useState, useEffect, useRef } from 'react';
+import { createClient } from '@/utils/supabase/client';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
   const [sessions, setSessions] = useState<any[]>([]);
   
-  // 1. Create the invisible anchor reference
+  // NEW: State for the logged-in user
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const supabase = createClient();
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { messages, setMessages, sendMessage } = useChat({
@@ -16,7 +20,19 @@ export default function Chat() {
 
   const [input, setInput] = useState('');
 
-  // 2. The Auto-scroll effect: watches the messages array and scrolls to the bottom
+  // NEW: Fetch the logged-in user's email on load
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) setUserEmail(data.user.email ?? null);
+    });
+  }, [supabase.auth]);
+
+  // NEW: Logout function
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/login'; // Force reload to trigger middleware bounce
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -109,6 +125,22 @@ export default function Chat() {
             ))
           )}
         </div>
+
+        {/* NEW: User Profile & Logout Box */}
+        <div className="p-4 border-t border-[#333537] bg-[#1a1b1c] flex flex-col gap-2">
+          <div className="text-sm text-gray-400 truncate px-1 font-medium">
+            {userEmail ? userEmail : 'Loading...'}
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#333537] text-gray-300 text-sm transition-colors flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+            </svg>
+            Sign Out
+          </button>
+        </div>
       </div>
 
       {/* Main Chat */}
@@ -137,7 +169,6 @@ export default function Chat() {
               </div>
             ))}
             
-            {/* 3. The Invisible Anchor */}
             <div ref={messagesEndRef} />
             
           </div>
