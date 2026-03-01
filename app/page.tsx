@@ -12,6 +12,8 @@ export default function Chat() {
   
   const [inputValue, setInputValue] = useState('');
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
   
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,10 +58,24 @@ export default function Chat() {
   }, [messages, isLoading]);
 
   useEffect(() => {
-    const handleClickOutside = () => setMenuOpenId(null);
-    if (menuOpenId) document.addEventListener('click', handleClickOutside);
+    const handleClickOutside = () => { setMenuOpenId(null); setSettingsOpen(false); };
+    if (menuOpenId || settingsOpen) document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [menuOpenId]);
+  }, [menuOpenId, settingsOpen]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('theme');
+    const isDark = saved ? saved === 'dark' : true;
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle('dark', isDark);
+  }, []);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+    document.documentElement.classList.toggle('dark', next);
+  };
 
   const fetchSessions = async () => {
     try {
@@ -127,10 +143,10 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#0d0d0e] text-gray-100 font-sans overflow-hidden">
+    <div className="flex h-screen w-full dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans overflow-hidden">
       
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 bg-[#151617] border-r border-[#2a2b2d] flex flex-col z-20 shadow-xl">
+      <div className="w-64 flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl">
         <div className="p-4">
           <button 
             onClick={startNewChat} 
@@ -154,8 +170,8 @@ export default function Chat() {
                   onClick={() => loadChat(session.id)}
                   className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
                     chatId === session.id
-                      ? 'bg-[#2a2b2d] text-indigo-300 font-medium'
-                      : 'hover:bg-[#1e1f20] text-gray-400 hover:text-gray-200'
+                      ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
+                      : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
                   }`}
                 >
                   {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
@@ -186,27 +202,50 @@ export default function Chat() {
           )}
         </div>
 
-        {/* Bulletproof User Profile Box */}
-        <div className="p-4 border-t border-[#2a2b2d] bg-[#1a1b1c] flex flex-col gap-3">
+        {/* User Profile Box */}
+        <div className="p-4 border-t border-[#2a2b2d] dark:bg-[#1a1b1c] bg-gray-100 flex flex-col gap-3 relative">
           <div className="flex items-center gap-3 px-1">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white shadow-md uppercase">
-              {/* Grab the first letter of the username, fallback to first name, then email */}
               {userProfile?.username?.charAt(0) || userProfile?.first_name?.charAt(0) || userProfile?.email?.charAt(0) || '?'}
             </div>
-            <div className="flex flex-col truncate">
-              {/* Top Line: Prioritize Username, fallback to First Last */}
-              <span className="text-sm font-medium text-gray-200 truncate">
+            <div className="flex flex-col truncate flex-1">
+              <span className="text-sm font-medium dark:text-gray-200 text-gray-800 truncate">
                 {!userProfile ? 'Loading...' : userProfile.username ? userProfile.username : userProfile.first_name ? `${userProfile.first_name} ${userProfile.last_name}` : userProfile.email}
               </span>
-              {/* Bottom Line: Just show the email */}
               <span className="text-xs text-gray-500 truncate">
                 {userProfile?.email || 'Authenticating...'}
               </span>
             </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setSettingsOpen(!settingsOpen); }}
+              className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-500 dark:hover:text-gray-200 hover:text-gray-700 transition-colors cursor-pointer"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+            </button>
           </div>
-          <button 
+
+          {/* Settings Dropdown */}
+          {settingsOpen && (
+            <div onClick={(e) => e.stopPropagation()} className="absolute bottom-full left-4 right-4 mb-2 dark:bg-[#1e1f20] bg-white dark:border-[#333537] border-gray-200 border rounded-xl shadow-xl z-30 p-3 animate-in fade-in slide-in-from-bottom-1 duration-150">
+              <div className="text-xs font-semibold dark:text-gray-400 text-gray-500 uppercase tracking-wider mb-2 px-1">Settings</div>
+              <div className="flex items-center justify-between px-1 py-2">
+                <span className="text-sm dark:text-gray-200 text-gray-700">Dark Mode</span>
+                <button
+                  onClick={toggleDarkMode}
+                  className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${darkMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                >
+                  <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
             onClick={handleLogout}
-            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#2a2b2d] text-gray-400 hover:text-white text-sm transition-colors flex items-center gap-2 cursor-pointer"
+            className="w-full text-left px-3 py-2 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-600 dark:hover:text-white hover:text-gray-900 text-sm transition-colors flex items-center gap-2 cursor-pointer"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
@@ -217,10 +256,10 @@ export default function Chat() {
       </div>
 
       {/* Main Chat */}
-      <div className="flex-1 flex flex-col relative bg-[#0d0d0e]">
+      <div className="flex-1 flex flex-col relative dark:bg-[#0d0d0e] bg-gray-50">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-32 bg-indigo-500/5 blur-[80px] pointer-events-none"></div>
 
-        <header className="flex-shrink-0 p-5 text-lg font-semibold text-gray-200 bg-transparent relative z-10 border-b border-white/5">
+        <header className="flex-shrink-0 p-5 text-lg font-semibold dark:text-gray-200 text-gray-800 bg-transparent relative z-10 border-b dark:border-white/5 border-gray-200">
           Llama 3.2 <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-full ml-2 font-medium">1B Model</span>
         </header>
 
@@ -229,12 +268,12 @@ export default function Chat() {
             
             {messages.length === 0 && (
                <div className="flex flex-col items-center justify-center text-center mt-32 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                 <div className="w-16 h-16 bg-[#1e1f20] rounded-2xl border border-[#2a2b2d] shadow-2xl flex items-center justify-center mb-6">
+                 <div className="w-16 h-16 dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl flex items-center justify-center mb-6">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-indigo-400">
                       <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z" clipRule="evenodd" />
                     </svg>
                  </div>
-                 <h2 className="text-3xl font-medium text-gray-200 tracking-tight">
+                 <h2 className="text-3xl font-medium dark:text-gray-200 text-gray-800 tracking-tight">
                    Hi {userProfile?.first_name || 'there'}, how can I help?
                  </h2>
                  <p className="text-gray-500 mt-2 text-sm">Ask me to analyze data, write Python scripts, or optimize PyTorch models.</p>
@@ -247,7 +286,7 @@ export default function Chat() {
                   px-6 py-3.5 max-w-[85%] sm:max-w-[75%] shadow-md text-base leading-relaxed
                   ${m.role === 'user' 
                     ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-3xl rounded-br-sm" 
-                    : "bg-[#1e1f20] text-gray-200 border border-[#2a2b2d] rounded-3xl rounded-bl-sm"}
+                    : "dark:bg-[#1e1f20] bg-white dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-3xl rounded-bl-sm"}
                 `}>
                   <div className="whitespace-pre-wrap">
                     {m.parts?.map((part, index) =>
@@ -260,7 +299,7 @@ export default function Chat() {
             
             {isLoading && (
               <div className="flex justify-start animate-in fade-in duration-300">
-                <div className="bg-[#1e1f20] border border-[#2a2b2d] px-5 py-4 rounded-3xl rounded-bl-sm shadow-md flex items-center gap-2">
+                <div className="dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 px-5 py-4 rounded-3xl rounded-bl-sm shadow-md flex items-center gap-2">
                   <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                   <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -273,11 +312,11 @@ export default function Chat() {
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 w-full bg-gradient-to-t from-[#0d0d0e] via-[#0d0d0e] to-transparent pb-8 pt-12 px-4 pointer-events-none">
+        <div className="absolute bottom-0 left-0 w-full dark:bg-gradient-to-t dark:from-[#0d0d0e] dark:via-[#0d0d0e] bg-gradient-to-t from-gray-50 via-gray-50 to-transparent pb-8 pt-12 px-4 pointer-events-none">
           <div className="max-w-3xl mx-auto w-full pointer-events-auto">
-            <form onSubmit={onFormSubmit} className="relative flex items-center bg-[#1e1f20] rounded-2xl border border-[#2a2b2d] overflow-hidden shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+            <form onSubmit={onFormSubmit} className="relative flex items-center dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
               <input
-                className="w-full py-4 pl-6 pr-14 outline-none text-gray-100 bg-transparent placeholder-gray-500 text-base"
+                className="w-full py-4 pl-6 pr-14 outline-none dark:text-gray-100 text-gray-800 bg-transparent placeholder-gray-500 text-base"
                 value={inputValue}
                 placeholder="Ask Llama anything... (e.g., 'How do I optimize a PyTorch model?')"
                 onChange={(e) => setInputValue(e.target.value)}
