@@ -11,6 +11,7 @@ export default function Chat() {
   const [userProfile, setUserProfile] = useState<any>(null);
   
   const [inputValue, setInputValue] = useState('');
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,6 +55,12 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
+  useEffect(() => {
+    const handleClickOutside = () => setMenuOpenId(null);
+    if (menuOpenId) document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [menuOpenId]);
+
   const fetchSessions = async () => {
     try {
       const response = await fetch('/api/sessions');
@@ -88,6 +95,19 @@ export default function Chat() {
   const startNewChat = () => {
     setChatId(crypto.randomUUID());
     setMessages([]);
+  };
+
+  const deleteChat = async (id: string) => {
+    try {
+      const response = await fetch(`/api/sessions?id=${id}`, { method: 'DELETE' });
+      if (response.ok) {
+        setSessions((prev) => prev.filter((s) => s.id !== id));
+        if (chatId === id) startNewChat();
+      }
+    } catch (error) {
+      console.error("Failed to delete chat:", error);
+    }
+    setMenuOpenId(null);
   };
 
   const onFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -129,17 +149,39 @@ export default function Chat() {
             <div className="text-gray-500 text-sm px-3 italic">No past sessions</div>
           ) : (
             sessions.map((session) => (
-              <button 
-                key={session.id}
-                onClick={() => loadChat(session.id)}
-                className={`w-full text-left px-3 py-2.5 rounded-lg text-sm truncate transition-colors cursor-pointer ${
-                  chatId === session.id
-                    ? 'bg-[#2a2b2d] text-indigo-300 font-medium'
-                    : 'hover:bg-[#1e1f20] text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
-              </button>
+              <div key={session.id} className="relative group">
+                <button
+                  onClick={() => loadChat(session.id)}
+                  className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
+                    chatId === session.id
+                      ? 'bg-[#2a2b2d] text-indigo-300 font-medium'
+                      : 'hover:bg-[#1e1f20] text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === session.id ? null : session.id); }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-[#333537] text-gray-500 hover:text-gray-200 transition-all cursor-pointer"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M10 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM10 8.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM11.5 15.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
+                  </svg>
+                </button>
+                {menuOpenId === session.id && (
+                  <div className="absolute right-0 top-full mt-1 bg-[#1e1f20] border border-[#333537] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                    <button
+                      onClick={() => deleteChat(session.id)}
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 w-full text-left cursor-pointer transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
+                      </svg>
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             ))
           )}
         </div>
