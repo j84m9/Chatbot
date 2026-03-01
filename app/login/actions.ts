@@ -8,16 +8,41 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 export async function login(formData: FormData) {
   const supabase = await createAuthClient()
 
-  const data = {
-    email: formData.get('email') as string,
-    password: formData.get('password') as string,
+  const identifier = (formData.get('identifier') as string).trim()
+  const password = formData.get('password') as string
+
+  let email = identifier
+
+  // If the identifier doesn't look like an email, treat it as a username
+  if (!identifier.includes('@')) {
+    const dbAdmin = createAdminClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
+    const { data: profile, error: profileError } = await dbAdmin
+      .from('profiles')
+      .select('user_id')
+      .eq('username', identifier)
+      .single()
+
+    if (profileError || !profile) {
+      redirect('/login?error=Invalid username or password')
+    }
+
+    const { data: userData, error: userError } = await dbAdmin.auth.admin.getUserById(profile.user_id)
+
+    if (userError || !userData.user) {
+      redirect('/login?error=Invalid username or password')
+    }
+
+    email = userData.user.email!
   }
 
-  const { error } = await supabase.auth.signInWithPassword(data)
+  const { error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
-    console.error("🔥 LOGIN ERROR:", error.message)
-    redirect('/login?error=Could not authenticate user')
+    redirect('/login?error=Invalid username or password')
   }
 
   revalidatePath('/', 'layout')
@@ -28,7 +53,7 @@ export async function signup(formData: FormData) {
   const supabase = await createAuthClient()
 
   // 1. Grab all the form data
-  const email = formData.get('email') as string
+  const email = formData.get('identifier') as string
   const password = formData.get('password') as string
   const username = formData.get('username') as string
   const firstName = formData.get('firstName') as string
