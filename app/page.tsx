@@ -473,20 +473,29 @@ export default function Chat() {
 
       {/* Main Chat */}
       <div className="flex-1 flex flex-col relative dark:bg-[#0d0d0e] bg-gray-50">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-2xl h-32 bg-indigo-500/5 blur-[80px] pointer-events-none"></div>
+        {/* Ambient glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
 
-        <header className="flex-shrink-0 p-5 text-lg font-semibold dark:text-gray-200 text-gray-800 bg-transparent relative z-10 border-b dark:border-white/5 border-gray-200">
-          {currentProviderLabel} <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-full ml-2 font-medium">{currentModelLabel}</span>
+        {/* Header */}
+        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-400/50 ring-2 ring-emerald-400/20" />
+              <span className="text-base font-semibold dark:text-gray-100 text-gray-800">{currentProviderLabel}</span>
+              <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">{currentModelLabel}</span>
+            </div>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto w-full scroll-smooth px-4">
-          <div className="max-w-3xl mx-auto py-8 pb-40 space-y-8">
-            
+          <div className="max-w-3xl mx-auto py-8 pb-44 space-y-6">
+
             {messages.length === 0 && (
-               <div className="flex flex-col items-center justify-center text-center mt-32 animate-in fade-in slide-in-from-bottom-4 duration-700">
+               <div className="flex flex-col items-center justify-center text-center mt-28 animate-in fade-in slide-in-from-bottom-4 duration-700">
                  <button
                    onClick={() => { setLightningStrike(true); setTimeout(() => setLightningStrike(false), 1200); }}
-                   className="w-16 h-16 dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl flex items-center justify-center mb-6 cursor-pointer relative overflow-hidden active:scale-95 transition-transform"
+                   className="w-16 h-16 dark:bg-[#1a1b1c] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl shadow-indigo-500/5 flex items-center justify-center mb-8 cursor-pointer relative overflow-hidden active:scale-95 transition-transform hover:shadow-indigo-500/15 hover:border-indigo-500/30"
                  >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-8 h-8 text-indigo-400 relative z-10 ${lightningStrike ? 'animate-lightning' : ''}`}>
                       <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z" clipRule="evenodd" />
@@ -495,15 +504,33 @@ export default function Chat() {
                       <div className="absolute inset-0 bg-indigo-400/30 animate-flash rounded-2xl" />
                     )}
                  </button>
-                 <h2 className="text-3xl font-medium dark:text-gray-200 text-gray-800 tracking-tight">
+                 <h2 className="text-3xl font-semibold dark:text-gray-100 text-gray-800 tracking-tight">
                    Hi {userProfile?.first_name || 'there'}, how can I help?
                  </h2>
-                 <p className="text-gray-500 mt-2 text-sm">Ask me to analyze data, write Python scripts, or optimize PyTorch models.</p>
+                 <p className="dark:text-gray-500 text-gray-400 mt-3 text-sm max-w-sm leading-relaxed">Start a conversation or try one of these suggestions.</p>
+
+                 {/* Suggestion chips */}
+                 <div className="flex flex-wrap justify-center gap-2 mt-8 max-w-lg">
+                   {[
+                     'Explain quantum computing',
+                     'Write a Python script',
+                     'Debug my code',
+                     'Summarize a topic',
+                   ].map((suggestion) => (
+                     <button
+                       key={suggestion}
+                       onClick={() => { setInputValue(suggestion); }}
+                       className="px-4 py-2 text-sm dark:bg-white/[0.04] bg-white dark:text-gray-400 text-gray-500 rounded-xl border dark:border-white/[0.08] border-gray-200 dark:hover:bg-white/[0.08] hover:bg-gray-100 dark:hover:text-gray-200 hover:text-gray-700 dark:hover:border-white/[0.12] hover:border-gray-300 transition-all cursor-pointer"
+                     >
+                       {suggestion}
+                     </button>
+                   ))}
+                 </div>
                </div>
             )}
 
             {messages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in duration-300 group/msg`}>
+              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300 group/msg`}>
                 {/* Inline edit mode */}
                 {m.role === 'user' && editingMessageId === m.id ? (
                   <div className="max-w-[85%] sm:max-w-[75%] w-full">
@@ -513,7 +540,7 @@ export default function Chat() {
                       onKeyDown={handleEditKeyDown}
                       autoFocus
                       rows={3}
-                      className="w-full px-4 py-3 text-base dark:bg-[#1e1f20] bg-white dark:text-gray-100 text-gray-800 border-2 border-indigo-500 rounded-2xl outline-none resize-none"
+                      className="w-full px-4 py-3 text-sm dark:bg-[#1a1b1c] bg-white dark:text-gray-100 text-gray-800 border-2 border-indigo-500 rounded-2xl outline-none resize-none"
                     />
                     <div className="flex justify-end gap-2 mt-2">
                       <button
@@ -533,10 +560,10 @@ export default function Chat() {
                   </div>
                 ) : (
                   <div className={`
-                    px-6 py-3.5 max-w-[85%] sm:max-w-[75%] shadow-md text-base leading-relaxed
+                    px-5 py-3 max-w-[85%] sm:max-w-[75%] text-[15px] leading-relaxed
                     ${m.role === 'user'
-                      ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-3xl rounded-br-sm"
-                      : "dark:bg-[#1e1f20] bg-white dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-3xl rounded-bl-sm"}
+                      ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-sm shadow-lg shadow-indigo-500/20"
+                      : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm"}
                   `}>
                     <div className="whitespace-pre-wrap">
                       {m.parts?.map((part, index) =>
@@ -548,18 +575,18 @@ export default function Chat() {
 
                 {/* Action buttons — below bubble */}
                 {editingMessageId !== m.id && (
-                  <div className={`flex gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
+                  <div className={`flex gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200 ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
                     <button
                       onClick={() => copyMessage(m.id)}
-                      className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-400 hover:text-gray-200 transition-all cursor-pointer"
+                      className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
                       title="Copy"
                     >
                       {copiedMessageId === m.id ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-green-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-400">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                         </svg>
                       ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
                         </svg>
                       )}
@@ -567,10 +594,10 @@ export default function Chat() {
                     {m.role === 'user' && !isLoading && (
                       <button
                         onClick={() => startEditing(m.id)}
-                        className="p-1.5 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 text-gray-400 hover:text-gray-200 transition-all cursor-pointer"
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
                         title="Edit & resend"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
                         </svg>
                       </button>
@@ -579,43 +606,44 @@ export default function Chat() {
                 )}
               </div>
             ))}
-            
-            {isLoading && (
+
+            {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start animate-in fade-in duration-300">
-                <div className="dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 px-5 py-4 rounded-3xl rounded-bl-sm shadow-md flex items-center gap-2">
-                  <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2 h-2 bg-indigo-500/80 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                <div className="dark:bg-[#161718] bg-white border dark:border-white/[0.06] border-gray-200/80 px-5 py-4 rounded-2xl rounded-bl-sm shadow-sm flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             )}
-            
+
             <div ref={messagesEndRef} />
-            
+
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 w-full dark:bg-gradient-to-t dark:from-[#0d0d0e] dark:via-[#0d0d0e] bg-gradient-to-t from-gray-50 via-gray-50 to-transparent pb-8 pt-12 px-4 pointer-events-none">
+        {/* Input area */}
+        <div className="absolute bottom-0 left-0 w-full pb-6 pt-16 px-4 pointer-events-none" style={{ background: darkMode ? 'linear-gradient(to top, #0d0d0e 40%, transparent)' : 'linear-gradient(to top, #f9fafb 40%, transparent)' }}>
           <div className="max-w-3xl mx-auto w-full pointer-events-auto">
-            <form onSubmit={onFormSubmit} className="relative flex items-center dark:bg-[#1e1f20] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+            <form onSubmit={onFormSubmit} className="relative flex items-center dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-200/50 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
               <input
-                className="w-full py-4 pl-6 pr-14 outline-none dark:text-gray-100 text-gray-800 bg-transparent placeholder-gray-500 text-base"
+                className="w-full py-4 pl-5 pr-14 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px]"
                 value={inputValue}
-                placeholder={`Ask ${currentProviderLabel} anything...`}
+                placeholder={`Message ${currentProviderLabel}...`}
                 onChange={(e) => setInputValue(e.target.value)}
                 disabled={isLoading}
               />
-              <button 
-                type="submit" 
-                disabled={!inputValue.trim() || isLoading} 
-                className={`absolute right-2 p-2.5 transition-colors duration-200 active:scale-95 cursor-pointer ${inputValue.trim() ? 'text-indigo-500 hover:text-indigo-400' : 'text-gray-400'}`}
+              <button
+                type="submit"
+                disabled={!inputValue.trim() || isLoading}
+                className={`absolute right-2.5 p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10' : 'text-gray-500'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                   <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
                 </svg>
               </button>
             </form>
-            <div className="text-center mt-3 text-xs text-gray-500">
+            <div className="text-center mt-3 text-[11px] dark:text-gray-600 text-gray-400">
               AI can make mistakes. Verify important information.
             </div>
           </div>
