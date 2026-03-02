@@ -1,25 +1,26 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
-// Singleton highlighter — loaded once, shared across all CodeBlock instances
-let highlighterPromise: Promise<any> | null = null;
-
-function getHighlighter() {
-  if (!highlighterPromise) {
-    highlighterPromise = import('shiki/bundle/web').then((shiki) =>
-      shiki.createHighlighter({
-        themes: ['github-dark', 'github-light'],
-        langs: [
-          'javascript', 'typescript', 'python', 'rust', 'go', 'java', 'c',
-          'cpp', 'csharp', 'ruby', 'php', 'swift', 'kotlin', 'bash', 'shell',
-          'sql', 'html', 'css', 'json', 'yaml', 'toml', 'markdown', 'xml',
-          'jsx', 'tsx', 'dockerfile', 'graphql',
-        ],
-      })
-    );
+// Simple language detection for unlabeled code blocks
+function detectLanguage(code: string): string | undefined {
+  const trimmed = code.trim();
+  if (/^(import |from \w+ import |def |class |print\(|if __name__|#!.*python)/.test(trimmed)) return 'python';
+  if (/\bself\b/.test(trimmed) && /\bdef /.test(trimmed)) return 'python';
+  if (/^(const |let |var |function |import |export |=>|async )/.test(trimmed)) {
+    if (/:\s*(string|number|boolean|any|void)\b/.test(trimmed) || /interface |type /.test(trimmed)) return 'typescript';
+    return 'javascript';
   }
-  return highlighterPromise;
+  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|WITH)\b/i.test(trimmed)) return 'sql';
+  if (/^(#!\/bin\/(ba)?sh|\$ |npm |pip |curl |git |cd |ls |mkdir |echo )/.test(trimmed)) return 'bash';
+  if (/^<(!DOCTYPE|html|div|span|head|body|p|a |h[1-6])/i.test(trimmed)) return 'html';
+  if (/^(\.|#|@media|@import|body|html)\s*\{/.test(trimmed)) return 'css';
+  if (/^\s*[\[{]/.test(trimmed) && /[\]}]\s*$/.test(trimmed)) {
+    try { JSON.parse(trimmed); return 'json'; } catch { /* not json */ }
+  }
+  if (/^(fn |use |mod |struct |impl |let mut |pub )/.test(trimmed)) return 'rust';
+  if (/^(package |func |import \(|type \w+ struct)/.test(trimmed)) return 'go';
+  return undefined;
 }
 
 interface CodeBlockProps {
@@ -28,39 +29,40 @@ interface CodeBlockProps {
 }
 
 export default function CodeBlock({ code, language }: CodeBlockProps) {
+  const resolvedLanguage = language || detectLanguage(code);
   const [highlightedHtml, setHighlightedHtml] = useState<string>('');
   const [copied, setCopied] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastCodeRef = useRef<string>('');
+  const [isDark, setIsDark] = useState(true);
 
-  const highlight = useCallback(async (text: string) => {
-    try {
-      const highlighter = await getHighlighter();
-      const loadedLangs = highlighter.getLoadedLanguages();
-      const lang = language && loadedLangs.includes(language) ? language : 'text';
-
-      const html = highlighter.codeToHtml(text, {
-        lang,
-        themes: { dark: 'github-dark', light: 'github-light' },
-        defaultColor: false,
-      });
-      setHighlightedHtml(html);
-    } catch {
-      // Highlighting failed — raw text fallback is already showing
-    }
-  }, [language]);
-
+  // Track dark mode
   useEffect(() => {
-    if (code === lastCodeRef.current) return;
-    lastCodeRef.current = code;
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains('dark'));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => highlight(code), 30);
+  // Highlight with Shiki — simple direct call, no singleton management
+  useEffect(() => {
+    let cancelled = false;
 
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [code, highlight]);
+    (async () => {
+      try {
+        const { codeToHtml } = await import('shiki/bundle/web');
+        const html = await codeToHtml(code, {
+          lang: resolvedLanguage || 'text',
+          theme: isDark ? 'github-dark' : 'github-light',
+        });
+        if (!cancelled) setHighlightedHtml(html);
+      } catch (err) {
+        console.error('[CodeBlock] Shiki failed:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [code, resolvedLanguage, isDark]);
 
   const copyCode = () => {
     navigator.clipboard.writeText(code);
@@ -68,7 +70,7 @@ export default function CodeBlock({ code, language }: CodeBlockProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const displayLang = language || 'text';
+  const displayLang = resolvedLanguage || 'text';
 
   return (
     <div className="code-block-wrapper rounded-xl overflow-hidden my-3 border dark:border-white/[0.08] border-gray-200">
@@ -100,7 +102,7 @@ export default function CodeBlock({ code, language }: CodeBlockProps) {
       {/* Code content */}
       {highlightedHtml ? (
         <div
-          className="shiki-wrapper overflow-x-auto text-sm p-4 dark:bg-[#161718] bg-gray-50"
+          className="overflow-x-auto text-sm [&_pre]:!m-0 [&_pre]:!p-4 [&_code]:block"
           dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       ) : (

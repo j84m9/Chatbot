@@ -155,24 +155,4 @@
   color: #a5b4fc;
 }
 
-/* Shiki dual-theme switching */
-.shiki-wrapper .shiki {
-  background-color: transparent !important;
-  margin: 0;
-  padding: 0;
-}
-.shiki-wrapper .shiki code {
-  display: block;
-}
-
-/* Light mode: use the default --shiki-light color */
-.shiki-wrapper .shiki span {
-  color: var(--shiki-light) !important;
-  background-color: var(--shiki-light-bg, transparent) !important;
-}
-
-/* Dark mode: switch to --shiki-dark color */
-.dark .shiki-wrapper .shiki span {
-  color: var(--shiki-dark) !important;
-  background-color: var(--shiki-dark-bg, transparent) !important;
-}
+/* Shiki styles moved to globals.css for correct Tailwind v4 layer priority */

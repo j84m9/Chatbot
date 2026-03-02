@@ -302,6 +302,20 @@ export default function Chat() {
           </button>
         </div>
 
+        {/* Data Explorer link */}
+        <div className={`px-3 pb-1 ${sidebarCollapsed ? 'flex justify-center' : ''}`}>
+          <a
+            href="/data-explorer"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm dark:text-gray-400 text-gray-500 dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:hover:text-gray-200 hover:text-gray-800 transition-colors ${sidebarCollapsed ? 'justify-center px-2' : ''}`}
+            title="Data Explorer"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 flex-shrink-0">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75" />
+            </svg>
+            <span className={`whitespace-nowrap transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 w-0 hidden' : 'opacity-100'}`}>Data Explorer</span>
+          </a>
+        </div>
+
         {/* Session list */}
         <div className={`flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
           <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-2 mt-2 whitespace-nowrap">Recent</div>
