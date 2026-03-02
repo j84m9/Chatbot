@@ -4,6 +4,7 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
@@ -565,11 +566,15 @@ export default function Chat() {
                       ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-sm shadow-lg shadow-indigo-500/20"
                       : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm"}
                   `}>
-                    <div className="whitespace-pre-wrap">
-                      {m.parts?.map((part, index) =>
-                        part.type === 'text' ? <span key={index}>{part.text}</span> : null
-                      )}
-                    </div>
+                    {m.role === 'assistant' ? (
+                      <MarkdownRenderer content={m.parts?.map(p => p.type === 'text' ? p.text : '').join('') || ''} />
+                    ) : (
+                      <div className="whitespace-pre-wrap">
+                        {m.parts?.map((part, index) =>
+                          part.type === 'text' ? <span key={index}>{part.text}</span> : null
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

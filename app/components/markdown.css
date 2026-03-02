@@ -1,0 +1,178 @@
+/* Markdown prose styles scoped to .markdown-body */
+
+.markdown-body {
+  line-height: 1.7;
+}
+
+/* Headings */
+.markdown-body h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+.markdown-body h2 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+.markdown-body h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+  line-height: 1.4;
+}
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: 1em;
+  font-weight: 600;
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
+}
+
+/* Paragraphs */
+.markdown-body p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-body p:first-child {
+  margin-top: 0;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-body li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+/* Task lists (GFM) */
+.markdown-body li input[type="checkbox"] {
+  margin-right: 0.5em;
+  accent-color: #6366f1;
+}
+
+/* Blockquotes */
+.markdown-body blockquote {
+  border-left: 3px solid #6366f1;
+  padding-left: 1em;
+  margin-left: 0;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  opacity: 0.85;
+}
+
+/* Links */
+.markdown-body a {
+  color: #818cf8;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.markdown-body a:hover {
+  color: #a5b4fc;
+}
+
+/* Horizontal rules */
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+/* Tables */
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+  font-size: 0.9em;
+}
+.markdown-body th {
+  font-weight: 600;
+  text-align: left;
+  padding: 0.5em 0.75em;
+  border-bottom: 2px solid rgba(128, 128, 128, 0.2);
+}
+.markdown-body td {
+  padding: 0.5em 0.75em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+/* Strikethrough (GFM) */
+.markdown-body del {
+  opacity: 0.6;
+}
+
+/* Strong & emphasis */
+.markdown-body strong {
+  font-weight: 700;
+}
+
+/* Images */
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* Light mode overrides */
+.markdown-body a {
+  color: #6366f1;
+}
+.markdown-body a:hover {
+  color: #4f46e5;
+}
+.dark .markdown-body a {
+  color: #818cf8;
+}
+.dark .markdown-body a:hover {
+  color: #a5b4fc;
+}
+
+/* Shiki dual-theme switching */
+.shiki-wrapper .shiki {
+  background-color: transparent !important;
+  margin: 0;
+  padding: 0;
+}
+.shiki-wrapper .shiki code {
+  display: block;
+}
+
+/* Light mode: use the default --shiki-light color */
+.shiki-wrapper .shiki span {
+  color: var(--shiki-light) !important;
+  background-color: var(--shiki-light-bg, transparent) !important;
+}
+
+/* Dark mode: switch to --shiki-dark color */
+.dark .shiki-wrapper .shiki span {
+  color: var(--shiki-dark) !important;
+  background-color: var(--shiki-dark-bg, transparent) !important;
+}
