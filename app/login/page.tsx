@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { login, signup } from './actions';
 
-export default function LoginPage() {
+function LoginForm() {
   const [isSignUp, setIsSignUp] = useState(false);
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
@@ -37,7 +37,7 @@ export default function LoginPage() {
               {error}
             </div>
           )}
-          
+
           <div className="space-y-5 animate-in fade-in duration-300">
             {/* Dynamic Fields: Only visible during Sign Up */}
             {isSignUp && (
@@ -69,26 +69,26 @@ export default function LoginPage() {
                     <input id="phone" name="phone" type="tel" placeholder="(555) 000-0000" className={inputClass} />
                   </div>
                 </div>
-                
+
                 <hr className="border-[#333537] my-6" />
               </>
             )}
-            
+
             {/* Core Auth Fields: Always visible */}
             <div>
               <label className={labelClass} htmlFor="identifier">{isSignUp ? 'Email' : 'Username or Email'}</label>
               <input id="identifier" name="identifier" type={isSignUp ? 'email' : 'text'} placeholder={isSignUp ? 'you@example.com' : 'username or you@example.com'} required className={inputClass} />
             </div>
-            
+
             <div>
               <label className={labelClass} htmlFor="password">Password</label>
               <input id="password" name="password" type="password" placeholder="••••••••" required className={inputClass} />
             </div>
           </div>
-          
+
           {/* Upgraded Primary Button */}
-          <button 
-            formAction={isSignUp ? signup : login} 
+          <button
+            formAction={isSignUp ? signup : login}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 mt-8 active:scale-[0.98] cursor-pointer"
           >
             {isSignUp ? 'Create Account' : 'Log In'}
@@ -96,8 +96,8 @@ export default function LoginPage() {
 
           {/* Toggle Mode Button */}
           <div className="text-center mt-6">
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={() => setIsSignUp(!isSignUp)}
               className="text-sm text-gray-400 hover:text-indigo-400 transition-colors font-medium cursor-pointer"
             >
@@ -108,4 +108,12 @@ export default function LoginPage() {
       </form>
     </div>
   )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
 }

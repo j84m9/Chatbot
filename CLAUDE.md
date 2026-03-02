@@ -191,9 +191,7 @@ Pre-seeded SQLite database with 11 tables of realistic sample data:
 - `support_tickets` (600) — resolution times
 
 ## Known Issues
-- `app/login/page.tsx` uses `useSearchParams()` without a `<Suspense>` boundary, causing a build warning (not a runtime issue in dev)
-- `middleware.ts` has debug `console.log` statements that should be cleaned up for production
-- `FormEvent` type in `page.tsx:211` is deprecated (minor, non-breaking)
+None currently tracked.
 
 ## Future Improvements
 - [ ] File/image upload support
@@ -203,8 +201,6 @@ Pre-seeded SQLite database with 11 tables of realistic sample data:
 - [ ] Rename chat sessions
 - [ ] Responsive mobile layout
 - [ ] Rate limiting on API routes
-- [ ] Add `<Suspense>` boundary around login page
-- [ ] Clean up middleware debug logs
 - [ ] Add error boundaries and loading states
 - [ ] Keyboard shortcuts (Cmd+K for new chat, etc.)
 - [ ] PostgreSQL support in Data Explorer
