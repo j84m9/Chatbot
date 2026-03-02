@@ -17,7 +17,7 @@ export async function GET() {
 
   const { data, error } = await dbAdmin
     .from('data_explorer_sessions')
-    .select('id, title, connection_id, created_at')
+    .select('id, title, ai_title, connection_id, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 

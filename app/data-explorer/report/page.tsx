@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import CodeBlock from '@/app/components/CodeBlock';
 import dynamic from 'next/dynamic';
+import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
 
-const PlotlyChart = dynamic(() => import('@/app/components/data-explorer/PlotlyChart'), { ssr: false });
+const ChartGallery = dynamic(() => import('@/app/components/data-explorer/ChartGallery'), { ssr: false });
 
 interface ExchangeData {
   question: string;
@@ -17,14 +18,8 @@ interface ExchangeData {
     rowCount: number;
     executionTimeMs: number;
   } | null;
-  chartConfig: {
-    chartType: 'bar' | 'line' | 'scatter' | 'pie';
-    title: string;
-    xColumn: string;
-    yColumn: string;
-    xLabel?: string;
-    yLabel?: string;
-  } | null;
+  chartConfig: ChartConfig | null;
+  chartConfigs: ChartConfig[] | null;
   error: string | null;
 }
 
@@ -47,8 +42,11 @@ export default function ReportPage() {
         const data: ExchangeData = JSON.parse(raw);
         setExchange(data);
 
+        // Resolve charts
+        const charts = data.chartConfigs || (data.chartConfig ? [data.chartConfig] : []);
+
         // Default to chart tab if chart is available, otherwise table, then sql
-        if (data.chartConfig && data.results) {
+        if (charts.length > 0 && data.results) {
           setActiveTab('chart');
         } else if (data.results) {
           setActiveTab('table');
@@ -100,10 +98,20 @@ export default function ReportPage() {
     );
   }
 
+  // Resolve chart configs: prefer array, fall back to single
+  const resolvedChartConfigs: ChartConfig[] = exchange.chartConfigs
+    ? exchange.chartConfigs
+    : exchange.chartConfig
+      ? [exchange.chartConfig]
+      : [];
+
+  const chartCount = resolvedChartConfigs.length;
+  const hasCharts = chartCount > 0 && !!exchange.results;
+
   const tabs: { key: 'sql' | 'table' | 'chart'; label: string; available: boolean }[] = [
     { key: 'sql', label: 'SQL', available: !!exchange.sql },
     { key: 'table', label: 'Table', available: !!exchange.results },
-    { key: 'chart', label: 'Chart', available: !!exchange.chartConfig && !!exchange.results },
+    { key: 'chart', label: chartCount > 1 ? `Charts (${chartCount})` : 'Chart', available: hasCharts },
   ];
 
   return (
@@ -205,10 +213,10 @@ export default function ReportPage() {
           </div>
         )}
 
-        {activeTab === 'chart' && exchange.chartConfig && exchange.results && (
+        {activeTab === 'chart' && hasCharts && exchange.results && (
           <div className="h-full">
-            <PlotlyChart
-              chartConfig={exchange.chartConfig}
+            <ChartGallery
+              chartConfigs={resolvedChartConfigs}
               rows={exchange.results.rows}
               darkMode={darkMode}
             />

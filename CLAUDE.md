@@ -33,7 +33,7 @@ app/
     settings/route.ts   — GET/POST: user provider/model/API key settings (encrypt/decrypt)
     models/route.ts     — GET: static model catalog + provider names
     data-explorer/
-      query/route.ts    — POST: natural language → SQL → execute → chart suggestion
+      query/route.ts    — POST: natural language → SQL → execute → multi-chart suggestion (+ chart/SQL refinement, insights)
       connections/route.ts — CRUD for database connections (MSSQL + SQLite)
       connections/test/route.ts — POST: test a database connection
       schema/route.ts   — GET: fetch and cache database schema
@@ -41,11 +41,13 @@ app/
       messages/route.ts — GET: fetch messages for a data explorer session
   components/
     data-explorer/
-      ResultsPanel.tsx  — SQL/Table/Chart tabs, CSV export, pop-out, close button
-      QueryChat.tsx     — Chat interface for natural language queries
+      ResultsPanel.tsx  — SQL/Table/Chart/Insights tabs, CSV export, pop-out, refinement buttons
+      QueryChat.tsx     — Chat interface for natural language queries (+ refinement mode)
       ConnectionManager.tsx — Modal for adding/editing database connections
-      PlotlyChart.tsx   — Plotly chart wrapper (dynamic import, no SSR)
-      DataExplorerSidebar.tsx — Sidebar with connections, sessions, settings
+      PlotlyChart.tsx   — Plotly chart wrapper (8 chart types, color grouping, orientation)
+      ChartGallery.tsx  — Multi-chart gallery with per-chart refine buttons
+      InsightsPanel.tsx — AI-generated data insights with regenerate
+      DataExplorerSidebar.tsx — Sidebar with connections, sessions (AI titles), settings
     MarkdownRenderer.tsx — Markdown rendering for chat messages
     CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
     ChatPlot.tsx        — Inline chart rendering in chat messages
@@ -100,8 +102,16 @@ db/migrations/         — SQL migration files (dbmate format)
 - `db_type` column: 'mssql' or 'sqlite'
 - `file_path`: absolute path to SQLite file (used when `db_type` = 'sqlite')
 
-### `data_explorer_sessions` / `data_explorer_messages`
-- Session and message history for Data Explorer queries
+### `data_explorer_sessions`
+- `id` UUID PK, `user_id` UUID (FK), `connection_id` UUID (FK), `title` TEXT, `ai_title` TEXT nullable, `created_at` TIMESTAMPTZ
+- `ai_title`: AI-generated descriptive title (auto-updated after 1st and 3rd query)
+- RLS enabled
+
+### `data_explorer_messages`
+- `id` UUID PK, `session_id` UUID (FK), `question`, `sql_query`, `explanation`, `results` JSONB, `chart_config` JSONB, `chart_configs` JSONB, `error`, `execution_time_ms`, `row_count`, `message_type` TEXT (default 'query'), `parent_message_id` UUID (FK self-ref), `created_at`
+- `chart_configs`: array of chart configs (coexists with single `chart_config` for backward compat)
+- `message_type`: 'query' | 'chart_refinement' | 'sql_refinement' | 'insight'
+- `parent_message_id`: links refinement messages to their parent
 - RLS enabled (messages gated via session ownership)
 
 ## Key Patterns
@@ -130,7 +140,15 @@ All API routes use a two-client pattern:
 - **Close button**: Dismisses results panel by deselecting the exchange index
 - **CSV export**: Client-side CSV generation from table data with proper escaping, available on Table tab
 - **SQLite support**: Read-only queries via `better-sqlite3`, SQL validation blocks writes, auto LIMIT injection (max 1000 rows)
-- **Exchange model**: Each query creates an `Exchange` object with `{ id, question, sql, explanation, results, chartConfig, error, isLoading }`
+- **Exchange model**: Each query creates an `Exchange` object with `{ id, question, sql, explanation, results, chartConfig, chartConfigs, error, isLoading, messageType, parentMessageId, insights }`
+- **Multi-chart support**: AI suggests 1-3 charts per query. ChartGallery renders them in a scrollable gallery. Backward compat: wraps single `chartConfig` in array if `chartConfigs` is null
+- **Chart types**: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar. Supports `colorColumn` for grouping, `orientation` for horizontal bars, `yAxisType` for log scale
+- **Conversation context**: Last 5 messages injected into SQL generation prompt for follow-up queries ("group that by department")
+- **AI session titles**: Auto-generated after 1st and 3rd query, shown in sidebar
+- **FK-enhanced DDL**: Foreign keys fetched via `PRAGMA foreign_key_list` (SQLite) and `sys.foreign_keys` (MSSQL), included in schema prompt text
+- **Chart refinement**: User clicks "Refine" on a chart → types instruction → backend returns updated chartConfigs → original exchange updates in place (no new SQL execution)
+- **SQL refinement**: User clicks "Refine SQL" → types instruction → creates new exchange with modified SQL + new results
+- **Data insights**: AI-generated bullet points about query results, available on the Insights tab. Generated on demand, cached in exchange
 
 ### Frontend Architecture (page.tsx ~690 lines)
 - Single-page app with all state in `page.tsx`
@@ -166,7 +184,14 @@ All API routes use a two-client pattern:
 - [x] Polished UI: gradient bubbles, frosted header, ambient glow
 - [x] Data Explorer: natural language → SQL against MSSQL and SQLite databases
 - [x] SQLite support with demo database included in repo
-- [x] Auto-generated charts (Plotly) for Data Explorer results
+- [x] Auto-generated multi-charts (Plotly) for Data Explorer results (1-3 charts per query)
+- [x] 8 chart types: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar
+- [x] Chart refinement: modify charts via natural language without re-running SQL
+- [x] SQL refinement: modify SQL via natural language, creates new exchange with updated results
+- [x] Data insights: AI-generated bullet points about query results (on-demand)
+- [x] Conversation context: follow-up queries understand previous questions/results
+- [x] AI-generated session titles in Data Explorer sidebar
+- [x] FK-enhanced DDL in schema prompts for better multi-table JOINs
 - [x] MSSQL connection management with encrypted passwords
 - [x] Row Level Security on all user data tables
 - [x] Per-request admin client in messages route (serverless-safe)
@@ -206,4 +231,4 @@ None currently tracked.
 - [ ] PostgreSQL support in Data Explorer
 - [ ] MySQL support in Data Explorer
 - [ ] Saved/pinned queries in Data Explorer
-- [ ] Multi-chart dashboard view
+- [ ] Multi-chart dashboard view (pinned charts)

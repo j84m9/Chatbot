@@ -7,6 +7,12 @@ import ConnectionManager from '@/app/components/data-explorer/ConnectionManager'
 import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
 
+interface RefineContext {
+  exchangeIndex: number;
+  type: 'chart' | 'sql';
+  chartIndex?: number;
+}
+
 export default function DataExplorer() {
   const supabase = createClient();
 
@@ -32,6 +38,9 @@ export default function DataExplorer() {
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [selectedExchangeIndex, setSelectedExchangeIndex] = useState(-1);
   const [isQuerying, setIsQuerying] = useState(false);
+
+  // Refinement state
+  const [refineContext, setRefineContext] = useState<RefineContext | null>(null);
 
   // BYOK settings state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
@@ -172,12 +181,14 @@ export default function DataExplorer() {
     setSessionId(null);
     setExchanges([]);
     setSelectedExchangeIndex(-1);
+    setRefineContext(null);
   };
 
   const handleSelectSession = async (id: string) => {
     setSessionId(id);
     setExchanges([]);
     setSelectedExchangeIndex(-1);
+    setRefineContext(null);
 
     try {
       const res = await fetch(`/api/data-explorer/messages?sessionId=${id}`);
@@ -220,8 +231,11 @@ export default function DataExplorer() {
           explanation: msg.explanation ?? null,
           results,
           chartConfig: msg.chart_config ?? null,
+          chartConfigs: msg.chart_configs ?? null,
           error: msg.error ?? null,
           isLoading: false,
+          messageType: msg.message_type ?? 'query',
+          parentMessageId: msg.parent_message_id ?? null,
         } satisfies Exchange;
       });
 
@@ -253,6 +267,7 @@ export default function DataExplorer() {
       explanation: null,
       results: null,
       chartConfig: null,
+      chartConfigs: null,
       error: null,
       isLoading: true,
     };
@@ -278,6 +293,9 @@ export default function DataExplorer() {
       if (data.sessionId && !sessionId) {
         setSessionId(data.sessionId);
         fetchSessions();
+      } else if (data.sessionId) {
+        // Refresh sessions to pick up AI title updates
+        fetchSessions();
       }
 
       setExchanges(prev =>
@@ -289,6 +307,7 @@ export default function DataExplorer() {
                 explanation: data.explanation,
                 results: data.results,
                 chartConfig: data.chartConfig,
+                chartConfigs: data.chartConfigs,
                 error: data.error,
                 isLoading: false,
               }
@@ -305,6 +324,198 @@ export default function DataExplorer() {
       );
     } finally {
       setIsQuerying(false);
+    }
+  };
+
+  // Chart refinement handler
+  const handleRefineChart = (chartIndex: number) => {
+    setRefineContext({
+      exchangeIndex: selectedExchangeIndex,
+      type: 'chart',
+      chartIndex,
+    });
+  };
+
+  // SQL refinement handler
+  const handleRefineSql = () => {
+    setRefineContext({
+      exchangeIndex: selectedExchangeIndex,
+      type: 'sql',
+    });
+  };
+
+  const handleCancelRefine = () => {
+    setRefineContext(null);
+  };
+
+  const handleRefineSubmit = async (instruction: string) => {
+    if (!refineContext || !activeConnectionId) return;
+
+    const targetExchange = exchanges[refineContext.exchangeIndex];
+    if (!targetExchange) return;
+
+    setIsQuerying(true);
+
+    try {
+      if (refineContext.type === 'chart') {
+        // Chart refinement: update charts in place on the original exchange
+        const currentConfigs = targetExchange.chartConfigs
+          || (targetExchange.chartConfig ? [targetExchange.chartConfig] : []);
+
+        const res = await fetch('/api/data-explorer/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: instruction,
+            connectionId: activeConnectionId,
+            sessionId,
+            messageType: 'chart_refinement',
+            parentMessageId: targetExchange.id,
+            chartConfigs: currentConfigs,
+            exchangeData: {
+              results: targetExchange.results,
+            },
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.chartConfigs) {
+          setExchanges(prev =>
+            prev.map((ex, i) =>
+              i === refineContext.exchangeIndex
+                ? {
+                    ...ex,
+                    chartConfig: data.chartConfig || data.chartConfigs?.[0] || ex.chartConfig,
+                    chartConfigs: data.chartConfigs,
+                  }
+                : ex
+            )
+          );
+        }
+      } else {
+        // SQL refinement: create a new exchange with modified SQL
+        const exchangeId = crypto.randomUUID();
+        const newExchange: Exchange = {
+          id: exchangeId,
+          question: instruction,
+          sql: null,
+          explanation: null,
+          results: null,
+          chartConfig: null,
+          chartConfigs: null,
+          error: null,
+          isLoading: true,
+          messageType: 'sql_refinement',
+          parentMessageId: targetExchange.id,
+        };
+
+        setExchanges(prev => [...prev, newExchange]);
+        setSelectedExchangeIndex(exchanges.length);
+
+        const res = await fetch('/api/data-explorer/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: instruction,
+            connectionId: activeConnectionId,
+            sessionId,
+            messageType: 'sql_refinement',
+            parentMessageId: targetExchange.id,
+            exchangeData: {
+              sql: targetExchange.sql,
+              question: targetExchange.question,
+            },
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.sessionId) {
+          fetchSessions();
+        }
+
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId
+              ? {
+                  ...ex,
+                  sql: data.sql,
+                  explanation: data.explanation,
+                  results: data.results,
+                  chartConfig: data.chartConfig,
+                  chartConfigs: data.chartConfigs,
+                  error: data.error,
+                  isLoading: false,
+                }
+              : ex
+          )
+        );
+      }
+    } catch (err: any) {
+      // If chart refinement fails, don't create a broken exchange
+      if (refineContext.type === 'sql') {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.isLoading
+              ? { ...ex, error: err.message || 'Request failed', isLoading: false }
+              : ex
+          )
+        );
+      }
+    } finally {
+      setIsQuerying(false);
+      setRefineContext(null);
+    }
+  };
+
+  // Insight generation handler
+  const handleRequestInsights = async () => {
+    const exchange = exchanges[selectedExchangeIndex];
+    if (!exchange || !activeConnectionId) return;
+
+    // Set loading state on insights
+    setExchanges(prev =>
+      prev.map((ex, i) =>
+        i === selectedExchangeIndex ? { ...ex, insights: 'Generating insights...' } : ex
+      )
+    );
+
+    try {
+      const res = await fetch('/api/data-explorer/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: exchange.question,
+          connectionId: activeConnectionId,
+          messageType: 'insight',
+          exchangeData: {
+            results: {
+              columns: exchange.results?.columns,
+              rows: exchange.results?.rows?.slice(0, 20),
+              rowCount: exchange.results?.rowCount,
+            },
+          },
+        }),
+      });
+
+      const data = await res.json();
+
+      setExchanges(prev =>
+        prev.map((ex, i) =>
+          i === selectedExchangeIndex
+            ? { ...ex, insights: data.insights || data.error || 'No insights available.' }
+            : ex
+        )
+      );
+    } catch {
+      setExchanges(prev =>
+        prev.map((ex, i) =>
+          i === selectedExchangeIndex
+            ? { ...ex, insights: 'Failed to generate insights.' }
+            : ex
+        )
+      );
     }
   };
 
@@ -415,6 +626,9 @@ export default function DataExplorer() {
             onSubmitQuestion={handleSubmitQuestion}
             isQuerying={isQuerying}
             hasConnection={!!activeConnectionId}
+            refineContext={refineContext}
+            onCancelRefine={handleCancelRefine}
+            onRefineSubmit={handleRefineSubmit}
           />
         </div>
 
@@ -437,6 +651,9 @@ export default function DataExplorer() {
                 exchange={selectedExchange}
                 darkMode={darkMode}
                 onClose={() => setSelectedExchangeIndex(-1)}
+                onRefineChart={handleRefineChart}
+                onRefineSql={handleRefineSql}
+                onRequestInsights={handleRequestInsights}
               />
             </div>
           </>

@@ -21,6 +21,12 @@ export interface SchemaColumn {
   is_primary_key: boolean;
 }
 
+export interface ForeignKey {
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
+}
+
 export interface SchemaTable {
   schema: string;
   name: string;
@@ -30,6 +36,7 @@ export interface SchemaTable {
     nullable: boolean;
     isPrimaryKey: boolean;
   }[];
+  foreignKeys?: ForeignKey[];
 }
 
 const BLOCKED_KEYWORDS = [
@@ -129,6 +136,33 @@ export async function fetchSchema(config: ConnectionConfig): Promise<SchemaTable
       });
     }
 
+    // Fetch foreign keys
+    const fkResult = await pool.request().query(`
+      SELECT
+        OBJECT_SCHEMA_NAME(fk.parent_object_id) AS from_schema,
+        OBJECT_NAME(fk.parent_object_id) AS from_table,
+        COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS from_column,
+        OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS to_schema,
+        OBJECT_NAME(fk.referenced_object_id) AS to_table,
+        COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS to_column
+      FROM sys.foreign_keys fk
+      JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+      ORDER BY from_schema, from_table
+    `);
+
+    for (const row of fkResult.recordset) {
+      const key = `${row.from_schema}.${row.from_table}`;
+      const table = tableMap.get(key);
+      if (table) {
+        if (!table.foreignKeys) table.foreignKeys = [];
+        table.foreignKeys.push({
+          fromColumn: row.from_column,
+          toTable: `${row.to_schema}.${row.to_table}`,
+          toColumn: row.to_column,
+        });
+      }
+    }
+
     return Array.from(tableMap.values());
   } finally {
     if (pool) await pool.close();
@@ -143,7 +177,12 @@ export function schemaToPromptText(schema: SchemaTable[]): string {
       if (!c.nullable) desc += ' NOT NULL';
       return desc;
     }).join('\n');
-    return `[${table.schema}].[${table.name}]\n${cols}`;
+    const fks = (table.foreignKeys || []).map(fk =>
+      `  FK: ${fk.fromColumn} -> ${fk.toTable}(${fk.toColumn})`
+    ).join('\n');
+    const parts = [`[${table.schema}].[${table.name}]`, cols];
+    if (fks) parts.push(fks);
+    return parts.join('\n');
   }).join('\n\n');
 }
 

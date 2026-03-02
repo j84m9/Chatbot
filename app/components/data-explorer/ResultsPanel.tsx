@@ -1,21 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import CodeBlock from '@/app/components/CodeBlock';
 import type { Exchange } from './QueryChat';
+import type { ChartConfig } from './PlotlyChart';
 
 interface ResultsPanelProps {
   exchange: Exchange | null;
   darkMode: boolean;
   onClose?: () => void;
+  onRefineChart?: (chartIndex: number) => void;
+  onRefineSql?: () => void;
+  onRequestInsights?: () => void;
 }
 
-// Lazy load PlotlyChart since it's heavy
+// Lazy load chart components since they're heavy
 import dynamic from 'next/dynamic';
-const PlotlyChart = dynamic(() => import('./PlotlyChart'), { ssr: false });
+const ChartGallery = dynamic(() => import('./ChartGallery'), { ssr: false });
+const InsightsPanel = dynamic(() => import('./InsightsPanel'), { ssr: false });
 
-export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPanelProps) {
-  const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart'>('sql');
+export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights }: ResultsPanelProps) {
+  const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart' | 'insights'>('sql');
+  const prevExchangeKey = useRef<string | null>(null);
+
+  // Auto-select the best tab when exchange changes or finishes loading
+  useEffect(() => {
+    if (!exchange || exchange.isLoading) return;
+    // Track id + loading state so we catch both new exchanges and loading→loaded transitions
+    const key = `${exchange.id}:loaded`;
+    if (key === prevExchangeKey.current) return;
+    prevExchangeKey.current = key;
+
+    const hasCharts = (exchange.chartConfigs && exchange.chartConfigs.length > 0)
+      || exchange.chartConfig;
+
+    if (hasCharts && exchange.results) {
+      setActiveTab('chart');
+    } else if (exchange.results) {
+      setActiveTab('table');
+    } else {
+      setActiveTab('sql');
+    }
+  }, [exchange]);
 
   const handlePopOut = () => {
     if (!exchange) return;
@@ -25,6 +51,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
       explanation: exchange.explanation,
       results: exchange.results,
       chartConfig: exchange.chartConfig,
+      chartConfigs: exchange.chartConfigs,
       error: exchange.error,
     }));
     window.open(
@@ -82,10 +109,22 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
     );
   }
 
-  const tabs: { key: 'sql' | 'table' | 'chart'; label: string; available: boolean }[] = [
+  // Resolve chart configs: prefer chartConfigs array, fall back to wrapping chartConfig
+  const resolvedChartConfigs: ChartConfig[] = exchange.chartConfigs
+    ? exchange.chartConfigs
+    : exchange.chartConfig
+      ? [exchange.chartConfig]
+      : [];
+
+  const chartCount = resolvedChartConfigs.length;
+  const hasCharts = chartCount > 0 && !!exchange.results;
+  const hasResults = !!exchange.results;
+
+  const tabs: { key: 'sql' | 'table' | 'chart' | 'insights'; label: string; available: boolean }[] = [
     { key: 'sql', label: 'SQL', available: !!exchange.sql },
-    { key: 'table', label: 'Table', available: !!exchange.results },
-    { key: 'chart', label: 'Chart', available: !!exchange.chartConfig && !!exchange.results },
+    { key: 'table', label: 'Table', available: hasResults },
+    { key: 'chart', label: chartCount > 1 ? `Charts (${chartCount})` : 'Chart', available: hasCharts },
+    { key: 'insights', label: 'Insights', available: hasResults },
   ];
 
   return (
@@ -114,6 +153,17 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
             <span className="text-xs text-red-400 truncate max-w-[200px]" title={exchange.error}>
               {exchange.error}
             </span>
+          )}
+
+          {/* Refine SQL button */}
+          {activeTab === 'sql' && exchange.sql && onRefineSql && (
+            <button
+              onClick={onRefineSql}
+              className="px-2 py-1 text-xs rounded-lg dark:text-amber-400 text-amber-600 dark:hover:bg-amber-500/10 hover:bg-amber-50 transition-colors cursor-pointer"
+              title="Refine SQL"
+            >
+              Refine SQL
+            </button>
           )}
 
           {/* CSV download button — visible on Table tab with rows */}
@@ -199,11 +249,19 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
           </div>
         )}
 
-        {activeTab === 'chart' && exchange.chartConfig && exchange.results && (
-          <PlotlyChart
-            chartConfig={exchange.chartConfig}
+        {activeTab === 'chart' && hasCharts && exchange.results && (
+          <ChartGallery
+            chartConfigs={resolvedChartConfigs}
             rows={exchange.results.rows}
             darkMode={darkMode}
+            onRefineChart={onRefineChart}
+          />
+        )}
+
+        {activeTab === 'insights' && exchange.results && (
+          <InsightsPanel
+            insights={exchange.insights || null}
+            onGenerate={onRequestInsights}
           />
         )}
       </div>

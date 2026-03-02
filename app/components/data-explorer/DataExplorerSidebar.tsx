@@ -139,7 +139,7 @@ export default function DataExplorerSidebar({
                     : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
                 }`}
               >
-                {session.title}
+                {session.ai_title || session.title}
               </button>
               <button
                 onClick={() => onDeleteSession(session.id)}

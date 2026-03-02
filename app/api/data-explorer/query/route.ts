@@ -6,9 +6,16 @@ import { getModel } from '@/utils/ai/provider';
 import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
 import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
 import {
-  buildSqlGenerationSystemPrompt,
-  buildChartSuggestionSystemPrompt,
+  buildSqlGenerationSystemPromptWithContext,
+  buildMultiChartSuggestionSystemPrompt,
   buildChartSuggestionUserPrompt,
+  buildSessionTitlePrompt,
+  buildConversationContext,
+  buildChartRefinementSystemPrompt,
+  buildChartRefinementUserPrompt,
+  buildSqlRefinementUserPrompt,
+  buildInsightSystemPrompt,
+  buildInsightUserPrompt,
 } from '@/utils/ai/data-explorer-prompts';
 
 // Reuse the schema cache from the schema route
@@ -24,7 +31,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { question, connectionId, sessionId } = body;
+  const { question, connectionId, sessionId, messageType, parentMessageId, chartConfigs: currentChartConfigs, exchangeData } = body;
 
   if (!question || !connectionId) {
     return NextResponse.json({ error: 'Missing question or connectionId' }, { status: 400 });
@@ -132,17 +139,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }
 
-  // 4. Generate SQL from natural language
+  // Route by message type
+  const type = messageType || 'query';
+
+  if (type === 'chart_refinement') {
+    return handleChartRefinement(model, question, currentChartConfigs, exchangeData, sessionId, parentMessageId, dbAdmin);
+  }
+
+  if (type === 'insight') {
+    return handleInsightGeneration(model, question, exchangeData);
+  }
+
+  // For sql_refinement, we generate new SQL then execute it (falls through to standard flow with modified prompt)
   const schemaText = schemaToPromptText(schema);
+
+  // 4. Fetch conversation context (last 5 messages from session)
+  let conversationContext = '';
+  if (sessionId) {
+    const { data: prevMessages } = await dbAdmin
+      .from('data_explorer_messages')
+      .select('question, sql_query, row_count')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (prevMessages && prevMessages.length > 0) {
+      conversationContext = buildConversationContext(prevMessages.reverse());
+    }
+  }
+
+  // 5. Generate SQL from natural language
   let sqlQuery: string;
   let explanation: string = '';
   const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
 
   try {
+    let prompt: string;
+    if (type === 'sql_refinement' && exchangeData?.sql) {
+      prompt = buildSqlRefinementUserPrompt(question, exchangeData.sql, exchangeData.question || '', dialect);
+    } else {
+      prompt = `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`;
+    }
+
     const sqlResult = await generateText({
       model,
-      system: buildSqlGenerationSystemPrompt(schemaText, dialect),
-      prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
+      system: buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext),
+      prompt,
     });
 
     sqlQuery = sqlResult.text.trim();
@@ -162,10 +204,11 @@ export async function POST(req: Request) {
       explanation: null,
       results: null,
       chartConfig: null,
+      chartConfigs: null,
     }, { status: 500 });
   }
 
-  // 5. Execute SQL
+  // 6. Execute SQL
   let results: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
   try {
     if (isSqlite) {
@@ -181,16 +224,18 @@ export async function POST(req: Request) {
       error: `Query execution failed: ${err.message}`,
       results: null,
       chartConfig: null,
+      chartConfigs: null,
     });
   }
 
-  // 6. Generate chart suggestion
-  let chartConfig = null;
+  // 7. Generate chart suggestions (multi-chart)
+  let chartConfigs: any[] | null = null;
+  let chartConfig: any = null;
   if (results.rows.length > 0) {
     try {
       const chartResult = await generateText({
         model,
-        system: buildChartSuggestionSystemPrompt(),
+        system: buildMultiChartSuggestionSystemPrompt(),
         prompt: buildChartSuggestionUserPrompt(
           question,
           results.columns,
@@ -202,13 +247,22 @@ export async function POST(req: Request) {
 
       let chartText = chartResult.text.trim();
       chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      chartConfig = JSON.parse(chartText);
+      const parsed = JSON.parse(chartText);
+
+      // Handle both array and single object responses
+      if (Array.isArray(parsed)) {
+        chartConfigs = parsed;
+        chartConfig = parsed[0] || null;
+      } else {
+        chartConfig = parsed;
+        chartConfigs = [parsed];
+      }
     } catch {
       // Chart suggestion is optional — proceed without it
     }
   }
 
-  // 7. Save exchange to data_explorer_messages
+  // 8. Save exchange to data_explorer_messages
   let activeSessionId = sessionId;
   if (!activeSessionId) {
     // Create a new session
@@ -229,9 +283,23 @@ export async function POST(req: Request) {
       explanation,
       results: { rows: results.rows.slice(0, 100), columns: results.columns },
       chart_config: chartConfig,
+      chart_configs: chartConfigs,
       execution_time_ms: results.executionTimeMs,
       row_count: results.rowCount,
+      message_type: type,
+      parent_message_id: parentMessageId || null,
     });
+
+    // 9. Generate AI session title (after 1st and 3rd query)
+    const { count } = await dbAdmin
+      .from('data_explorer_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', activeSessionId);
+
+    const msgCount = count || 0;
+    if (msgCount === 1 || msgCount === 3) {
+      generateSessionTitle(model, activeSessionId, dbAdmin).catch(() => {});
+    }
   }
 
   return NextResponse.json({
@@ -245,7 +313,133 @@ export async function POST(req: Request) {
       executionTimeMs: results.executionTimeMs,
     },
     chartConfig,
+    chartConfigs,
     sessionId: activeSessionId,
     error: null,
   });
+}
+
+// Generate and update session title asynchronously
+async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any) {
+  const { data: messages } = await dbAdmin
+    .from('data_explorer_messages')
+    .select('question')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true })
+    .limit(5);
+
+  if (!messages || messages.length === 0) return;
+
+  const questions = messages.map((m: any) => m.question);
+
+  try {
+    const result = await generateText({
+      model,
+      prompt: buildSessionTitlePrompt(questions),
+    });
+
+    const title = result.text.trim().replace(/^["']|["']$/g, '');
+    if (title && title.length > 0 && title.length <= 100) {
+      await dbAdmin
+        .from('data_explorer_sessions')
+        .update({ ai_title: title, title })
+        .eq('id', sessionId);
+    }
+  } catch {
+    // Title generation is optional
+  }
+}
+
+// Handle chart refinement (no SQL execution needed)
+async function handleChartRefinement(
+  model: any,
+  instruction: string,
+  currentConfigs: any[],
+  exchangeData: any,
+  sessionId: string | null,
+  parentMessageId: string | null,
+  dbAdmin: any,
+) {
+  if (!currentConfigs || !exchangeData?.results) {
+    return NextResponse.json({ error: 'Missing chart configs or exchange data' }, { status: 400 });
+  }
+
+  try {
+    const result = await generateText({
+      model,
+      system: buildChartRefinementSystemPrompt(),
+      prompt: buildChartRefinementUserPrompt(
+        instruction,
+        currentConfigs,
+        exchangeData.results.columns,
+        exchangeData.results.types,
+        exchangeData.results.rowCount,
+      ),
+    });
+
+    let text = result.text.trim();
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(text);
+
+    const chartConfigs = Array.isArray(parsed) ? parsed : [parsed];
+    const chartConfig = chartConfigs[0] || null;
+
+    // Save refinement message
+    if (sessionId) {
+      await dbAdmin.from('data_explorer_messages').insert({
+        session_id: sessionId,
+        question: instruction,
+        chart_config: chartConfig,
+        chart_configs: chartConfigs,
+        message_type: 'chart_refinement',
+        parent_message_id: parentMessageId || null,
+      });
+    }
+
+    return NextResponse.json({
+      chartConfig,
+      chartConfigs,
+      error: null,
+    });
+  } catch (err: any) {
+    return NextResponse.json({
+      error: `Chart refinement failed: ${err.message}`,
+      chartConfig: null,
+      chartConfigs: null,
+    }, { status: 500 });
+  }
+}
+
+// Handle insight generation
+async function handleInsightGeneration(
+  model: any,
+  question: string,
+  exchangeData: any,
+) {
+  if (!exchangeData?.results) {
+    return NextResponse.json({ error: 'Missing exchange data' }, { status: 400 });
+  }
+
+  try {
+    const result = await generateText({
+      model,
+      system: buildInsightSystemPrompt(),
+      prompt: buildInsightUserPrompt(
+        question,
+        exchangeData.results.columns,
+        exchangeData.results.rows,
+        exchangeData.results.rowCount,
+      ),
+    });
+
+    return NextResponse.json({
+      insights: result.text.trim(),
+      error: null,
+    });
+  } catch (err: any) {
+    return NextResponse.json({
+      error: `Insight generation failed: ${err.message}`,
+      insights: null,
+    }, { status: 500 });
+  }
 }

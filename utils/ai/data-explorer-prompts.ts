@@ -39,6 +39,25 @@ Database Schema:
 ${schemaText}`;
 }
 
+export function buildSqlGenerationSystemPromptWithContext(
+  schemaText: string,
+  dialect: 'tsql' | 'sqlite',
+  conversationContext: string
+): string {
+  const base = buildSqlGenerationSystemPrompt(schemaText, dialect);
+
+  if (!conversationContext) return base;
+
+  return `${base}
+
+## Conversation Context
+The user has been asking questions in this session. Use the context below to understand follow-up references like "that", "those", "the same", "group that by", "filter those", "now show", etc.
+
+${conversationContext}
+
+When the user refers to previous results (e.g., "group that by department", "now filter those", "show that as a percentage"), use the most recent query as the basis and modify it accordingly.`;
+}
+
 export function buildSqlExplanationPrompt(): string {
   return `After generating the SQL, also provide a brief one-sentence explanation of what the query does. Format your response as:
 SQL: <the query>
@@ -69,6 +88,41 @@ Rules:
 - Pick the most meaningful columns for axes`;
 }
 
+export function buildMultiChartSuggestionSystemPrompt(): string {
+  return `You are a data visualization expert. Given query results, suggest the best chart configurations to visualize the data.
+
+Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each element has this structure:
+{
+  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar",
+  "title": "Chart title",
+  "xColumn": "column name for x-axis",
+  "yColumn": "column name for y-axis or values",
+  "xLabel": "X axis label",
+  "yLabel": "Y axis label",
+  "colorColumn": "optional: categorical column for color grouping",
+  "orientation": "optional: 'v' or 'h' for vertical/horizontal",
+  "aggregation": "optional: 'sum' | 'avg' | 'count' | 'none'",
+  "yAxisType": "optional: 'linear' | 'log'"
+}
+
+Rules:
+- Suggest 1 chart for simple data (few columns, single metric)
+- Suggest 2-3 charts for multi-dimensional data (multiple metrics, categories + time, etc.)
+- Maximum 3 charts
+- Always include a line chart if there's a time/date column
+- Use "histogram" for single-column distribution analysis
+- Use "heatmap" for two categorical columns with a numeric value
+- Use "grouped_bar" when comparing categories across groups
+- Use "stacked_bar" for parts-of-whole across categories
+- Use "colorColumn" to group data by a categorical column
+- Use "orientation": "h" for horizontal bars when category labels are long
+- Use "bar" for categorical comparisons
+- Use "line" for time series or trends
+- Use "scatter" for correlation between two numeric columns
+- Use "pie" for parts of a whole (only when fewer than 8 categories)
+- Pick the most meaningful columns for each chart`;
+}
+
 export function buildChartSuggestionUserPrompt(
   question: string,
   columns: string[],
@@ -86,5 +140,123 @@ Query returned ${rowCount} rows with columns: ${colInfo}
 Sample data (first 5 rows):
 ${sample}
 
-Suggest the best chart configuration for this data.`;
+Suggest the best chart configuration(s) for this data.`;
+}
+
+export function buildSessionTitlePrompt(questions: string[]): string {
+  const questionList = questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
+  return `Generate a short, descriptive title (3-8 words) for a data analysis session based on these questions:
+
+${questionList}
+
+Rules:
+- Output ONLY the title text, nothing else
+- No quotes, no punctuation at the end
+- Be specific about what data is being analyzed
+- Examples: "Employee Salary Analysis", "Monthly Order Trends", "Customer Distribution by Region"`;
+}
+
+export function buildConversationContext(
+  messages: { question: string; sql_query: string | null; row_count: number | null }[]
+): string {
+  if (messages.length === 0) return '';
+
+  return messages.map((msg, i) => {
+    const parts = [`--- Previous query ${i + 1} ---`, `Question: ${msg.question}`];
+    if (msg.sql_query) parts.push(`SQL: ${msg.sql_query}`);
+    if (msg.row_count !== null) parts.push(`Result: ${msg.row_count} rows`);
+    return parts.join('\n');
+  }).join('\n\n');
+}
+
+// Phase 3: Refinement prompts
+
+export function buildChartRefinementSystemPrompt(): string {
+  return `You are a data visualization expert. The user wants to modify an existing chart configuration.
+
+Respond with ONLY a valid JSON array of chart configurations (no markdown fences, no explanation). Each element has this structure:
+{
+  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar",
+  "title": "Chart title",
+  "xColumn": "column name for x-axis",
+  "yColumn": "column name for y-axis or values",
+  "xLabel": "X axis label",
+  "yLabel": "Y axis label",
+  "colorColumn": "optional: categorical column for color grouping",
+  "orientation": "optional: 'v' or 'h'",
+  "aggregation": "optional: 'sum' | 'avg' | 'count' | 'none'",
+  "yAxisType": "optional: 'linear' | 'log'"
+}
+
+Rules:
+- Modify the chart(s) according to the user's instruction
+- Keep configurations that weren't mentioned unchanged
+- If user asks for a specific chart type, change it
+- If user asks to add a chart, append to the array
+- If user asks to remove a chart, remove it
+- Maximum 3 charts total`;
+}
+
+export function buildChartRefinementUserPrompt(
+  instruction: string,
+  currentConfigs: any[],
+  columns: string[],
+  types: Record<string, string>,
+  rowCount: number
+): string {
+  const colInfo = columns.map(c => `${c} (${types[c] || 'unknown'})`).join(', ');
+  return `Current chart configuration(s):
+${JSON.stringify(currentConfigs, null, 2)}
+
+Available columns: ${colInfo}
+Row count: ${rowCount}
+
+User instruction: "${instruction}"
+
+Return the updated chart configuration(s) as a JSON array.`;
+}
+
+export function buildSqlRefinementUserPrompt(
+  instruction: string,
+  originalSql: string,
+  originalQuestion: string,
+  dialect: 'tsql' | 'sqlite'
+): string {
+  const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
+  return `Original question: "${originalQuestion}"
+Original ${dialectLabel} query:
+${originalSql}
+
+User wants to modify the query: "${instruction}"
+
+Generate the updated ${dialectLabel} SELECT query. Output ONLY the SQL query, no explanations, no markdown fences.`;
+}
+
+export function buildInsightSystemPrompt(): string {
+  return `You are a data analyst. Given query results, provide brief, actionable insights about the data.
+
+Rules:
+- Write 3-5 bullet points
+- Each insight should be one sentence
+- Focus on patterns, outliers, distributions, and notable values
+- Use specific numbers from the data
+- Format as markdown bullet points
+- Be concise — no filler words`;
+}
+
+export function buildInsightUserPrompt(
+  question: string,
+  columns: string[],
+  sampleRows: Record<string, any>[],
+  rowCount: number
+): string {
+  const sample = JSON.stringify(sampleRows.slice(0, 10), null, 2);
+  return `The user asked: "${question}"
+
+Query returned ${rowCount} rows with columns: ${columns.join(', ')}
+
+Sample data (first 10 rows):
+${sample}
+
+Provide brief data insights.`;
 }

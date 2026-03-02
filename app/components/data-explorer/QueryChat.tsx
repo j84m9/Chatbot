@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import type { ChartConfig } from './PlotlyChart';
 
 export interface Exchange {
   id: string;
@@ -15,8 +16,18 @@ export interface Exchange {
     executionTimeMs: number;
   } | null;
   chartConfig: any;
+  chartConfigs: ChartConfig[] | null;
   error: string | null;
   isLoading: boolean;
+  messageType?: string;
+  parentMessageId?: string | null;
+  insights?: string | null;
+}
+
+interface RefineContext {
+  exchangeIndex: number;
+  type: 'chart' | 'sql';
+  chartIndex?: number;
 }
 
 interface QueryChatProps {
@@ -26,9 +37,15 @@ interface QueryChatProps {
   onSubmitQuestion: (question: string) => void;
   isQuerying: boolean;
   hasConnection: boolean;
+  refineContext?: RefineContext | null;
+  onCancelRefine?: () => void;
+  onRefineSubmit?: (instruction: string) => void;
 }
 
-export default function QueryChat({ exchanges, selectedIndex, onSelectExchange, onSubmitQuestion, isQuerying, hasConnection }: QueryChatProps) {
+export default function QueryChat({
+  exchanges, selectedIndex, onSelectExchange, onSubmitQuestion,
+  isQuerying, hasConnection, refineContext, onCancelRefine, onRefineSubmit,
+}: QueryChatProps) {
   const [input, setInput] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -39,7 +56,12 @@ export default function QueryChat({ exchanges, selectedIndex, onSelectExchange, 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isQuerying) return;
-    onSubmitQuestion(input);
+
+    if (refineContext && onRefineSubmit) {
+      onRefineSubmit(input);
+    } else {
+      onSubmitQuestion(input);
+    }
     setInput('');
   };
 
@@ -49,6 +71,12 @@ export default function QueryChat({ exchanges, selectedIndex, onSelectExchange, 
     'Top 10 largest tables by row count',
     'List all columns with data types',
   ];
+
+  const refineLabel = refineContext
+    ? refineContext.type === 'chart'
+      ? 'Refining chart'
+      : 'Refining SQL'
+    : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -131,9 +159,13 @@ export default function QueryChat({ exchanges, selectedIndex, onSelectExchange, 
                           </span>
                         </>
                       )}
-                      {ex.chartConfig && (
+                      {(ex.chartConfigs && ex.chartConfigs.length > 0) ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">
+                          {ex.chartConfigs.length === 1 ? 'Chart' : `${ex.chartConfigs.length} Charts`}
+                        </span>
+                      ) : ex.chartConfig ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Chart</span>
-                      )}
+                      ) : null}
                       {ex.error && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Error</span>
                       )}
@@ -148,13 +180,41 @@ export default function QueryChat({ exchanges, selectedIndex, onSelectExchange, 
         <div ref={endRef} />
       </div>
 
+      {/* Refine context indicator */}
+      {refineContext && (
+        <div className="px-4 py-2 border-t dark:border-[#2a2b2d] border-gray-200 flex items-center gap-2">
+          <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400 font-medium">
+            {refineLabel}
+          </span>
+          <span className="text-xs dark:text-gray-500 text-gray-400 truncate flex-1">
+            Query #{refineContext.exchangeIndex + 1}
+          </span>
+          {onCancelRefine && (
+            <button
+              onClick={onCancelRefine}
+              className="text-xs dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Input */}
       <div className="p-4 border-t dark:border-[#2a2b2d] border-gray-200">
         <form onSubmit={handleSubmit} className="relative flex items-center dark:bg-[#161718] bg-white rounded-xl border dark:border-white/[0.08] border-gray-200 shadow-lg focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all">
           <input
             className="w-full py-3 pl-4 pr-12 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-sm"
             value={input}
-            placeholder={hasConnection ? 'Ask a question about your data...' : 'Add a connection first...'}
+            placeholder={
+              refineContext
+                ? refineContext.type === 'chart'
+                  ? 'Describe how to change the chart (e.g., "make it a pie chart")...'
+                  : 'Describe how to modify the SQL (e.g., "add WHERE salary > 50000")...'
+                : hasConnection
+                  ? 'Ask a question about your data...'
+                  : 'Add a connection first...'
+            }
             onChange={e => setInput(e.target.value)}
             disabled={isQuerying || !hasConnection}
           />

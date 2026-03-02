@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { SchemaTable } from '@/utils/mssql/connection';
+import type { SchemaTable, ForeignKey } from '@/utils/mssql/connection';
 
 const BLOCKED_KEYWORDS = [
   'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE',
@@ -34,6 +34,17 @@ export function fetchSchema(filePath: string): SchemaTable[] {
         cid: number; name: string; type: string; notnull: number; pk: number;
       }[];
 
+      // Fetch foreign keys for this table
+      const fkRows = db.prepare(`PRAGMA foreign_key_list("${table.name}")`).all() as {
+        id: number; seq: number; table: string; from: string; to: string;
+      }[];
+
+      const foreignKeys: ForeignKey[] = fkRows.map(fk => ({
+        fromColumn: fk.from,
+        toTable: fk.table,
+        toColumn: fk.to,
+      }));
+
       schema.push({
         schema: 'main',
         name: table.name,
@@ -43,6 +54,7 @@ export function fetchSchema(filePath: string): SchemaTable[] {
           nullable: col.notnull === 0,
           isPrimaryKey: col.pk > 0,
         })),
+        foreignKeys: foreignKeys.length > 0 ? foreignKeys : undefined,
       });
     }
 
