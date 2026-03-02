@@ -1,5 +1,7 @@
 'use client';
 
+import MarkdownRenderer from '@/app/components/MarkdownRenderer';
+
 interface InsightsPanelProps {
   insights: string | null;
   onGenerate?: () => void;
@@ -38,22 +40,7 @@ export default function InsightsPanel({ insights, onGenerate }: InsightsPanelPro
           </button>
         )}
       </div>
-      <div className="prose prose-sm dark:prose-invert max-w-none dark:text-gray-300 text-gray-700 leading-relaxed">
-        {insights.split('\n').map((line, i) => {
-          const trimmed = line.trim();
-          if (!trimmed) return null;
-          // Render bullet points
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            return (
-              <div key={i} className="flex gap-2 py-1">
-                <span className="text-indigo-400 flex-shrink-0 mt-0.5">&#8226;</span>
-                <span>{trimmed.slice(2)}</span>
-              </div>
-            );
-          }
-          return <p key={i} className="py-1">{trimmed}</p>;
-        })}
-      </div>
+      <MarkdownRenderer content={insights} />
     </div>
   );
 }
