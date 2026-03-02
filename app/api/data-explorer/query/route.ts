@@ -3,7 +3,8 @@ import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { getModel } from '@/utils/ai/provider';
-import { executeQuery, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
+import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
+import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
 import {
   buildSqlGenerationSystemPrompt,
   buildChartSuggestionSystemPrompt,
@@ -46,27 +47,34 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
   }
 
+  const isSqlite = conn.db_type === 'sqlite';
+  const dialect: 'tsql' | 'sqlite' = isSqlite ? 'sqlite' : 'tsql';
+
   const encryptionKey = process.env.DB_CONNECTIONS_ENCRYPTION_KEY;
   let password: string | undefined;
-  if (conn.password_encrypted && encryptionKey) {
-    const { data: decrypted } = await dbAdmin.rpc('decrypt_text', {
-      encrypted_text: conn.password_encrypted,
-      encryption_key: encryptionKey,
-    });
-    if (decrypted) password = decrypted;
-  }
+  let mssqlConfig: ConnectionConfig | null = null;
 
-  const mssqlConfig: ConnectionConfig = {
-    server: conn.server,
-    port: conn.port,
-    database: conn.database_name,
-    username: conn.username,
-    password,
-    domain: conn.domain,
-    authType: conn.auth_type,
-    encrypt: conn.encrypt,
-    trustServerCertificate: conn.trust_server_certificate,
-  };
+  if (!isSqlite) {
+    if (conn.password_encrypted && encryptionKey) {
+      const { data: decrypted } = await dbAdmin.rpc('decrypt_text', {
+        encrypted_text: conn.password_encrypted,
+        encryption_key: encryptionKey,
+      });
+      if (decrypted) password = decrypted;
+    }
+
+    mssqlConfig = {
+      server: conn.server,
+      port: conn.port,
+      database: conn.database_name,
+      username: conn.username,
+      password,
+      domain: conn.domain,
+      authType: conn.auth_type,
+      encrypt: conn.encrypt,
+      trustServerCertificate: conn.trust_server_certificate,
+    };
+  }
 
   // 2. Get cached schema or fetch fresh
   let schema: SchemaTable[];
@@ -75,8 +83,12 @@ export async function POST(req: Request) {
     schema = cached.schema;
   } else {
     try {
-      const { fetchSchema } = await import('@/utils/mssql/connection');
-      schema = await fetchSchema(mssqlConfig);
+      if (isSqlite) {
+        schema = fetchSqliteSchema(conn.file_path);
+      } else {
+        const { fetchSchema } = await import('@/utils/mssql/connection');
+        schema = await fetchSchema(mssqlConfig!);
+      }
       schemaCache.set(connectionId, { schema, fetchedAt: Date.now() });
     } catch (err: any) {
       return NextResponse.json({ error: `Schema fetch failed: ${err.message}` }, { status: 500 });
@@ -124,12 +136,13 @@ export async function POST(req: Request) {
   const schemaText = schemaToPromptText(schema);
   let sqlQuery: string;
   let explanation: string = '';
+  const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
 
   try {
     const sqlResult = await generateText({
       model,
-      system: buildSqlGenerationSystemPrompt(schemaText),
-      prompt: `Generate a T-SQL query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
+      system: buildSqlGenerationSystemPrompt(schemaText, dialect),
+      prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
     });
 
     sqlQuery = sqlResult.text.trim();
@@ -152,10 +165,14 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 
-  // 5. Execute SQL against MSSQL
+  // 5. Execute SQL
   let results: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
   try {
-    results = await executeQuery(mssqlConfig, sqlQuery);
+    if (isSqlite) {
+      results = executeSqlite(conn.file_path, sqlQuery);
+    } else {
+      results = await executeMssql(mssqlConfig!, sqlQuery);
+    }
   } catch (err: any) {
     // Return the SQL even if execution fails
     return NextResponse.json({

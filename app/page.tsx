@@ -581,7 +581,7 @@ export default function Chat() {
                       : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm"}
                   `}>
                     {m.role === 'assistant' ? (
-                      <MarkdownRenderer content={m.parts?.map(p => p.type === 'text' ? p.text : '').join('') || ''} />
+                      <MarkdownRenderer content={m.parts?.map(p => p.type === 'text' ? p.text : '').join('') || ''} darkMode={darkMode} />
                     ) : (
                       <div className="whitespace-pre-wrap">
                         {m.parts?.map((part, index) =>

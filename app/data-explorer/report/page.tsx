@@ -1,38 +1,68 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CodeBlock from '@/app/components/CodeBlock';
-import type { Exchange } from './QueryChat';
+import dynamic from 'next/dynamic';
 
-interface ResultsPanelProps {
-  exchange: Exchange | null;
-  darkMode: boolean;
-  onClose?: () => void;
+const PlotlyChart = dynamic(() => import('@/app/components/data-explorer/PlotlyChart'), { ssr: false });
+
+interface ExchangeData {
+  question: string;
+  sql: string | null;
+  explanation: string | null;
+  results: {
+    rows: Record<string, any>[];
+    columns: string[];
+    types: Record<string, string>;
+    rowCount: number;
+    executionTimeMs: number;
+  } | null;
+  chartConfig: {
+    chartType: 'bar' | 'line' | 'scatter' | 'pie';
+    title: string;
+    xColumn: string;
+    yColumn: string;
+    xLabel?: string;
+    yLabel?: string;
+  } | null;
+  error: string | null;
 }
 
-// Lazy load PlotlyChart since it's heavy
-import dynamic from 'next/dynamic';
-const PlotlyChart = dynamic(() => import('./PlotlyChart'), { ssr: false });
+export default function ReportPage() {
+  const [exchange, setExchange] = useState<ExchangeData | null>(null);
+  const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart'>('chart');
+  const [darkMode, setDarkMode] = useState(true);
 
-export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPanelProps) {
-  const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart'>('sql');
+  useEffect(() => {
+    // Read dark mode preference
+    const saved = localStorage.getItem('theme');
+    const isDark = saved ? saved === 'dark' : true;
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle('dark', isDark);
 
-  const handlePopOut = () => {
-    if (!exchange) return;
-    sessionStorage.setItem('report-exchange', JSON.stringify({
-      question: exchange.question,
-      sql: exchange.sql,
-      explanation: exchange.explanation,
-      results: exchange.results,
-      chartConfig: exchange.chartConfig,
-      error: exchange.error,
-    }));
-    window.open(
-      '/data-explorer/report',
-      '_blank',
-      'width=1200,height=800,menubar=no,toolbar=no,location=no,status=no'
-    );
-  };
+    // Read exchange data from sessionStorage
+    const raw = sessionStorage.getItem('report-exchange');
+    if (raw) {
+      try {
+        const data: ExchangeData = JSON.parse(raw);
+        setExchange(data);
+
+        // Default to chart tab if chart is available, otherwise table, then sql
+        if (data.chartConfig && data.results) {
+          setActiveTab('chart');
+        } else if (data.results) {
+          setActiveTab('table');
+        } else {
+          setActiveTab('sql');
+        }
+
+        // Set window title
+        document.title = data.question || 'Query Report';
+      } catch {
+        // Invalid data
+      }
+    }
+  }, []);
 
   const handleCsvExport = () => {
     if (!exchange?.results) return;
@@ -62,22 +92,10 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
     URL.revokeObjectURL(url);
   };
 
-  if (!exchange || exchange.isLoading) {
+  if (!exchange) {
     return (
-      <div className="flex flex-col items-center justify-center h-full dark:text-gray-500 text-gray-400">
-        {exchange?.isLoading ? (
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-            <span className="text-sm">Generating query...</span>
-          </div>
-        ) : (
-          <div className="text-center">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-12 h-12 mx-auto mb-3 opacity-30">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
-            </svg>
-            <p className="text-sm">Ask a question to see results here</p>
-          </div>
-        )}
+      <div className="flex items-center justify-center h-screen dark:bg-[#0d0d0e] bg-gray-50">
+        <p className="dark:text-gray-500 text-gray-400 text-sm">No report data available.</p>
       </div>
     );
   }
@@ -89,9 +107,22 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-screen dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-3 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-indigo-400">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
+          </svg>
+          <span className="text-base font-semibold dark:text-gray-100 text-gray-800">Query Report</span>
+        </div>
+        <span className="text-sm dark:text-gray-400 text-gray-500 truncate max-w-[50vw]" title={exchange.question}>
+          {exchange.question}
+        </span>
+      </div>
+
       {/* Tab bar */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b dark:border-[#2a2b2d] border-gray-200 flex-shrink-0">
+      <div className="flex items-center gap-1 px-6 py-2 border-b dark:border-[#2a2b2d] border-gray-200 flex-shrink-0">
         {tabs.map(tab => (
           <button
             key={tab.key}
@@ -116,7 +147,6 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
             </span>
           )}
 
-          {/* CSV download button — visible on Table tab with rows */}
           {activeTab === 'table' && exchange.results && exchange.results.rows.length > 0 && (
             <button
               onClick={handleCsvExport}
@@ -128,35 +158,11 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
               </svg>
             </button>
           )}
-
-          {/* Pop out to new window */}
-          <button
-            onClick={handlePopOut}
-            className="p-1.5 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
-            title="Open in new window"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-            </svg>
-          </button>
-
-          {/* Close results panel */}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
-              title="Close results"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
         </div>
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-6">
         {activeTab === 'sql' && exchange.sql && (
           <CodeBlock code={exchange.sql} language="sql" />
         )}
@@ -200,11 +206,13 @@ export default function ResultsPanel({ exchange, darkMode, onClose }: ResultsPan
         )}
 
         {activeTab === 'chart' && exchange.chartConfig && exchange.results && (
-          <PlotlyChart
-            chartConfig={exchange.chartConfig}
-            rows={exchange.results.rows}
-            darkMode={darkMode}
-          />
+          <div className="h-full">
+            <PlotlyChart
+              chartConfig={exchange.chartConfig}
+              rows={exchange.results.rows}
+              darkMode={darkMode}
+            />
+          </div>
         )}
       </div>
     </div>

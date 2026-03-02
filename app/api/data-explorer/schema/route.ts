@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { fetchSchema, ConnectionConfig } from '@/utils/mssql/connection';
+import { fetchSchema as fetchMssqlSchema, ConnectionConfig } from '@/utils/mssql/connection';
+import { fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
 
 // In-memory schema cache: connectionId -> { schema, fetchedAt }
 const schemaCache = new Map<string, { schema: any; fetchedAt: number }>();
@@ -59,20 +60,24 @@ export async function GET(request: NextRequest) {
     if (!decError) password = decrypted;
   }
 
-  const config: ConnectionConfig = {
-    server: conn.server,
-    port: conn.port,
-    database: conn.database_name,
-    username: conn.username,
-    password,
-    domain: conn.domain,
-    authType: conn.auth_type,
-    encrypt: conn.encrypt,
-    trustServerCertificate: conn.trust_server_certificate,
-  };
-
   try {
-    const schema = await fetchSchema(config);
+    let schema;
+    if (conn.db_type === 'sqlite') {
+      schema = fetchSqliteSchema(conn.file_path);
+    } else {
+      const config: ConnectionConfig = {
+        server: conn.server,
+        port: conn.port,
+        database: conn.database_name,
+        username: conn.username,
+        password,
+        domain: conn.domain,
+        authType: conn.auth_type,
+        encrypt: conn.encrypt,
+        trustServerCertificate: conn.trust_server_certificate,
+      };
+      schema = await fetchMssqlSchema(config);
+    }
     schemaCache.set(connectionId, { schema, fetchedAt: Date.now() });
     return NextResponse.json({ schema, cached: false });
   } catch (err: any) {

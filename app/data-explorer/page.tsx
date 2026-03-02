@@ -176,10 +176,62 @@ export default function DataExplorer() {
 
   const handleSelectSession = async (id: string) => {
     setSessionId(id);
-    // In a production app you'd load stored messages here.
-    // For now, start with a clean slate when switching sessions.
     setExchanges([]);
     setSelectedExchangeIndex(-1);
+
+    try {
+      const res = await fetch(`/api/data-explorer/messages?sessionId=${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // Switch to the session's connection so the user can continue querying
+      if (data.connectionId) {
+        setActiveConnectionId(data.connectionId);
+      }
+
+      const loaded: Exchange[] = (data.messages ?? []).map((msg: any) => {
+        let results = null;
+        if (msg.results && msg.results.columns) {
+          // Infer column types from the first row of data
+          const types: Record<string, string> = {};
+          const firstRow = msg.results.rows?.[0];
+          if (firstRow) {
+            for (const col of msg.results.columns) {
+              const val = firstRow[col];
+              types[col] = val === null ? 'unknown'
+                : typeof val === 'number' ? 'number'
+                : typeof val === 'boolean' ? 'boolean'
+                : 'string';
+            }
+          }
+          results = {
+            rows: msg.results.rows ?? [],
+            columns: msg.results.columns,
+            types,
+            rowCount: msg.row_count ?? msg.results.rows?.length ?? 0,
+            executionTimeMs: msg.execution_time_ms ?? 0,
+          };
+        }
+
+        return {
+          id: msg.id,
+          question: msg.question,
+          sql: msg.sql_query ?? null,
+          explanation: msg.explanation ?? null,
+          results,
+          chartConfig: msg.chart_config ?? null,
+          error: msg.error ?? null,
+          isLoading: false,
+        } satisfies Exchange;
+      });
+
+      setExchanges(loaded);
+      if (loaded.length > 0) {
+        setSelectedExchangeIndex(loaded.length - 1);
+      }
+    } catch {
+      // If loading fails, session is selected but exchanges stay empty
+    }
   };
 
   const handleDeleteSession = async (id: string) => {
@@ -283,6 +335,9 @@ export default function DataExplorer() {
   }, []);
 
   const selectedExchange = selectedExchangeIndex >= 0 ? exchanges[selectedExchangeIndex] : null;
+  const showResults = selectedExchange != null && (
+    selectedExchange.isLoading || !!selectedExchange.sql || !!selectedExchange.results || !!selectedExchange.error
+  );
 
   return (
     <div className="flex h-screen w-full dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans overflow-hidden">
@@ -350,8 +405,8 @@ export default function DataExplorer() {
 
         {/* Left pane: Query Chat */}
         <div
-          className="flex flex-col pt-[57px]"
-          style={{ width: `${splitPosition}%` }}
+          className="flex flex-col pt-[57px] transition-[width] duration-300"
+          style={{ width: showResults ? `${splitPosition}%` : '100%' }}
         >
           <QueryChat
             exchanges={exchanges}
@@ -363,24 +418,29 @@ export default function DataExplorer() {
           />
         </div>
 
-        {/* Drag handle */}
-        <div
-          onMouseDown={handleMouseDown}
-          className="w-1.5 flex-shrink-0 cursor-col-resize dark:bg-[#2a2b2d] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
-        >
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
-        </div>
+        {showResults && (
+          <>
+            {/* Drag handle */}
+            <div
+              onMouseDown={handleMouseDown}
+              className="w-1.5 flex-shrink-0 cursor-col-resize dark:bg-[#2a2b2d] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
+            >
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
+            </div>
 
-        {/* Right pane: Results Panel */}
-        <div
-          className="flex flex-col pt-[57px]"
-          style={{ width: `${100 - splitPosition}%` }}
-        >
-          <ResultsPanel
-            exchange={selectedExchange}
-            darkMode={darkMode}
-          />
-        </div>
+            {/* Right pane: Results Panel */}
+            <div
+              className="flex flex-col pt-[57px]"
+              style={{ width: `${100 - splitPosition}%` }}
+            >
+              <ResultsPanel
+                exchange={selectedExchange}
+                darkMode={darkMode}
+                onClose={() => setSelectedExchangeIndex(-1)}
+              />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Connection modal */}

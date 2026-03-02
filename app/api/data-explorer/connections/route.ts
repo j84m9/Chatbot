@@ -17,7 +17,7 @@ export async function GET() {
 
   const { data, error } = await dbAdmin
     .from('db_connections')
-    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, created_at')
+    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
@@ -42,14 +42,16 @@ export async function POST(req: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+  const dbType = body.dbType || 'mssql';
+
   const encryptionKey = process.env.DB_CONNECTIONS_ENCRYPTION_KEY;
-  if (!encryptionKey) {
+  if (dbType !== 'sqlite' && !encryptionKey) {
     return NextResponse.json({ error: 'Encryption key not configured' }, { status: 500 });
   }
 
   // Encrypt password if provided
   let passwordEncrypted: string | null = null;
-  if (body.password) {
+  if (body.password && encryptionKey) {
     const { data: encResult, error: encError } = await dbAdmin.rpc('encrypt_text', {
       plain_text: body.password,
       encryption_key: encryptionKey,
@@ -60,22 +62,34 @@ export async function POST(req: Request) {
     passwordEncrypted = encResult;
   }
 
+  const insertData: Record<string, any> = {
+    user_id: user.id,
+    name: body.name,
+    db_type: dbType,
+  };
+
+  if (dbType === 'sqlite') {
+    insertData.file_path = body.filePath;
+    insertData.server = 'local';
+    insertData.port = 0;
+    insertData.database_name = body.filePath;
+    insertData.auth_type = 'sql';
+  } else {
+    insertData.server = body.server;
+    insertData.port = body.port || 1433;
+    insertData.database_name = body.database;
+    insertData.username = body.username;
+    insertData.password_encrypted = passwordEncrypted;
+    insertData.domain = body.domain || null;
+    insertData.auth_type = body.authType || 'sql';
+    insertData.encrypt = body.encrypt ?? true;
+    insertData.trust_server_certificate = body.trustServerCertificate ?? false;
+  }
+
   const { data, error } = await dbAdmin
     .from('db_connections')
-    .insert({
-      user_id: user.id,
-      name: body.name,
-      server: body.server,
-      port: body.port || 1433,
-      database_name: body.database,
-      username: body.username,
-      password_encrypted: passwordEncrypted,
-      domain: body.domain || null,
-      auth_type: body.authType || 'sql',
-      encrypt: body.encrypt ?? true,
-      trust_server_certificate: body.trustServerCertificate ?? false,
-    })
-    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, created_at')
+    .insert(insertData)
+    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at')
     .single();
 
   if (error) {

@@ -95,7 +95,29 @@ export async function POST(req: Request) {
   // 6. Start Stream
   const result = streamText({
     model,
-    system: "You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.",
+    system: `You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.
+
+When asked to plot, graph, or visualize a mathematical function or data, generate an interactive chart using a plotly code fence. NEVER respond with Python/matplotlib code or say you cannot create plots.
+
+Format for math functions:
+\`\`\`plotly
+{"chartType":"line","title":"sin(x)","function":"Math.sin(x)","xMin":-10,"xMax":10,"points":200,"xLabel":"x","yLabel":"y"}
+\`\`\`
+
+For multiple functions on one chart:
+\`\`\`plotly
+{"chartType":"line","title":"Trig Functions","functions":[{"expr":"Math.sin(x)","label":"sin(x)"},{"expr":"Math.cos(x)","label":"cos(x)"}],"xMin":-6.28,"xMax":6.28,"points":200,"xLabel":"x","yLabel":"y"}
+\`\`\`
+
+For data-based charts:
+\`\`\`plotly
+{"chartType":"bar","title":"Sales","data":{"x":["Q1","Q2","Q3","Q4"],"y":[100,200,150,300]},"xLabel":"Quarter","yLabel":"Revenue"}
+\`\`\`
+
+Supported chartType values: "line", "scatter", "bar", "pie".
+Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow, Math.PI, Math.E. For x^n use Math.pow(x,n).
+
+Always include a brief text explanation before or after the chart.`,
     messages: await convertToModelMessages(messages),
   });
 

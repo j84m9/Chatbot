@@ -1,4 +1,25 @@
-export function buildSqlGenerationSystemPrompt(schemaText: string): string {
+export function buildSqlGenerationSystemPrompt(schemaText: string, dialect: 'tsql' | 'sqlite' = 'tsql'): string {
+  if (dialect === 'sqlite') {
+    return `You are a SQLite SQL expert. Given a database schema and a natural language question, generate a valid SQLite SELECT query.
+
+Rules:
+- Output ONLY the SQL query, no explanations, no markdown fences
+- Use standard SQLite SQL syntax
+- Only generate SELECT statements — never INSERT, UPDATE, DELETE, DROP, ALTER, or any DDL/DML
+- Use proper table and column names from the schema (use double quotes for reserved words, NOT square brackets)
+- Use appropriate JOINs when querying across tables
+- Use aliases for readability
+- Add ORDER BY when results benefit from sorting
+- Limit results with LIMIT 1000 unless the user specifies otherwise (do NOT use TOP)
+- Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
+- Handle date filtering with SQLite date functions (date(), time(), datetime(), strftime()) — do NOT use DATEADD, DATEDIFF, or GETDATE
+- Use || for string concatenation, not +
+- If the question is ambiguous, make a reasonable assumption and proceed
+
+Database Schema:
+${schemaText}`;
+  }
+
   return `You are a SQL Server (T-SQL) expert. Given a database schema and a natural language question, generate a valid T-SQL SELECT query.
 
 Rules:

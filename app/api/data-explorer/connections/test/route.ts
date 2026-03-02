@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createAuthClient } from '@/utils/supabase/server';
-import { testConnection, ConnectionConfig } from '@/utils/mssql/connection';
+import { testConnection as testMssql, ConnectionConfig } from '@/utils/mssql/connection';
+import { testConnection as testSqlite } from '@/utils/sqlite/connection';
 
 export async function POST(req: Request) {
   const authClient = await createAuthClient();
@@ -11,6 +12,14 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
+
+  if (body.dbType === 'sqlite') {
+    if (!body.filePath) {
+      return NextResponse.json({ success: false, error: 'File path is required' });
+    }
+    const result = testSqlite(body.filePath);
+    return NextResponse.json(result);
+  }
 
   const config: ConnectionConfig = {
     server: body.server,
@@ -24,6 +33,6 @@ export async function POST(req: Request) {
     trustServerCertificate: body.trustServerCertificate ?? false,
   };
 
-  const result = await testConnection(config);
+  const result = await testMssql(config);
   return NextResponse.json(result);
 }

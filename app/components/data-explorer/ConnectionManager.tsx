@@ -8,6 +8,7 @@ interface ConnectionManagerProps {
 }
 
 export default function ConnectionManager({ onSave, onClose }: ConnectionManagerProps) {
+  const [dbType, setDbType] = useState<'mssql' | 'sqlite'>('mssql');
   const [name, setName] = useState('');
   const [server, setServer] = useState('');
   const [port, setPort] = useState('1433');
@@ -18,16 +19,22 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
   const [domain, setDomain] = useState('');
   const [encrypt, setEncrypt] = useState(true);
   const [trustCert, setTrustCert] = useState(false);
+  const [filePath, setFilePath] = useState('');
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; version?: string; error?: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const connectionPayload = {
-    name, server, port: parseInt(port) || 1433, database,
-    authType, username, password, domain,
-    encrypt, trustServerCertificate: trustCert,
-  };
+  const connectionPayload = dbType === 'sqlite'
+    ? { dbType, name, filePath }
+    : {
+        dbType, name, server, port: parseInt(port) || 1433, database,
+        authType, username, password, domain,
+        encrypt, trustServerCertificate: trustCert,
+      };
+
+  const canTest = dbType === 'sqlite' ? !!filePath : (!!server && !!database);
+  const canSave = dbType === 'sqlite' ? (!!name && !!filePath) : (!!name && !!server && !!database);
 
   const handleTest = async () => {
     setTesting(true);
@@ -82,62 +89,84 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
         {/* Body */}
         <div className="px-6 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
           <div>
-            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Connection Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="My Database" className={inputClass} />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
-              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Server Host</label>
-              <input value={server} onChange={e => setServer(e.target.value)} placeholder="localhost" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Port</label>
-              <input value={port} onChange={e => setPort(e.target.value)} placeholder="1433" className={inputClass} />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Database</label>
-            <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="MyDatabase" className={inputClass} />
-          </div>
-
-          <div>
-            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication</label>
-            <select value={authType} onChange={e => setAuthType(e.target.value as 'sql' | 'windows')} className={inputClass + ' cursor-pointer'}>
-              <option value="sql">SQL Server Authentication</option>
-              <option value="windows">Windows Authentication</option>
+            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Database Type</label>
+            <select
+              value={dbType}
+              onChange={e => { setDbType(e.target.value as 'mssql' | 'sqlite'); setTestResult(null); }}
+              className={inputClass + ' cursor-pointer'}
+            >
+              <option value="mssql">SQL Server (MSSQL)</option>
+              <option value="sqlite">SQLite</option>
             </select>
           </div>
 
-          {authType === 'windows' && (
+          <div>
+            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Connection Name</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={dbType === 'sqlite' ? 'Demo DB' : 'My Database'} className={inputClass} />
+          </div>
+
+          {dbType === 'sqlite' ? (
             <div>
-              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Domain</label>
-              <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
+              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Database File Path</label>
+              <input value={filePath} onChange={e => setFilePath(e.target.value)} placeholder="./data/demo.db" className={inputClass} />
+              <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">Path to the SQLite database file on the server</p>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Server Host</label>
+                  <input value={server} onChange={e => setServer(e.target.value)} placeholder="localhost" className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Port</label>
+                  <input value={port} onChange={e => setPort(e.target.value)} placeholder="1433" className={inputClass} />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Database</label>
+                <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="MyDatabase" className={inputClass} />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication</label>
+                <select value={authType} onChange={e => setAuthType(e.target.value as 'sql' | 'windows')} className={inputClass + ' cursor-pointer'}>
+                  <option value="sql">SQL Server Authentication</option>
+                  <option value="windows">Windows Authentication</option>
+                </select>
+              </div>
+
+              {authType === 'windows' && (
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Domain</label>
+                  <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Username</label>
+                  <input value={username} onChange={e => setUsername(e.target.value)} placeholder="sa" className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
+                </div>
+              </div>
+
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
+                  <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="rounded" />
+                  Encrypt Connection
+                </label>
+                <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
+                  <input type="checkbox" checked={trustCert} onChange={e => setTrustCert(e.target.checked)} className="rounded" />
+                  Trust Server Certificate
+                </label>
+              </div>
+            </>
           )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Username</label>
-              <input value={username} onChange={e => setUsername(e.target.value)} placeholder="sa" className={inputClass} />
-            </div>
-            <div>
-              <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
-            </div>
-          </div>
-
-          <div className="flex gap-6">
-            <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
-              <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="rounded" />
-              Encrypt Connection
-            </label>
-            <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
-              <input type="checkbox" checked={trustCert} onChange={e => setTrustCert(e.target.checked)} className="rounded" />
-              Trust Server Certificate
-            </label>
-          </div>
 
           {/* Test result */}
           {testResult && (
@@ -158,14 +187,14 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t dark:border-[#2a2b2d] border-gray-200">
           <button
             onClick={handleTest}
-            disabled={!server || !database || testing}
+            disabled={!canTest || testing}
             className="px-4 py-2 text-sm font-medium dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 rounded-lg disabled:opacity-40 transition-colors cursor-pointer border dark:border-[#2a2b2d] border-gray-200"
           >
             {testing ? 'Testing...' : 'Test Connection'}
           </button>
           <button
             onClick={handleSave}
-            disabled={!name || !server || !database || saving}
+            disabled={!canSave || saving}
             className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
           >
             {saving ? 'Saving...' : 'Save Connection'}

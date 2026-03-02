@@ -3,7 +3,13 @@
 import dynamic from 'next/dynamic';
 import { useMemo } from 'react';
 
-const Plot = dynamic(() => import('react-plotly.js'), { ssr: false });
+const Plot = dynamic(
+  () =>
+    Promise.all([import('react-plotly.js/factory'), import('plotly.js-dist-min')]).then(
+      ([{ default: createPlot }, { default: Plotly }]) => ({ default: createPlot(Plotly) })
+    ),
+  { ssr: false }
+);
 
 interface ChartConfig {
   chartType: 'bar' | 'line' | 'scatter' | 'pie';
