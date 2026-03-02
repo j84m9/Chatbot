@@ -92,10 +92,25 @@ export async function POST(req: Request) {
 
   const provider = settings?.selected_provider || 'ollama';
   const modelId = settings?.selected_model || 'llama3.2:1b';
+
+  // Decrypt API keys (backward-compatible: falls back to plain text if decrypt fails)
+  async function decryptApiKey(value: string | null): Promise<string | null> {
+    if (!value || !encryptionKey) return value;
+    try {
+      const { data } = await dbAdmin.rpc('decrypt_text', {
+        encrypted_text: value,
+        encryption_key: encryptionKey,
+      });
+      return data || value;
+    } catch {
+      return value;
+    }
+  }
+
   const keyMap: Record<string, string | null> = {
-    openai: settings?.openai_api_key,
-    anthropic: settings?.anthropic_api_key,
-    google: settings?.google_api_key,
+    openai: await decryptApiKey(settings?.openai_api_key),
+    anthropic: await decryptApiKey(settings?.anthropic_api_key),
+    google: await decryptApiKey(settings?.google_api_key),
   };
 
   let model;
