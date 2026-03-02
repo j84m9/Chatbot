@@ -56,8 +56,8 @@ export default function CodeBlock({ code, language }: CodeBlockProps) {
           theme: isDark ? 'github-dark' : 'github-light',
         });
         if (!cancelled) setHighlightedHtml(html);
-      } catch (err) {
-        console.error('[CodeBlock] Shiki failed:', err);
+      } catch {
+        // Shiki failed — plain text fallback is already showing
       }
     })();
 
