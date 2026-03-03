@@ -64,6 +64,8 @@ export default function Chat() {
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savedApiKeys, setSavedApiKeys] = useState<Record<string, string | null>>({});
+  const [deleteKeyConfirm, setDeleteKeyConfirm] = useState(false);
+  const [deleteKeyInput, setDeleteKeyInput] = useState('');
 
   const supabase = createClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -226,6 +228,8 @@ export default function Chat() {
     const firstModel = modelCatalog[provider]?.[0]?.id || '';
     setSelectedModel(firstModel);
     setApiKeyInput('');
+    setDeleteKeyConfirm(false);
+    setDeleteKeyInput('');
     saveSettings({ selected_provider: provider, selected_model: firstModel });
   };
 
@@ -237,6 +241,12 @@ export default function Chat() {
   const handleSaveApiKey = () => {
     saveSettings({ [apiKeyField]: apiKeyInput });
     setApiKeyInput('');
+  };
+
+  const handleDeleteApiKey = () => {
+    saveSettings({ [apiKeyField]: '' });
+    setDeleteKeyConfirm(false);
+    setDeleteKeyInput('');
   };
 
   // Quick model switch from input dropdown
@@ -802,28 +812,76 @@ export default function Chat() {
                             API Key
                           </label>
                           {savedApiKeys[selectedProvider] && (
-                            <span className="text-xs text-indigo-400 flex items-center gap-1">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                                <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
-                              </svg>
-                              Saved
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-indigo-400 flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                  <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                                </svg>
+                                Saved
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => { setDeleteKeyConfirm(true); setDeleteKeyInput(''); }}
+                                className="text-[10px] text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                              >
+                                Delete
+                              </button>
+                            </div>
                           )}
                         </div>
-                        <input
-                          type="password"
-                          value={apiKeyInput}
-                          onChange={(e) => setApiKeyInput(e.target.value)}
-                          placeholder={savedApiKeys[selectedProvider] ? 'Enter new key to replace...' : 'Enter API key...'}
-                          className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-colors"
-                        />
-                        <button
-                          onClick={handleSaveApiKey}
-                          disabled={!apiKeyInput.trim()}
-                          className="w-full mt-2 text-sm py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
-                        >
-                          Save Key
-                        </button>
+
+                        {/* Delete confirmation */}
+                        {deleteKeyConfirm && savedApiKeys[selectedProvider] ? (
+                          <div className="space-y-2">
+                            <div className="px-3 py-2.5 rounded-lg border dark:border-red-500/20 border-red-200 dark:bg-red-500/5 bg-red-50">
+                              <p className="text-xs dark:text-red-400 text-red-600 mb-2">
+                                To confirm, type <span className="font-semibold">delete</span> below.
+                              </p>
+                              <input
+                                type="text"
+                                value={deleteKeyInput}
+                                onChange={(e) => setDeleteKeyInput(e.target.value)}
+                                placeholder="Type delete to confirm"
+                                className="w-full text-sm dark:bg-[#111213] bg-white dark:text-gray-200 text-gray-800 border dark:border-red-500/30 border-red-300 rounded-lg px-3 py-1.5 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/20 transition-colors"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => { setDeleteKeyConfirm(false); setDeleteKeyInput(''); }}
+                                className="flex-1 text-sm py-1.5 dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleDeleteApiKey}
+                                disabled={deleteKeyInput !== 'delete'}
+                                className="flex-1 text-sm py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
+                              >
+                                Delete Key
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <input
+                              type="password"
+                              value={apiKeyInput}
+                              onChange={(e) => setApiKeyInput(e.target.value)}
+                              placeholder={savedApiKeys[selectedProvider] ? 'Enter new key to replace...' : 'Enter API key...'}
+                              className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-colors"
+                            />
+                            <button
+                              onClick={handleSaveApiKey}
+                              disabled={!apiKeyInput.trim()}
+                              className="w-full mt-2 text-sm py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
+                            >
+                              Save Key
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
