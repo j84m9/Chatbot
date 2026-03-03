@@ -12,6 +12,7 @@ interface ResultsPanelProps {
   onRefineChart?: (chartIndex: number) => void;
   onRefineSql?: () => void;
   onRequestInsights?: () => void;
+  onSaveQuery?: (data: { question: string; sql: string; explanation: string | null; chartConfigs: any }) => void;
 }
 
 // Lazy load chart components since they're heavy
@@ -19,9 +20,11 @@ import dynamic from 'next/dynamic';
 const ChartGallery = dynamic(() => import('./ChartGallery'), { ssr: false });
 const InsightsPanel = dynamic(() => import('./InsightsPanel'), { ssr: false });
 
-export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights }: ResultsPanelProps) {
+export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights, onSaveQuery }: ResultsPanelProps) {
   const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart' | 'insights'>('sql');
   const prevExchangeKey = useRef<string | null>(null);
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [saveName, setSaveName] = useState('');
 
   // Auto-select the best tab when exchange changes or finishes loading
   useEffect(() => {
@@ -177,6 +180,65 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChar
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
             </button>
+          )}
+
+          {/* Save query button */}
+          {onSaveQuery && exchange.sql && (
+            showSaveInput ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={saveName}
+                  onChange={e => setSaveName(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && saveName.trim()) {
+                      onSaveQuery({
+                        question: exchange.question,
+                        sql: exchange.sql!,
+                        explanation: exchange.explanation,
+                        chartConfigs: exchange.chartConfigs || (exchange.chartConfig ? [exchange.chartConfig] : null),
+                      });
+                      setShowSaveInput(false);
+                      setSaveName('');
+                    }
+                    if (e.key === 'Escape') {
+                      setShowSaveInput(false);
+                      setSaveName('');
+                    }
+                  }}
+                  placeholder="Query name..."
+                  className="text-xs w-28 dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-md px-2 py-1 outline-none focus:border-indigo-500 transition-colors"
+                />
+                <button
+                  onClick={() => {
+                    if (saveName.trim()) {
+                      onSaveQuery({
+                        question: exchange.question,
+                        sql: exchange.sql!,
+                        explanation: exchange.explanation,
+                        chartConfigs: exchange.chartConfigs || (exchange.chartConfig ? [exchange.chartConfig] : null),
+                      });
+                      setShowSaveInput(false);
+                      setSaveName('');
+                    }
+                  }}
+                  disabled={!saveName.trim()}
+                  className="p-1 rounded text-xs text-indigo-400 hover:bg-indigo-500/10 disabled:opacity-30 cursor-pointer transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowSaveInput(true)}
+                className="p-1.5 rounded-lg dark:text-amber-400 text-amber-500 dark:hover:bg-amber-500/10 hover:bg-amber-50 transition-colors cursor-pointer"
+                title="Save query"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
+                </svg>
+              </button>
+            )
           )}
 
           {/* Pop out to new window */}

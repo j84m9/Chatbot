@@ -22,6 +22,7 @@ export interface Exchange {
   messageType?: string;
   parentMessageId?: string | null;
   insights?: string | null;
+  statusMessage?: string;
 }
 
 interface RefineContext {
@@ -40,13 +41,19 @@ interface QueryChatProps {
   refineContext?: RefineContext | null;
   onCancelRefine?: () => void;
   onRefineSubmit?: (instruction: string) => void;
+  // Controlled input (optional — falls back to internal state)
+  inputValue?: string;
+  onInputChange?: (value: string) => void;
 }
 
 export default function QueryChat({
   exchanges, selectedIndex, onSelectExchange, onSubmitQuestion,
   isQuerying, hasConnection, refineContext, onCancelRefine, onRefineSubmit,
+  inputValue: controlledInput, onInputChange,
 }: QueryChatProps) {
-  const [input, setInput] = useState('');
+  const [internalInput, setInternalInput] = useState('');
+  const input = controlledInput !== undefined ? controlledInput : internalInput;
+  const setInput = onInputChange || setInternalInput;
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,10 +142,11 @@ export default function QueryChat({
                 }`}
               >
                 {ex.isLoading ? (
-                  <div className="flex items-center gap-1.5 py-1">
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <div className="flex items-center gap-2 py-1">
+                    <div className="w-3.5 h-3.5 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin flex-shrink-0" />
+                    <span className="text-xs dark:text-gray-400 text-gray-500">
+                      {ex.statusMessage || 'Processing...'}
+                    </span>
                   </div>
                 ) : ex.error && !ex.sql ? (
                   <span className="text-red-400">{ex.error}</span>

@@ -28,12 +28,15 @@ app/
     report/page.tsx     — Standalone pop-out report window (BI report style)
   api/
     chat/route.ts       — POST: streams AI response, saves user+assistant messages
-    sessions/route.ts   — GET: list sessions, DELETE: remove session + messages
+    sessions/route.ts   — GET: list sessions, PATCH: rename/update system prompt, DELETE: remove session + messages
+    search/route.ts     — GET: full-text search across chat messages
     messages/route.ts   — GET: fetch messages for a session (rebuilds AI SDK format)
     settings/route.ts   — GET/POST: user provider/model/API key settings (encrypt/decrypt)
     models/route.ts     — GET: static model catalog + provider names
     data-explorer/
       query/route.ts    — POST: natural language → SQL → execute → multi-chart suggestion (+ chart/SQL refinement, insights)
+      query-stream/route.ts — POST: SSE streaming version of query (progressive SQL → results → charts)
+      saved-queries/route.ts — GET/POST/DELETE: saved/pinned queries per connection
       connections/route.ts — CRUD for database connections (MSSQL + SQLite)
       connections/test/route.ts — POST: test a database connection
       schema/route.ts   — GET: fetch and cache database schema
@@ -47,10 +50,15 @@ app/
       PlotlyChart.tsx   — Plotly chart wrapper (8 chart types, color grouping, orientation)
       ChartGallery.tsx  — Multi-chart gallery with per-chart refine buttons
       InsightsPanel.tsx — AI-generated data insights with regenerate
-      DataExplorerSidebar.tsx — Sidebar with connections, sessions (AI titles), settings
+      DataExplorerSidebar.tsx — Sidebar with connections, schema browser, saved queries, sessions (AI titles), settings
+      SchemaBrowser.tsx — Collapsible tree view of database tables/columns with click-to-insert
+    SearchModal.tsx      — Full-text chat search modal with keyboard navigation
+    SystemPromptEditor.tsx — System prompt customization modal with presets
     MarkdownRenderer.tsx — Markdown rendering for chat messages
     CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
     ChatPlot.tsx        — Inline chart rendering in chat messages
+hooks/
+  useKeyboardShortcuts.ts — Global keyboard shortcut hook (Cmd+K, Cmd+N, Cmd+/, Escape)
 utils/
   ai/provider.ts        — getModel() factory, MODEL_CATALOG, PROVIDER_NAMES
   ai/data-explorer-prompts.ts — Prompt templates for SQL generation and chart suggestion
@@ -80,7 +88,8 @@ db/migrations/         — SQL migration files (dbmate format)
 ## Database Schema
 
 ### `chat_sessions`
-- `id` UUID PK, `created_at` TIMESTAMPTZ, `title` TEXT, `user_id` UUID (FK to auth.users)
+- `id` UUID PK, `created_at` TIMESTAMPTZ, `title` TEXT, `system_prompt` TEXT nullable, `user_id` UUID (FK to auth.users)
+- `system_prompt`: custom system prompt for the session (null = use default)
 - RLS enabled: users can only access their own sessions
 
 ### `chat_messages`
@@ -101,6 +110,10 @@ db/migrations/         — SQL migration files (dbmate format)
 - RLS enabled
 - `db_type` column: 'mssql' or 'sqlite'
 - `file_path`: absolute path to SQLite file (used when `db_type` = 'sqlite')
+
+### `saved_queries`
+- `id` UUID PK, `user_id` UUID (FK), `connection_id` UUID (FK to db_connections), `name` TEXT, `question` TEXT, `sql_query` TEXT, `explanation` TEXT, `chart_configs` JSONB, `source_message_id` UUID (FK to data_explorer_messages, SET NULL), `created_at` TIMESTAMPTZ
+- RLS enabled: full CRUD gated on `auth.uid() = user_id`
 
 ### `data_explorer_sessions`
 - `id` UUID PK, `user_id` UUID (FK), `connection_id` UUID (FK), `title` TEXT, `ai_title` TEXT nullable, `created_at` TIMESTAMPTZ
@@ -149,6 +162,42 @@ All API routes use a two-client pattern:
 - **Chart refinement**: User clicks "Refine" on a chart → types instruction → backend returns updated chartConfigs → original exchange updates in place (no new SQL execution)
 - **SQL refinement**: User clicks "Refine SQL" → types instruction → creates new exchange with modified SQL + new results
 - **Data insights**: AI-generated bullet points about query results, available on the Insights tab. Generated on demand, cached in exchange
+
+### Chat Search
+- `SearchModal.tsx` opens via `Cmd+K` or search icon in sidebar
+- Debounced search (300ms) hits `/api/search?q=keyword`
+- Server joins `chat_messages` + `chat_sessions`, filters by `ILIKE` on JSONB content cast to text
+- Results grouped by session with match snippets, keyboard navigation (arrows + Enter + Escape)
+
+### System Prompt Customization
+- `SystemPromptEditor.tsx` modal with textarea + preset chips (Concise, Detailed, Code-focused, Creative)
+- Stored per session in `chat_sessions.system_prompt` column
+- `chat/route.ts` fetches `system_prompt` from session, falls back to `DEFAULT_SYSTEM_PROMPT`
+- PATCH `/api/sessions` accepts `system_prompt` (null clears custom prompt)
+
+### Keyboard Shortcuts
+- `useKeyboardShortcuts` hook in `app/hooks/useKeyboardShortcuts.ts`
+- Skips firing when user is typing (except Escape)
+- Chat: `Cmd+K` (search), `Cmd+N` (new chat), `Cmd+/` (sidebar), `Escape` (close modals)
+- Data Explorer: `Cmd+N` (new query), `Cmd+/` (sidebar), `Escape` (cancel refinement)
+
+### Saved Queries
+- Standalone table `saved_queries` tied to connection (not session)
+- CRUD via `/api/data-explorer/saved-queries`
+- Save button in ResultsPanel tab bar (inline name input)
+- Sidebar "Saved Queries" collapsible section with play (re-run) + delete buttons
+
+### Schema Browser
+- `SchemaBrowser.tsx` fetches from existing `/api/data-explorer/schema` endpoint
+- Collapsible tree: table → columns with type badges, PK (key icon), FK (link icon)
+- Click column → inserts `"table"."column"` into query input via lifted state
+
+### Streaming SQL Generation
+- SSE via `/api/data-explorer/query-stream` using `ReadableStream`
+- Stages: `status` → `sql` → `results` → `explanation` + `charts` (parallel) → `complete`
+- Frontend parses events, updates exchange progressively
+- Spinner + status text replaces bouncing dots during loading
+- Original `/api/data-explorer/query` kept for non-streaming callers (refinement, insights)
 
 ### Frontend Architecture (page.tsx ~690 lines)
 - Single-page app with all state in `page.tsx`
@@ -200,6 +249,14 @@ All API routes use a two-client pattern:
 - [x] Pop-out report window (opens results in new browser window, BI report style)
 - [x] CSV export for Data Explorer table results
 - [x] Data Explorer message history persistence and reload
+- [x] Keyboard shortcuts: Cmd+K (search), Cmd+N (new chat/query), Cmd+/ (toggle sidebar), Escape
+- [x] Rename chat sessions (double-click or 3-dot menu)
+- [x] Chat search: full-text search across all messages (Cmd+K modal)
+- [x] System prompt customization per chat session (with presets)
+- [x] Saved/pinned queries in Data Explorer (per connection)
+- [x] Schema browser in Data Explorer sidebar (collapsible tree, click-to-insert columns)
+- [x] Query history search in Data Explorer sidebar
+- [x] Streaming SQL generation with progressive status updates (SSE)
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
@@ -220,15 +277,10 @@ None currently tracked.
 
 ## Future Improvements
 - [ ] File/image upload support
-- [ ] Chat search functionality
 - [ ] Export chat as PDF/text
-- [ ] System prompt customization per chat
-- [ ] Rename chat sessions
 - [ ] Responsive mobile layout
 - [ ] Rate limiting on API routes
 - [ ] Add error boundaries and loading states
-- [ ] Keyboard shortcuts (Cmd+K for new chat, etc.)
 - [ ] PostgreSQL support in Data Explorer
 - [ ] MySQL support in Data Explorer
-- [ ] Saved/pinned queries in Data Explorer
 - [ ] Multi-chart dashboard view (pinned charts)

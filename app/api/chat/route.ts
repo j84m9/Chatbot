@@ -92,10 +92,8 @@ export async function POST(req: Request) {
     return new Response(err.message, { status: 400 });
   }
 
-  // 6. Start Stream
-  const result = streamText({
-    model,
-    system: `You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.
+  // 6. Resolve system prompt
+  const DEFAULT_SYSTEM_PROMPT = `You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.
 
 When asked to plot, graph, or visualize a mathematical function or data, generate an interactive chart using a plotly code fence. NEVER respond with Python/matplotlib code or say you cannot create plots.
 
@@ -117,7 +115,28 @@ For data-based charts:
 Supported chartType values: "line", "scatter", "bar", "pie".
 Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow, Math.PI, Math.E. For x^n use Math.pow(x,n).
 
-Always include a brief text explanation before or after the chart.`,
+Always include a brief text explanation before or after the chart.`;
+
+  // Fetch custom system prompt from session (graceful if column doesn't exist yet)
+  let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+  try {
+    const { data: sessionData } = await dbAdmin
+      .from('chat_sessions')
+      .select('system_prompt')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionData?.system_prompt) {
+      systemPrompt = sessionData.system_prompt;
+    }
+  } catch {
+    // system_prompt column may not exist yet — use default
+  }
+
+  // Start Stream
+  const result = streamText({
+    model,
+    system: systemPrompt,
     messages: await convertToModelMessages(messages),
   });
 

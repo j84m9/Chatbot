@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import DataExplorerSidebar from '@/app/components/data-explorer/DataExplorerSidebar';
+import DataExplorerSidebar, { SavedQuery } from '@/app/components/data-explorer/DataExplorerSidebar';
 import ConnectionManager from '@/app/components/data-explorer/ConnectionManager';
 import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
+import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 
 interface RefineContext {
   exchangeIndex: number;
@@ -48,6 +49,12 @@ export default function DataExplorer() {
   const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string }[]>>({});
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [savedApiKeys, setSavedApiKeys] = useState<Record<string, string | null>>({});
+
+  // Saved queries
+  const [savedQueries, setSavedQueries] = useState<SavedQuery[]>([]);
+
+  // Lifted input state for QueryChat (allows schema browser to insert text)
+  const [queryInput, setQueryInput] = useState('');
 
   // Draggable split pane
   const [splitPosition, setSplitPosition] = useState(45); // percentage
@@ -140,6 +147,71 @@ export default function DataExplorer() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/login';
+  };
+
+  // Keyboard shortcuts
+  const shortcuts = useMemo(() => ({
+    'meta+n': () => handleNewQuery(),
+    'meta+/': () => setSidebarCollapsed(prev => !prev),
+    'escape': () => {
+      if (refineContext) setRefineContext(null);
+    },
+  }), [refineContext]);
+  useKeyboardShortcuts(shortcuts);
+
+  // Load saved queries
+  const fetchSavedQueries = useCallback(async () => {
+    const res = await fetch('/api/data-explorer/saved-queries');
+    if (res.ok) {
+      const data = await res.json();
+      setSavedQueries(data);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSavedQueries();
+  }, [fetchSavedQueries]);
+
+  const handleSaveQuery = async (data: { question: string; sql: string; explanation: string | null; chartConfigs: any }) => {
+    if (!activeConnectionId) return;
+    const name = prompt('Enter a name for this saved query:');
+    if (!name?.trim()) return;
+
+    const res = await fetch('/api/data-explorer/saved-queries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        question: data.question,
+        sql_query: data.sql,
+        explanation: data.explanation,
+        chart_configs: data.chartConfigs,
+        connection_id: activeConnectionId,
+      }),
+    });
+
+    if (res.ok) {
+      fetchSavedQueries();
+    }
+  };
+
+  const handleDeleteSavedQuery = async (id: string) => {
+    const res = await fetch(`/api/data-explorer/saved-queries?id=${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setSavedQueries(prev => prev.filter(q => q.id !== id));
+    }
+  };
+
+  const handleRunSavedQuery = (query: SavedQuery) => {
+    // Set the connection and submit the question
+    if (query.connection_id !== activeConnectionId) {
+      setActiveConnectionId(query.connection_id);
+    }
+    handleSubmitQuestion(query.question);
+  };
+
+  const handleInsertColumn = (text: string) => {
+    setQueryInput(prev => prev ? prev + ' ' + text : text);
   };
 
   // Load connections
@@ -270,6 +342,7 @@ export default function DataExplorer() {
       chartConfigs: null,
       error: null,
       isLoading: true,
+      statusMessage: 'Starting...',
     };
 
     setExchanges(prev => [...prev, newExchange]);
@@ -277,7 +350,7 @@ export default function DataExplorer() {
     setIsQuerying(true);
 
     try {
-      const res = await fetch('/api/data-explorer/query', {
+      const res = await fetch('/api/data-explorer/query-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -287,33 +360,70 @@ export default function DataExplorer() {
         }),
       });
 
-      const data = await res.json();
-
-      // If this created a new session, track it
-      if (data.sessionId && !sessionId) {
-        setSessionId(data.sessionId);
-        fetchSessions();
-      } else if (data.sessionId) {
-        // Refresh sessions to pick up AI title updates
-        fetchSessions();
+      if (!res.ok || !res.body) {
+        throw new Error('Stream request failed');
       }
 
-      setExchanges(prev =>
-        prev.map(ex =>
-          ex.id === exchangeId
-            ? {
-                ...ex,
-                sql: data.sql,
-                explanation: data.explanation,
-                results: data.results,
-                chartConfig: data.chartConfig,
-                chartConfigs: data.chartConfigs,
-                error: data.error,
-                isLoading: false,
-              }
-            : ex
-        )
-      );
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { stage, data } = JSON.parse(line.slice(6));
+
+            setExchanges(prev =>
+              prev.map(ex => {
+                if (ex.id !== exchangeId) return ex;
+                switch (stage) {
+                  case 'status':
+                    return { ...ex, statusMessage: data.message };
+                  case 'sql':
+                    return { ...ex, sql: data.sql };
+                  case 'results':
+                    return { ...ex, results: data.results };
+                  case 'explanation':
+                    return { ...ex, explanation: data.explanation };
+                  case 'charts':
+                    return {
+                      ...ex,
+                      chartConfig: data.chartConfig,
+                      chartConfigs: data.chartConfigs,
+                    };
+                  case 'error':
+                    return {
+                      ...ex,
+                      error: data.message,
+                      sql: data.sql || ex.sql,
+                      isLoading: false,
+                    };
+                  case 'complete':
+                    if (data.sessionId && !sessionId) {
+                      setSessionId(data.sessionId);
+                      fetchSessions();
+                    } else if (data.sessionId) {
+                      fetchSessions();
+                    }
+                    return { ...ex, isLoading: false, statusMessage: undefined };
+                  default:
+                    return ex;
+                }
+              })
+            );
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
     } catch (err: any) {
       setExchanges(prev =>
         prev.map(ex =>
@@ -577,6 +687,10 @@ export default function DataExplorer() {
         onProviderChange={handleProviderChange}
         onModelChange={handleModelChange}
         onSaveApiKey={handleSaveApiKey}
+        savedQueries={savedQueries}
+        onRunSavedQuery={handleRunSavedQuery}
+        onDeleteSavedQuery={handleDeleteSavedQuery}
+        onInsertColumn={handleInsertColumn}
       />
 
       {/* Main content: split pane */}
@@ -629,6 +743,8 @@ export default function DataExplorer() {
             refineContext={refineContext}
             onCancelRefine={handleCancelRefine}
             onRefineSubmit={handleRefineSubmit}
+            inputValue={queryInput}
+            onInputChange={setQueryInput}
           />
         </div>
 
@@ -654,6 +770,7 @@ export default function DataExplorer() {
                 onRefineChart={handleRefineChart}
                 onRefineSql={handleRefineSql}
                 onRequestInsights={handleRequestInsights}
+                onSaveQuery={handleSaveQuery}
               />
             </div>
           </>

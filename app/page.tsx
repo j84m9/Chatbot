@@ -2,9 +2,12 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import MarkdownRenderer from '@/app/components/MarkdownRenderer';
+import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
+import SearchModal from '@/app/components/SearchModal';
+import SystemPromptEditor from '@/app/components/SystemPromptEditor';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
@@ -22,6 +25,17 @@ export default function Chat() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+
+  // Rename state
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  // Search modal state
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // System prompt state
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
 
   // BYOK state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
@@ -95,6 +109,20 @@ export default function Chat() {
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark', isDark);
   }, []);
+
+  // Keyboard shortcuts
+  const shortcuts = useMemo(() => ({
+    'meta+k': () => setSearchOpen(true),
+    'meta+n': () => startNewChat(),
+    'meta+/': () => { setSidebarCollapsed(prev => !prev); },
+    'escape': () => {
+      if (searchOpen) setSearchOpen(false);
+      else if (systemPromptEditorOpen) setSystemPromptEditorOpen(false);
+      else if (editingMessageId) cancelEditing();
+      else if (renamingSessionId) { setRenamingSessionId(null); setRenameValue(''); }
+    },
+  }), [searchOpen, systemPromptEditorOpen, editingMessageId, renamingSessionId]);
+  useKeyboardShortcuts(shortcuts);
 
   const toggleDarkMode = () => {
     const next = !darkMode;
@@ -181,7 +209,10 @@ export default function Chat() {
       const response = await fetch(`/api/messages?sessionId=${id}`);
       if (response.ok) {
         const history = await response.json();
-        setChatId(id); 
+        setChatId(id);
+        // Load system prompt from session data
+        const session = sessions.find(s => s.id === id);
+        setSystemPrompt(session?.system_prompt || null);
         setTimeout(() => {
           setMessages(history);
         }, 10);
@@ -194,6 +225,7 @@ export default function Chat() {
   const startNewChat = () => {
     setChatId(crypto.randomUUID());
     setMessages([]);
+    setSystemPrompt(null);
   };
 
   const deleteChat = async (id: string) => {
@@ -207,6 +239,58 @@ export default function Chat() {
       console.error("Failed to delete chat:", error);
     }
     setMenuOpenId(null);
+  };
+
+  const startRenaming = (sessionId: string) => {
+    const session = sessions.find(s => s.id === sessionId);
+    setRenamingSessionId(sessionId);
+    setRenameValue(session?.title || '');
+    setMenuOpenId(null);
+  };
+
+  const submitRename = async () => {
+    if (!renamingSessionId || !renameValue.trim()) return;
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: renamingSessionId, title: renameValue.trim() }),
+      });
+      if (res.ok) {
+        setSessions(prev => prev.map(s =>
+          s.id === renamingSessionId ? { ...s, title: renameValue.trim() } : s
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to rename session:', err);
+    }
+    setRenamingSessionId(null);
+    setRenameValue('');
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitRename();
+    }
+    if (e.key === 'Escape') {
+      setRenamingSessionId(null);
+      setRenameValue('');
+    }
+  };
+
+  // System prompt handlers
+  const handleSaveSystemPrompt = async (prompt: string | null) => {
+    setSystemPrompt(prompt);
+    setSystemPromptEditorOpen(false);
+    // Save to session if we have one
+    if (chatId && sessions.some(s => s.id === chatId)) {
+      await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: chatId, system_prompt: prompt }),
+      });
+    }
   };
 
   const onFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -318,22 +402,45 @@ export default function Chat() {
 
         {/* Session list */}
         <div className={`flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 transition-opacity duration-200 ${sidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-2 mt-2 whitespace-nowrap">Recent</div>
+          <div className="flex items-center justify-between mb-3 px-2 mt-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Recent</span>
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="p-1 rounded-md dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+              title="Search chats (Cmd+K)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              </svg>
+            </button>
+          </div>
           {sessions.length === 0 ? (
             <div className="text-gray-500 text-sm px-3 italic whitespace-nowrap">No past sessions</div>
           ) : (
             sessions.map((session) => (
               <div key={session.id} className="relative group">
-                <button
-                  onClick={() => loadChat(session.id)}
-                  className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
-                    chatId === session.id
-                      ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
-                      : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
-                  }`}
-                >
-                  {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
-                </button>
+                {renamingSessionId === session.id ? (
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={handleRenameKeyDown}
+                    onBlur={submitRename}
+                    className="w-full px-3 py-2 rounded-lg text-sm dark:bg-[#1e1f20] bg-gray-100 dark:text-gray-200 text-gray-800 border border-indigo-500 outline-none"
+                  />
+                ) : (
+                  <button
+                    onClick={() => loadChat(session.id)}
+                    onDoubleClick={() => startRenaming(session.id)}
+                    className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
+                      chatId === session.id
+                        ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
+                        : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
+                    }`}
+                  >
+                    {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
+                  </button>
+                )}
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === session.id ? null : session.id); }}
                   className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-[#333537] text-gray-500 hover:text-gray-200 transition-all cursor-pointer"
@@ -344,6 +451,15 @@ export default function Chat() {
                 </button>
                 {menuOpenId === session.id && (
                   <div ref={menuRef} className="absolute right-0 top-full mt-1 bg-[#1e1f20] border border-[#333537] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                    <button
+                      onClick={() => startRenaming(session.id)}
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm dark:text-gray-300 text-gray-700 hover:bg-[#2a2b2d] w-full text-left cursor-pointer transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                      </svg>
+                      Rename
+                    </button>
                     <button
                       onClick={() => deleteChat(session.id)}
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 w-full text-left cursor-pointer transition-colors"
@@ -500,6 +616,15 @@ export default function Chat() {
               <span className="text-base font-semibold dark:text-gray-100 text-gray-800">{currentProviderLabel}</span>
               <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">{currentModelLabel}</span>
             </div>
+            <button
+              onClick={() => setSystemPromptEditorOpen(true)}
+              className={`p-2 rounded-lg transition-colors cursor-pointer ${systemPrompt ? 'dark:text-indigo-400 text-indigo-500 dark:hover:bg-indigo-500/10 hover:bg-indigo-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
+              title="System prompt"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
+              </svg>
+            </button>
           </div>
         </header>
 
@@ -669,6 +794,23 @@ export default function Chat() {
         </div>
 
         {/* Full-page lightning bolt strike */}
+        {/* Search Modal */}
+        {searchOpen && (
+          <SearchModal
+            onClose={() => setSearchOpen(false)}
+            onSelectResult={(sessionId) => { setSearchOpen(false); loadChat(sessionId); }}
+          />
+        )}
+
+        {/* System Prompt Editor */}
+        {systemPromptEditorOpen && (
+          <SystemPromptEditor
+            currentPrompt={systemPrompt}
+            onSave={handleSaveSystemPrompt}
+            onClose={() => setSystemPromptEditorOpen(false)}
+          />
+        )}
+
         {lightningStrike && (
           <div className="absolute inset-0 z-50 pointer-events-none">
             {/* Screen flash */}

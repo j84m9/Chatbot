@@ -1,6 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import SchemaBrowser from './SchemaBrowser';
+
+export interface SavedQuery {
+  id: string;
+  name: string;
+  question: string;
+  sql_query: string;
+  explanation?: string;
+  chart_configs?: any;
+  connection_id: string;
+  created_at: string;
+}
 
 interface DataExplorerSidebarProps {
   collapsed: boolean;
@@ -27,6 +39,12 @@ interface DataExplorerSidebarProps {
   onProviderChange: (provider: string) => void;
   onModelChange: (model: string) => void;
   onSaveApiKey: (key: string) => void;
+  // Saved queries
+  savedQueries?: SavedQuery[];
+  onRunSavedQuery?: (query: SavedQuery) => void;
+  onDeleteSavedQuery?: (id: string) => void;
+  // Schema browser
+  onInsertColumn?: (text: string) => void;
 }
 
 export default function DataExplorerSidebar({
@@ -36,8 +54,21 @@ export default function DataExplorerSidebar({
   darkMode, onToggleDarkMode,
   selectedProvider, selectedModel, modelCatalog, providerNames,
   savedApiKeys, onProviderChange, onModelChange, onSaveApiKey,
+  savedQueries, onRunSavedQuery, onDeleteSavedQuery,
+  onInsertColumn,
 }: DataExplorerSidebarProps) {
   const activeConn = connections.find(c => c.id === activeConnectionId);
+  const [sessionSearch, setSessionSearch] = useState('');
+  const [savedQueriesExpanded, setSavedQueriesExpanded] = useState(true);
+  const [schemaExpanded, setSchemaExpanded] = useState(false);
+
+  const filteredSessions = sessionSearch.trim()
+    ? sessions.filter(s =>
+        (s.ai_title || s.title || '').toLowerCase().includes(sessionSearch.toLowerCase())
+      )
+    : sessions;
+
+  const connectionSavedQueries = savedQueries?.filter(q => q.connection_id === activeConnectionId) || [];
 
   return (
     <div className={`${collapsed ? 'w-16' : 'w-64'} flex-shrink-0 dark:bg-[#151617] bg-white border-r dark:border-[#2a2b2d] border-gray-200 flex flex-col z-20 shadow-xl transition-[width] duration-300`}>
@@ -123,36 +154,119 @@ export default function DataExplorerSidebar({
         </div>
       )}
 
-      {/* Session list */}
-      <div className={`flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-1 transition-opacity duration-200 ${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 px-2 whitespace-nowrap">Query History</div>
-        {sessions.length === 0 ? (
-          <div className="text-gray-500 text-sm px-3 italic whitespace-nowrap">No past queries</div>
-        ) : (
-          sessions.map(session => (
-            <div key={session.id} className="relative group">
-              <button
-                onClick={() => onSelectSession(session.id)}
-                className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
-                  activeSessionId === session.id
-                    ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
-                    : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
-                }`}
-              >
-                {session.ai_title || session.title}
-              </button>
-              <button
-                onClick={() => onDeleteSession(session.id)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all cursor-pointer"
-                title="Delete"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                  <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
-                </svg>
-              </button>
-            </div>
-          ))
+      {/* Scrollable sections */}
+      <div className={`flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3 transition-opacity duration-200 ${collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+
+        {/* Schema Browser */}
+        {activeConnectionId && (
+          <div>
+            <button
+              onClick={() => setSchemaExpanded(!schemaExpanded)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider px-2 w-full cursor-pointer hover:text-gray-400 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-3 h-3 transition-transform ${schemaExpanded ? 'rotate-90' : ''}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+              Schema
+            </button>
+            {schemaExpanded && (
+              <div className="mt-2">
+                <SchemaBrowser
+                  connectionId={activeConnectionId}
+                  onInsertColumn={onInsertColumn}
+                />
+              </div>
+            )}
+          </div>
         )}
+
+        {/* Saved Queries */}
+        {connectionSavedQueries.length > 0 && (
+          <div>
+            <button
+              onClick={() => setSavedQueriesExpanded(!savedQueriesExpanded)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider px-2 w-full cursor-pointer hover:text-gray-400 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-3 h-3 transition-transform ${savedQueriesExpanded ? 'rotate-90' : ''}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+              Saved Queries
+            </button>
+            {savedQueriesExpanded && (
+              <div className="mt-1 space-y-0.5">
+                {connectionSavedQueries.map(q => (
+                  <div key={q.id} className="relative group">
+                    <button
+                      onClick={() => onRunSavedQuery?.(q)}
+                      className="w-full text-left px-3 py-2 pr-8 rounded-lg text-sm truncate dark:text-gray-400 text-gray-600 dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:hover:text-gray-200 hover:text-gray-900 transition-colors cursor-pointer flex items-center gap-2"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-amber-400 flex-shrink-0">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" />
+                      </svg>
+                      <span className="truncate">{q.name}</span>
+                    </button>
+                    <button
+                      onClick={() => onDeleteSavedQuery?.(q.id)}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all cursor-pointer"
+                      title="Delete saved query"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Query History */}
+        <div>
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-2 whitespace-nowrap">Query History</div>
+
+          {/* Session search */}
+          <div className="px-1 mb-2">
+            <input
+              value={sessionSearch}
+              onChange={e => setSessionSearch(e.target.value)}
+              placeholder="Search sessions..."
+              className="w-full text-xs dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:border-indigo-500/40 transition-colors placeholder:dark:text-gray-600 placeholder:text-gray-400"
+            />
+          </div>
+
+          <div className="space-y-0.5">
+            {filteredSessions.length === 0 ? (
+              <div className="text-gray-500 text-sm px-3 italic whitespace-nowrap">
+                {sessionSearch.trim() ? 'No matching sessions' : 'No past queries'}
+              </div>
+            ) : (
+              filteredSessions.map(session => (
+                <div key={session.id} className="relative group">
+                  <button
+                    onClick={() => onSelectSession(session.id)}
+                    className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
+                      activeSessionId === session.id
+                        ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
+                        : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
+                    }`}
+                  >
+                    {session.ai_title || session.title}
+                  </button>
+                  <button
+                    onClick={() => onDeleteSession(session.id)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all cursor-pointer"
+                    title="Delete"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                      <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {/* User Profile Box */}
