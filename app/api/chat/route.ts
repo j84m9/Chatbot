@@ -4,9 +4,10 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { getModel } from '@/utils/ai/provider';
 
 export async function POST(req: Request) {
-  // Grab the session ID from the URL now!
+  // Grab the session ID and optional agent ID from the URL
   const url = new URL(req.url);
   const sessionId = url.searchParams.get('id');
+  const agentId = url.searchParams.get('agentId');
   const { messages } = await req.json();
   
   // 1. Securely verify the user
@@ -38,9 +39,11 @@ export async function POST(req: Request) {
   }
 
   // 3. Save Session (Logging errors if it fails)
+  const sessionData: Record<string, any> = { id: sessionId, title: chatTitle, user_id: user.id };
+  if (agentId) sessionData.agent_id = agentId;
   const { error: sessionError } = await dbAdmin
     .from('chat_sessions')
-    .upsert({ id: sessionId, title: chatTitle, user_id: user.id }, { onConflict: 'id' });
+    .upsert(sessionData, { onConflict: 'id' });
     
   if (sessionError) console.error("Session Save Error:", sessionError);
 
@@ -117,20 +120,32 @@ Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log,
 
 Always include a brief text explanation before or after the chart.`;
 
-  // Fetch custom system prompt from session (graceful if column doesn't exist yet)
+  // Fetch custom system prompt from session, with agent fallback
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
   try {
     const { data: sessionData } = await dbAdmin
       .from('chat_sessions')
-      .select('system_prompt')
+      .select('system_prompt, agent_id')
       .eq('id', sessionId)
       .single();
 
     if (sessionData?.system_prompt) {
+      // Custom system prompt takes priority
       systemPrompt = sessionData.system_prompt;
+    } else if (sessionData?.agent_id) {
+      // Fall back to agent's system prompt
+      const { data: agentData } = await dbAdmin
+        .from('installed_agents')
+        .select('system_prompt')
+        .eq('id', sessionData.agent_id)
+        .single();
+
+      if (agentData?.system_prompt) {
+        systemPrompt = agentData.system_prompt;
+      }
     }
   } catch {
-    // system_prompt column may not exist yet — use default
+    // system_prompt/agent_id columns may not exist yet — use default
   }
 
   // Start Stream

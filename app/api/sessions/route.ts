@@ -23,7 +23,7 @@ export async function GET() {
 
   const primary = await dbAdmin
     .from('chat_sessions')
-    .select('id, created_at, title, system_prompt')
+    .select('id, created_at, title, system_prompt, agent_id')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
@@ -58,7 +58,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { id, title, system_prompt } = body;
+  const { id, title, system_prompt, agent_id } = body;
 
   if (!id) {
     return NextResponse.json({ error: 'Missing session id' }, { status: 400 });
@@ -72,6 +72,7 @@ export async function PATCH(request: NextRequest) {
   const updates: Record<string, any> = {};
   if (title !== undefined) updates.title = title;
   if (system_prompt !== undefined) updates.system_prompt = system_prompt;
+  if (agent_id !== undefined) updates.agent_id = agent_id;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });

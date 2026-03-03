@@ -1,7 +1,7 @@
 # Chatbot Project
 
 ## Overview
-A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, Anthropic, Google, OpenAI) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer for natural language querying of MSSQL and SQLite databases.
+A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, Anthropic, Google, OpenAI) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer for natural language querying of MSSQL and SQLite databases. Integrates with an external AI Agent Store for browsing, installing, and using agents as named system prompts.
 
 ## Tech Stack
 - **Framework**: Next.js 16 (App Router) with React 19, TypeScript, Tailwind CSS v4
@@ -28,10 +28,13 @@ app/
     page.tsx            — Data Explorer UI (split pane, sidebar, query chat, results)
     report/page.tsx     — Standalone pop-out report window (BI report style)
   api/
-    chat/route.ts       — POST: streams AI response, saves user+assistant messages (+ token usage)
+    chat/route.ts       — POST: streams AI response, saves user+assistant messages (+ token usage), resolves agent prompts
     upload/route.ts     — POST: file upload to Supabase Storage (10MB limit, type validation)
-    fork/route.ts       — POST: fork a conversation from any message point
-    sessions/route.ts   — GET: list sessions, PATCH: rename/update system prompt, DELETE: remove session + messages
+    fork/route.ts       — POST: fork a conversation from any message point (copies agent_id)
+    sessions/route.ts   — GET: list sessions (with agent_id), PATCH: rename/update system prompt/agent, DELETE: remove session + messages
+    agents/route.ts     — GET/POST/DELETE: installed agents CRUD (upsert on install)
+    agent-store/
+      browse/route.ts   — GET: proxy to external agent store API with isInstalled flag
     search/route.ts     — GET: full-text search across chat messages
     messages/route.ts   — GET: fetch messages for a session (rebuilds AI SDK format)
     settings/route.ts   — GET/POST: user provider/model/API key settings (encrypt/decrypt)
@@ -56,7 +59,8 @@ app/
       DataExplorerSidebar.tsx — Sidebar with connections, schema browser, saved queries, sessions (AI titles), settings
       SchemaBrowser.tsx — Collapsible tree view of database tables/columns with click-to-insert
     SearchModal.tsx      — Full-text chat search modal with keyboard navigation
-    SystemPromptEditor.tsx — System prompt customization modal with presets
+    SystemPromptEditor.tsx — System prompt customization modal with presets (+ agent read-only mode)
+    AgentBrowser.tsx     — Browse/install agents modal (Store + Installed tabs)
     MarkdownRenderer.tsx — Markdown rendering for chat messages
     CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
     ChatPlot.tsx        — Inline chart rendering in chat messages
@@ -99,9 +103,12 @@ db/migrations/         — SQL migration files (dbmate format)
 
 ### `chat_sessions`
 - `id` UUID PK, `created_at` TIMESTAMPTZ, `title` TEXT, `system_prompt` TEXT nullable, `user_id` UUID (FK to auth.users)
+- `agent_id` UUID nullable (FK to installed_agents, ON DELETE SET NULL)
 - `forked_from_session_id` UUID nullable (FK to chat_sessions, ON DELETE SET NULL)
 - `forked_at_message_id` UUID nullable (FK to chat_messages, ON DELETE SET NULL)
 - `system_prompt`: custom system prompt for the session (null = use default)
+- `agent_id`: links session to an installed agent (null = no agent)
+- Prompt resolution order: custom `system_prompt` > agent's `system_prompt` > `DEFAULT_SYSTEM_PROMPT`
 - RLS enabled: users can only access their own sessions
 
 ### `chat_messages`
@@ -117,6 +124,16 @@ db/migrations/         — SQL migration files (dbmate format)
 - `user_id` UUID PK (FK to auth.users), `selected_provider` TEXT default 'ollama', `selected_model` TEXT default 'llama3.2:1b', `openai_api_key` TEXT (encrypted), `anthropic_api_key` TEXT (encrypted), `google_api_key` TEXT (encrypted), `updated_at` TIMESTAMPTZ
 - RLS enabled: users can only SELECT/INSERT/UPDATE their own row
 - API keys encrypted at rest via pgcrypto (`encrypt_text`/`decrypt_text` functions)
+
+### `installed_agents`
+- `id` UUID PK, `user_id` UUID (FK to auth.users, CASCADE), `store_agent_id` UUID NOT NULL
+- `name` TEXT NOT NULL, `description` TEXT, `system_prompt` TEXT NOT NULL
+- `job_category` TEXT, `logo_url` TEXT, `downloads` INTEGER
+- `tools` JSONB (default `[]`), `skills` JSONB (default `[]`) — stored but not executed in MVP
+- `parent_agent_id` UUID, `store_created_by` UUID — external store references
+- `installed_at` TIMESTAMPTZ, `updated_at` TIMESTAMPTZ
+- `UNIQUE(user_id, store_agent_id)` — prevents duplicate installs, enables upsert
+- RLS enabled: full CRUD gated on `auth.uid() = user_id`
 
 ### `db_connections`
 - `id` UUID PK, `user_id` UUID (FK), `name`, `server`, `port`, `database_name`, `username`, `password_encrypted` (encrypted via pgcrypto), `domain`, `auth_type`, `encrypt`, `trust_server_certificate`, `db_type` TEXT (default 'mssql'), `file_path` TEXT (for SQLite), timestamps
@@ -189,8 +206,23 @@ All API routes use a two-client pattern:
 ### System Prompt Customization
 - `SystemPromptEditor.tsx` modal with textarea + preset chips (Concise, Detailed, Code-focused, Creative)
 - Stored per session in `chat_sessions.system_prompt` column
-- `chat/route.ts` fetches `system_prompt` from session, falls back to `DEFAULT_SYSTEM_PROMPT`
-- PATCH `/api/sessions` accepts `system_prompt` (null clears custom prompt)
+- `chat/route.ts` fetches `system_prompt` from session, falls back to agent prompt, then `DEFAULT_SYSTEM_PROMPT`
+- PATCH `/api/sessions` accepts `system_prompt` (null clears custom prompt) and `agent_id`
+- When an agent is active, SystemPromptEditor shows read-only mode with agent info and "Detach Agent" button
+
+### AI Agent Store Integration
+- **Hybrid local-first approach**: Users browse an external store, install agents locally, use them as named system prompts
+- **External store API**: Proxied via `/api/agent-store/browse`, requires `AGENT_STORE_API_URL` env var (HuggingFace Space)
+- **Local storage**: Installed agents stored in `installed_agents` table with full metadata snapshot
+- **MVP scope**: Agents are named system prompts with metadata — `tools`/`skills` JSONB stored but not executed
+- **Install flow**: Browse store tab → click Install → upsert into `installed_agents` (deduped by `user_id + store_agent_id`)
+- **Usage flow**: Select agent from header dropdown or Installed tab → sets `agent_id` on session → `chat/route.ts` resolves prompt
+- **Prompt priority**: Custom system prompt > agent system prompt > default prompt
+- **Detach**: Copies agent's prompt to custom `system_prompt`, clears `agent_id` — allows editing the prompt independently
+- **Uninstall**: `ON DELETE SET NULL` on `chat_sessions.agent_id` ensures sessions survive agent removal
+- **Header UI**: Emerald/teal agent badge (when active) + agent dropdown button for quick-switching
+- **AgentBrowser modal**: Two tabs (Store / Installed), search + category filters, install/uninstall/use actions
+- **Fork support**: Forked sessions inherit `agent_id` from source session
 
 ### Keyboard Shortcuts
 - `useKeyboardShortcuts` hook in `app/hooks/useKeyboardShortcuts.ts`
@@ -280,6 +312,7 @@ All API routes use a two-client pattern:
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — private, used in admin client for DB writes
 - `DB_CONNECTIONS_ENCRYPTION_KEY` — symmetric key for encrypting API keys and DB passwords at rest
 - `DATABASE_URL` — Postgres connection string used by dbmate for migrations
+- `AGENT_STORE_API_URL` — server-only, base URL of HuggingFace Space API for agent store (e.g. `https://your-space.hf.space`)
 
 ## Implemented Features
 - [x] User auth (login/signup with email or username)
@@ -337,6 +370,12 @@ All API routes use a two-client pattern:
 - [x] Chat forking from any message (creates new session with history up to that point)
 - [x] Token usage tracking and cost estimation per assistant message
 - [x] Two-row chat input with integrated toolbar (file upload, model selector, voice, send)
+- [x] AI Agent Store: browse, install, and use agents as named system prompts
+- [x] Agent browser modal with Store (search, category filters) and Installed tabs
+- [x] Agent quick-switch dropdown in chat header
+- [x] Agent prompt resolution chain (custom > agent > default)
+- [x] Agent detach: copy agent prompt to custom system prompt for editing
+- [x] Forked sessions inherit agent assignment
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
@@ -368,3 +407,9 @@ None currently tracked.
 - [ ] Export Data Explorer results as PDF report
 - [ ] User preferences sync across devices
 - [ ] Admin dashboard for usage analytics
+- [ ] Agent tools/skills execution (beyond MVP named-prompt approach)
+- [ ] Agent version sync — detect when store agent has been updated, prompt user to reinstall
+- [ ] Agent marketplace ratings/reviews
+- [ ] Custom local-only agents (create agents without the store)
+- [ ] Agent-specific conversation starters / suggestion chips
+- [ ] Data Explorer agent integration (SQL-specialized agents)

@@ -13,6 +13,7 @@ import ExportMenu from '@/app/components/ExportMenu';
 import FileUploadButton from '@/app/components/FileUploadButton';
 import FilePreview from '@/app/components/FilePreview';
 import { estimateCost } from '@/utils/token-costs';
+import AgentBrowser from '@/app/components/AgentBrowser';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
@@ -42,6 +43,12 @@ export default function Chat() {
   // System prompt state
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
+
+  // Agent state
+  const [installedAgents, setInstalledAgents] = useState<any[]>([]);
+  const [activeAgent, setActiveAgent] = useState<any>(null);
+  const [agentBrowserOpen, setAgentBrowserOpen] = useState(false);
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
   // File upload state
   const [pendingFiles, setPendingFiles] = useState<Array<{ url: string; mediaType: string; filename: string }>>([]);
@@ -73,13 +80,14 @@ export default function Chat() {
   const settingsToggleRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   // --- VERCEL AI SDK V5 UPDATES ---
   const { messages, setMessages, status, sendMessage } = useChat({
     id: chatId,
     // V5 completely removed 'api' and 'body'. We use a Transport to send the request, 
     // and attach the chatId to the URL so the backend can grab it.
-    transport: new DefaultChatTransport({ api: `/api/chat?id=${chatId}` })
+    transport: new DefaultChatTransport({ api: `/api/chat?id=${chatId}${activeAgent ? `&agentId=${activeAgent.id}` : ''}` })
   });
 
   // Recreate the isLoading boolean from the new 'status' variable
@@ -137,6 +145,16 @@ export default function Chat() {
   }, [modelDropdownOpen]);
 
   useEffect(() => {
+    if (!agentDropdownOpen) return;
+    const handleAgentDropdownClickOutside = (e: MouseEvent) => {
+      if (agentDropdownRef.current?.contains(e.target as Node)) return;
+      setAgentDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleAgentDropdownClickOutside);
+    return () => document.removeEventListener('mousedown', handleAgentDropdownClickOutside);
+  }, [agentDropdownOpen]);
+
+  useEffect(() => {
     const saved = localStorage.getItem('theme');
     const isDark = saved ? saved === 'dark' : true;
     setDarkMode(isDark);
@@ -156,12 +174,14 @@ export default function Chat() {
     'meta+n': () => startNewChat(),
     'meta+/': () => { setSidebarCollapsed(prev => !prev); },
     'escape': () => {
-      if (searchOpen) setSearchOpen(false);
+      if (agentBrowserOpen) setAgentBrowserOpen(false);
+      else if (agentDropdownOpen) setAgentDropdownOpen(false);
+      else if (searchOpen) setSearchOpen(false);
       else if (systemPromptEditorOpen) setSystemPromptEditorOpen(false);
       else if (editingMessageId) cancelEditing();
       else if (renamingSessionId) { setRenamingSessionId(null); setRenameValue(''); }
     },
-  }), [searchOpen, systemPromptEditorOpen, editingMessageId, renamingSessionId]);
+  }), [agentBrowserOpen, agentDropdownOpen, searchOpen, systemPromptEditorOpen, editingMessageId, renamingSessionId]);
   useKeyboardShortcuts(shortcuts);
 
   const toggleDarkMode = () => {
@@ -305,7 +325,97 @@ export default function Chat() {
 
   useEffect(() => {
     fetchSessions();
+    fetchInstalledAgents();
   }, []);
+
+  // Agent handlers
+  const fetchInstalledAgents = async () => {
+    try {
+      const res = await fetch('/api/agents');
+      if (res.ok) {
+        const data = await res.json();
+        setInstalledAgents(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch installed agents:', err);
+    }
+  };
+
+  const selectAgent = async (agent: any | null) => {
+    setActiveAgent(agent);
+    // If we have an existing session, update it
+    if (chatId && sessions.some(s => s.id === chatId)) {
+      await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: chatId,
+          agent_id: agent?.id || null,
+          // Clear custom system prompt when selecting an agent
+          ...(agent ? { system_prompt: null } : {}),
+        }),
+      });
+      if (agent) setSystemPrompt(null);
+    }
+  };
+
+  const installAgent = async (storeAgent: any) => {
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store_agent_id: storeAgent.id,
+          name: storeAgent.name,
+          description: storeAgent.description,
+          system_prompt: storeAgent.system_prompt,
+          job_category: storeAgent.job_category,
+          logo_url: storeAgent.logo_url,
+          downloads: storeAgent.downloads,
+          tools: storeAgent.tools,
+          skills: storeAgent.skills,
+          parent_agent_id: storeAgent.parent_agent_id,
+          store_created_by: storeAgent.created_by,
+        }),
+      });
+      if (res.ok) {
+        await fetchInstalledAgents();
+      }
+    } catch (err) {
+      console.error('Failed to install agent:', err);
+    }
+  };
+
+  const uninstallAgent = async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agents?id=${agentId}`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchInstalledAgents();
+        if (activeAgent?.id === agentId) {
+          setActiveAgent(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to uninstall agent:', err);
+    }
+  };
+
+  const handleDetachAgent = async () => {
+    if (!activeAgent) return;
+    // Copy the agent's prompt to custom system prompt
+    const prompt = activeAgent.system_prompt;
+    setSystemPrompt(prompt);
+    setActiveAgent(null);
+    setSystemPromptEditorOpen(false);
+    // Update session: set custom prompt, clear agent_id
+    if (chatId && sessions.some(s => s.id === chatId)) {
+      await fetch('/api/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: chatId, system_prompt: prompt, agent_id: null }),
+      });
+    }
+  };
 
   const loadChat = async (id: string) => {
     try {
@@ -313,9 +423,16 @@ export default function Chat() {
       if (response.ok) {
         const history = await response.json();
         setChatId(id);
-        // Load system prompt from session data
+        // Load system prompt and agent from session data
         const session = sessions.find(s => s.id === id);
         setSystemPrompt(session?.system_prompt || null);
+        // Load active agent if session has one
+        if (session?.agent_id) {
+          const agent = installedAgents.find(a => a.id === session.agent_id);
+          setActiveAgent(agent || null);
+        } else {
+          setActiveAgent(null);
+        }
         // Extract token usage from messages
         const usage: Record<string, any> = {};
         for (const msg of history) {
@@ -336,6 +453,7 @@ export default function Chat() {
     setChatId(crypto.randomUUID());
     setMessages([]);
     setSystemPrompt(null);
+    setActiveAgent(null);
     setPendingFiles([]);
     setTokenUsage({});
   };
@@ -916,6 +1034,17 @@ export default function Chat() {
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-400/50 ring-2 ring-emerald-400/20" />
               <span className="text-base font-semibold dark:text-gray-100 text-gray-800">{currentProviderLabel}</span>
               <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">{currentModelLabel}</span>
+              {activeAgent && (
+                <button
+                  onClick={() => setAgentBrowserOpen(true)}
+                  className="text-xs bg-gradient-to-r from-emerald-500/15 to-teal-500/15 dark:text-emerald-300 text-emerald-600 px-3 py-1 rounded-full font-semibold border dark:border-emerald-400/20 border-emerald-300/30 shadow-sm hover:from-emerald-500/25 hover:to-teal-500/25 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                  </svg>
+                  {activeAgent.name}
+                </button>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {messages.length > 0 && (
@@ -924,9 +1053,77 @@ export default function Chat() {
                   sessionTitle={sessions.find(s => s.id === chatId)?.title || 'Chat'}
                 />
               )}
+              {/* Agent dropdown */}
+              <div className="relative" ref={agentDropdownRef}>
+                <button
+                  onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
+                  className={`p-2 rounded-lg transition-colors cursor-pointer ${activeAgent ? 'dark:text-emerald-400 text-emerald-500 dark:hover:bg-emerald-500/10 hover:bg-emerald-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
+                  title="AI Agents"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                  </svg>
+                </button>
+                {agentDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-56 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                    {installedAgents.length > 0 && (
+                      <div className="py-1">
+                        <div className="px-3 py-1.5 text-[10px] font-semibold dark:text-gray-500 text-gray-400 uppercase tracking-wider">Installed Agents</div>
+                        {activeAgent && (
+                          <button
+                            onClick={() => { selectAgent(null); setAgentDropdownOpen(false); }}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                            No agent
+                          </button>
+                        )}
+                        {installedAgents.map(agent => (
+                          <button
+                            key={agent.id}
+                            onClick={() => { selectAgent(agent); setAgentDropdownOpen(false); }}
+                            className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors cursor-pointer ${
+                              activeAgent?.id === agent.id
+                                ? 'dark:bg-emerald-500/10 bg-emerald-50 dark:text-emerald-300 text-emerald-600'
+                                : 'dark:text-gray-300 text-gray-700 dark:hover:bg-[#2a2b2d] hover:bg-gray-100'
+                            }`}
+                          >
+                            {agent.logo_url ? (
+                              <img src={agent.logo_url} alt="" className="w-4 h-4 rounded object-cover flex-shrink-0" />
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 flex-shrink-0">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                              </svg>
+                            )}
+                            <span className="truncate">{agent.name}</span>
+                            {activeAgent?.id === agent.id && (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 ml-auto flex-shrink-0">
+                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="border-t dark:border-[#333537] border-gray-200">
+                      <button
+                        onClick={() => { setAgentBrowserOpen(true); setAgentDropdownOpen(false); }}
+                        className="flex items-center gap-2 w-full px-3 py-2.5 text-sm dark:text-indigo-400 text-indigo-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+                        </svg>
+                        Browse Agent Store
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => setSystemPromptEditorOpen(true)}
-                className={`p-2 rounded-lg transition-colors cursor-pointer ${systemPrompt ? 'dark:text-indigo-400 text-indigo-500 dark:hover:bg-indigo-500/10 hover:bg-indigo-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${systemPrompt || activeAgent ? 'dark:text-indigo-400 text-indigo-500 dark:hover:bg-indigo-500/10 hover:bg-indigo-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
                 title="System prompt"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
@@ -1293,6 +1490,19 @@ export default function Chat() {
             currentPrompt={systemPrompt}
             onSave={handleSaveSystemPrompt}
             onClose={() => setSystemPromptEditorOpen(false)}
+            activeAgent={activeAgent}
+            onDetachAgent={handleDetachAgent}
+          />
+        )}
+
+        {/* Agent Browser */}
+        {agentBrowserOpen && (
+          <AgentBrowser
+            installedAgents={installedAgents}
+            onInstall={installAgent}
+            onUninstall={uninstallAgent}
+            onSelect={selectAgent}
+            onClose={() => setAgentBrowserOpen(false)}
           />
         )}
 

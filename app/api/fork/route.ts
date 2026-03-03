@@ -64,6 +64,7 @@ export async function POST(req: Request) {
     title: forkTitle,
     user_id: user.id,
     system_prompt: sourceSession.system_prompt,
+    agent_id: sourceSession.agent_id,
     forked_from_session_id: sessionId,
     forked_at_message_id: messageId,
   });
