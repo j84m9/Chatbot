@@ -143,10 +143,27 @@ Always include a brief text explanation before or after the chart.`;
   return result.toUIMessageStreamResponse({
     onFinish: async ({ responseMessage }) => {
       // 7. Save Assistant Message using admin client
+      // Await usage from the streamText result (resolves after stream ends)
+      let tokenUsage = null;
+      try {
+        const usage = await result.usage;
+        if (usage) {
+          tokenUsage = {
+            promptTokens: usage.inputTokens || 0,
+            completionTokens: usage.outputTokens || 0,
+            totalTokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
+            model: modelId,
+          };
+        }
+      } catch {
+        // Usage not available for this provider — skip
+      }
+
       const { error: assistantMsgError } = await dbAdmin.from('chat_messages').insert({
         session_id: sessionId,
         role: 'assistant',
-        content: responseMessage.parts
+        content: responseMessage.parts,
+        ...(tokenUsage ? { token_usage: tokenUsage } : {}),
       });
       if (assistantMsgError) console.error("Assistant Msg Save Error:", assistantMsgError);
     },

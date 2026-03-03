@@ -112,3 +112,33 @@ body {
 .animate-bolt-strike { animation: bolt-strike 1.2s ease-out; }
 .animate-bolt-draw { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: bolt-draw 1.2s ease-out forwards; }
 .animate-bolt-glow { stroke-dasharray: 1600; stroke-dashoffset: 1600; animation: bolt-glow 1.2s ease-out forwards; }
+
+/* Radar pulse / ripple effect for Data Explorer DB icon */
+@keyframes db-radar-icon {
+  0% { transform: scale(1); filter: brightness(1) drop-shadow(0 0 0 rgba(129, 140, 248, 0)); }
+  15% { transform: scale(1.1); filter: brightness(1.4) drop-shadow(0 0 8px rgba(129, 140, 248, 0.6)); }
+  40% { transform: scale(1.02); filter: brightness(1.15) drop-shadow(0 0 4px rgba(129, 140, 248, 0.3)); }
+  100% { transform: scale(1); filter: brightness(1) drop-shadow(0 0 0 rgba(129, 140, 248, 0)); }
+}
+
+/* Small rings on the icon button itself */
+@keyframes db-radar-ring {
+  0% { transform: scale(0.5); opacity: 0.7; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+
+@keyframes db-radar-glow {
+  0% { opacity: 0; transform: scale(0.8); }
+  20% { opacity: 0.5; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.4); }
+}
+
+/* Full-page expanding radar ring — only animates scale + opacity, centering handled by CSS */
+@keyframes db-radar-expand {
+  0% { scale: 0; opacity: var(--ring-opacity, 0.35); }
+  100% { scale: 1; opacity: 0; }
+}
+
+.animate-db-radar { animation: db-radar-icon 0.8s ease-out; }
+.animate-db-radar-ring { animation: db-radar-ring 1s ease-out forwards; }
+.animate-db-radar-glow { animation: db-radar-glow 0.9s ease-out forwards; }

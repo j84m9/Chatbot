@@ -5,30 +5,30 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 export const PROVIDER_NAMES: Record<string, string> = {
   ollama: 'Ollama',
-  openai: 'OpenAI',
   anthropic: 'Anthropic',
   google: 'Google',
+  openai: 'OpenAI',
 };
 
-export const MODEL_CATALOG: Record<string, { id: string; label: string }[]> = {
+export const MODEL_CATALOG: Record<string, { id: string; label: string; vision?: boolean }[]> = {
   ollama: [
-    { id: 'llama3.2:1b', label: 'Llama 3.2 1B' },
-    { id: 'llama3.2:3b', label: 'Llama 3.2 3B' },
-    { id: 'llama3.1:8b', label: 'Llama 3.1 8B' },
-  ],
-  openai: [
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { id: 'o3-mini', label: 'o3-mini' },
+    { id: 'llama3.2:1b', label: 'Llama 3.2 1B', vision: false },
+    { id: 'llama3.2:3b', label: 'Llama 3.2 3B', vision: false },
+    { id: 'llama3.1:8b', label: 'Llama 3.1 8B', vision: false },
   ],
   anthropic: [
-    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { id: 'claude-haiku-4-20250414', label: 'Claude Haiku 4' },
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', vision: true },
+    { id: 'claude-haiku-4-20250414', label: 'Claude Haiku 4', vision: true },
   ],
   google: [
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', vision: true },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', vision: true },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', vision: true },
+  ],
+  openai: [
+    { id: 'gpt-4o', label: 'GPT-4o', vision: true },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', vision: true },
+    { id: 'o3-mini', label: 'o3-mini', vision: false },
   ],
 };
 

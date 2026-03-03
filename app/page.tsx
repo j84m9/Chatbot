@@ -8,6 +8,11 @@ import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 import SearchModal from '@/app/components/SearchModal';
 import SystemPromptEditor from '@/app/components/SystemPromptEditor';
+import VoiceInputButton from '@/app/components/VoiceInputButton';
+import ExportMenu from '@/app/components/ExportMenu';
+import FileUploadButton from '@/app/components/FileUploadButton';
+import FilePreview from '@/app/components/FilePreview';
+import { estimateCost } from '@/utils/token-costs';
 
 export default function Chat() {
   const [chatId, setChatId] = useState(() => crypto.randomUUID());
@@ -20,6 +25,7 @@ export default function Chat() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const [lightningStrike, setLightningStrike] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
 
   // Edit & copy message state
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -37,10 +43,24 @@ export default function Chat() {
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
 
+  // File upload state
+  const [pendingFiles, setPendingFiles] = useState<Array<{ url: string; mediaType: string; filename: string }>>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadingCount, setUploadingCount] = useState(0);
+
+  // Token usage state (keyed by message ID)
+  const [tokenUsage, setTokenUsage] = useState<Record<string, any>>({});
+
+  // Settings panel state
+  const [settingsTab, setSettingsTab] = useState<'general' | 'model'>('general');
+  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>('base');
+  const [sendWithEnter, setSendWithEnter] = useState(true);
+  const [showTokenUsage, setShowTokenUsage] = useState(true);
+
   // BYOK state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
   const [selectedModel, setSelectedModel] = useState('llama3.2:1b');
-  const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string }[]>>({});
+  const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string; vision?: boolean }[]>>({});
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savedApiKeys, setSavedApiKeys] = useState<Record<string, string | null>>({});
@@ -50,6 +70,7 @@ export default function Chat() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const settingsToggleRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
   // --- VERCEL AI SDK V5 UPDATES ---
   const { messages, setMessages, status, sendMessage } = useChat({
@@ -104,10 +125,27 @@ export default function Chat() {
   }, [menuOpenId, settingsOpen]);
 
   useEffect(() => {
+    if (!modelDropdownOpen) return;
+    const handleModelDropdownClickOutside = (e: MouseEvent) => {
+      if (modelDropdownRef.current?.contains(e.target as Node)) return;
+      setModelDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleModelDropdownClickOutside);
+    return () => document.removeEventListener('mousedown', handleModelDropdownClickOutside);
+  }, [modelDropdownOpen]);
+
+  useEffect(() => {
     const saved = localStorage.getItem('theme');
     const isDark = saved ? saved === 'dark' : true;
     setDarkMode(isDark);
     document.documentElement.classList.toggle('dark', isDark);
+
+    const savedFontSize = localStorage.getItem('chatFontSize') as 'sm' | 'base' | 'lg' | null;
+    if (savedFontSize) setFontSize(savedFontSize);
+    const savedSendWithEnter = localStorage.getItem('sendWithEnter');
+    if (savedSendWithEnter !== null) setSendWithEnter(savedSendWithEnter !== 'false');
+    const savedShowTokenUsage = localStorage.getItem('showTokenUsage');
+    if (savedShowTokenUsage !== null) setShowTokenUsage(savedShowTokenUsage !== 'false');
   }, []);
 
   // Keyboard shortcuts
@@ -129,6 +167,23 @@ export default function Chat() {
     setDarkMode(next);
     localStorage.setItem('theme', next ? 'dark' : 'light');
     document.documentElement.classList.toggle('dark', next);
+  };
+
+  const changeFontSize = (size: 'sm' | 'base' | 'lg') => {
+    setFontSize(size);
+    localStorage.setItem('chatFontSize', size);
+  };
+
+  const toggleSendWithEnter = () => {
+    const next = !sendWithEnter;
+    setSendWithEnter(next);
+    localStorage.setItem('sendWithEnter', String(next));
+  };
+
+  const toggleShowTokenUsage = () => {
+    const next = !showTokenUsage;
+    setShowTokenUsage(next);
+    localStorage.setItem('showTokenUsage', String(next));
   };
 
   // Fetch model catalog + user settings on mount
@@ -184,9 +239,47 @@ export default function Chat() {
     setApiKeyInput('');
   };
 
+  // Quick model switch from input dropdown
+  const handleQuickModelSwitch = (provider: string, modelId: string) => {
+    setSelectedProvider(provider);
+    setSelectedModel(modelId);
+    saveSettings({ selected_provider: provider, selected_model: modelId });
+    setModelDropdownOpen(false);
+  };
+
   // Derive current model label for the header
-  const currentModelLabel = modelCatalog[selectedProvider]?.find(m => m.id === selectedModel)?.label || selectedModel;
+  const currentModel = modelCatalog[selectedProvider]?.find(m => m.id === selectedModel);
+  const currentModelLabel = currentModel?.label || selectedModel;
   const currentProviderLabel = providerNames[selectedProvider] || selectedProvider;
+  const currentModelVision = currentModel?.vision ?? false;
+
+  const uploadFile = async (file: File) => {
+    setUploadingCount(c => c + 1);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Upload failed:', err.error);
+        return;
+      }
+      const data = await res.json();
+      setPendingFiles(prev => [...prev, data]);
+    } catch (err) {
+      console.error('Upload error:', err);
+    } finally {
+      setUploadingCount(c => c - 1);
+    }
+  };
+
+  const handleFilesSelected = (files: FileList) => {
+    Array.from(files).forEach(uploadFile);
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== index));
+  };
 
   const fetchSessions = async () => {
     try {
@@ -213,6 +306,13 @@ export default function Chat() {
         // Load system prompt from session data
         const session = sessions.find(s => s.id === id);
         setSystemPrompt(session?.system_prompt || null);
+        // Extract token usage from messages
+        const usage: Record<string, any> = {};
+        for (const msg of history) {
+          if (msg.token_usage) usage[msg.id] = msg.token_usage;
+        }
+        setTokenUsage(usage);
+        setPendingFiles([]);
         setTimeout(() => {
           setMessages(history);
         }, 10);
@@ -226,6 +326,8 @@ export default function Chat() {
     setChatId(crypto.randomUUID());
     setMessages([]);
     setSystemPrompt(null);
+    setPendingFiles([]);
+    setTokenUsage({});
   };
 
   const deleteChat = async (id: string) => {
@@ -295,13 +397,38 @@ export default function Chat() {
 
   const onFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
-    
-    // V5 uses sendMessage({ text: string }) instead of append
-    sendMessage({ text: inputValue });
-    
-    setInputValue(''); 
-    setTimeout(fetchSessions, 1000); 
+    if (!inputValue.trim() && pendingFiles.length === 0) return;
+
+    // V5 uses sendMessage({ text: string, files?: ... }) instead of append
+    const messagePayload: any = { text: inputValue || ' ' };
+    if (pendingFiles.length > 0) {
+      messagePayload.files = pendingFiles.map(f => ({
+        mediaType: f.mediaType,
+        url: f.url,
+      }));
+    }
+    sendMessage(messagePayload);
+
+    setInputValue('');
+    setPendingFiles([]);
+    setTimeout(fetchSessions, 1000);
+  };
+
+  const forkChat = async (messageId: string) => {
+    try {
+      const res = await fetch('/api/fork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: chatId, messageId }),
+      });
+      if (res.ok) {
+        const { id } = await res.json();
+        await fetchSessions();
+        loadChat(id);
+      }
+    } catch (err) {
+      console.error('Fork failed:', err);
+    }
   };
 
   const startEditing = (messageId: string) => {
@@ -507,82 +634,198 @@ export default function Chat() {
 
           {/* Settings Dropdown */}
           {settingsOpen && (
-            <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-72 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 overflow-hidden">
+            <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-80 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 overflow-hidden max-h-[70vh] overflow-y-auto">
               {/* Header */}
-              <div className="px-4 pt-4 pb-2">
-                <h3 className="text-sm font-semibold dark:text-gray-200 text-gray-800">Settings</h3>
+              <div className="px-4 pt-4 pb-3 border-b dark:border-[#2a2b2d] border-gray-100 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5 dark:text-indigo-400 text-indigo-500">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                  </svg>
+                  <h3 className="text-sm font-semibold dark:text-gray-200 text-gray-800">Settings</h3>
+                </div>
               </div>
 
-              <div className="px-4 pb-3 space-y-3">
-                {/* Dark Mode Toggle */}
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-sm dark:text-gray-300 text-gray-600">Dark Mode</span>
-                  <button
-                    onClick={toggleDarkMode}
-                    className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${darkMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
-                  >
-                    <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
-                  </button>
-                </div>
+              {/* Tab bar */}
+              <div className="flex gap-1 px-4 pt-3 pb-2">
+                <button
+                  onClick={() => setSettingsTab('general')}
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all cursor-pointer ${settingsTab === 'general' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100'}`}
+                >
+                  General
+                </button>
+                <button
+                  onClick={() => setSettingsTab('model')}
+                  className={`px-3.5 py-1.5 text-xs font-medium rounded-full transition-all cursor-pointer ${settingsTab === 'model' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100'}`}
+                >
+                  AI Model
+                </button>
+              </div>
 
-                <div className="border-t dark:border-[#2a2b2d] border-gray-100" />
-
-                {/* Provider */}
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 block">Provider</label>
-                  <select
-                    value={selectedProvider}
-                    onChange={(e) => handleProviderChange(e.target.value)}
-                    className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
-                  >
-                    {Object.entries(providerNames).map(([key, name]) => (
-                      <option key={key} value={key}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Model */}
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 block">Model</label>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
-                  >
-                    {(modelCatalog[selectedProvider] || []).map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* API Key (hidden for Ollama) */}
-                {selectedProvider !== 'ollama' && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-medium dark:text-gray-400 text-gray-500">API Key</label>
-                      {savedApiKeys[selectedProvider] && (
-                        <span className="text-xs text-green-500 flex items-center gap-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-                            <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+              <div className="px-4 pb-4 pt-1">
+                {settingsTab === 'general' ? (
+                  <div className="space-y-1">
+                    {/* Dark Mode */}
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg dark:bg-[#2a2b2d] bg-gray-100 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-400 text-gray-500">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
                           </svg>
-                          Saved ({savedApiKeys[selectedProvider]})
-                        </span>
-                      )}
+                        </div>
+                        <span className="text-sm dark:text-gray-300 text-gray-600">Dark Mode</span>
+                      </div>
+                      <button
+                        onClick={toggleDarkMode}
+                        className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${darkMode ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${darkMode ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                      </button>
                     </div>
-                    <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder={savedApiKeys[selectedProvider] ? 'Enter new key to replace...' : 'Enter API key...'}
-                      className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-colors"
-                    />
-                    <button
-                      onClick={handleSaveApiKey}
-                      disabled={!apiKeyInput.trim()}
-                      className="w-full mt-2 text-sm py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
-                    >
-                      Save Key
-                    </button>
+
+                    <div className="border-t dark:border-[#2a2b2d]/60 border-gray-100" />
+
+                    {/* Font Size */}
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg dark:bg-[#2a2b2d] bg-gray-100 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-400 text-gray-500">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.243 4.493v7.5m0 0v7.514m0-7.514h7.5m-7.5 0H12m8.25-7.5v15" />
+                          </svg>
+                        </div>
+                        <span className="text-sm dark:text-gray-300 text-gray-600">Font Size</span>
+                      </div>
+                      <div className="flex items-center gap-0.5 dark:bg-[#111213] bg-gray-50 rounded-lg p-0.5 border dark:border-[#2a2b2d] border-gray-200">
+                        {([['sm', 'S'], ['base', 'M'], ['lg', 'L']] as const).map(([size, label]) => (
+                          <button
+                            key={size}
+                            onClick={() => changeFontSize(size)}
+                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all cursor-pointer ${fontSize === size ? 'bg-indigo-600 text-white shadow-sm' : 'dark:text-gray-400 text-gray-500 dark:hover:text-gray-200 hover:text-gray-700'}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t dark:border-[#2a2b2d]/60 border-gray-100" />
+
+                    {/* Send with Enter */}
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg dark:bg-[#2a2b2d] bg-gray-100 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-400 text-gray-500">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                          </svg>
+                        </div>
+                        <div>
+                          <span className="text-sm dark:text-gray-300 text-gray-600">Send with Enter</span>
+                          <p className="text-[11px] dark:text-gray-600 text-gray-400 mt-0.5">{sendWithEnter ? 'Shift+Enter for new line' : 'Enter for new line'}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={toggleSendWithEnter}
+                        className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${sendWithEnter ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${sendWithEnter ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+
+                    <div className="border-t dark:border-[#2a2b2d]/60 border-gray-100" />
+
+                    {/* Show Token Usage */}
+                    <div className="flex items-center justify-between py-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg dark:bg-[#2a2b2d] bg-gray-100 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-400 text-gray-500">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                          </svg>
+                        </div>
+                        <span className="text-sm dark:text-gray-300 text-gray-600">Show Token Usage</span>
+                      </div>
+                      <button
+                        onClick={toggleShowTokenUsage}
+                        className={`relative w-10 h-5.5 rounded-full transition-colors cursor-pointer ${showTokenUsage ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 bg-white rounded-full shadow transition-transform ${showTokenUsage ? 'translate-x-[18px]' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Provider */}
+                    <div>
+                      <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z" />
+                        </svg>
+                        Provider
+                      </label>
+                      <select
+                        value={selectedProvider}
+                        onChange={(e) => handleProviderChange(e.target.value)}
+                        className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
+                      >
+                        {Object.entries(providerNames).map(([key, name]) => (
+                          <option key={key} value={key}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Model */}
+                    <div>
+                      <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1.5 flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+                        </svg>
+                        Model
+                      </label>
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => handleModelChange(e.target.value)}
+                        className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 cursor-pointer transition-colors"
+                      >
+                        {(modelCatalog[selectedProvider] || []).map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* API Key (hidden for Ollama) */}
+                    {selectedProvider !== 'ollama' && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-medium dark:text-gray-400 text-gray-500 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
+                            </svg>
+                            API Key
+                          </label>
+                          {savedApiKeys[selectedProvider] && (
+                            <span className="text-xs text-indigo-400 flex items-center gap-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                                <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                              </svg>
+                              Saved
+                            </span>
+                          )}
+                        </div>
+                        <input
+                          type="password"
+                          value={apiKeyInput}
+                          onChange={(e) => setApiKeyInput(e.target.value)}
+                          placeholder={savedApiKeys[selectedProvider] ? 'Enter new key to replace...' : 'Enter API key...'}
+                          className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-colors"
+                        />
+                        <button
+                          onClick={handleSaveApiKey}
+                          disabled={!apiKeyInput.trim()}
+                          className="w-full mt-2 text-sm py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer font-medium"
+                        >
+                          Save Key
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -616,15 +859,23 @@ export default function Chat() {
               <span className="text-base font-semibold dark:text-gray-100 text-gray-800">{currentProviderLabel}</span>
               <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">{currentModelLabel}</span>
             </div>
-            <button
-              onClick={() => setSystemPromptEditorOpen(true)}
-              className={`p-2 rounded-lg transition-colors cursor-pointer ${systemPrompt ? 'dark:text-indigo-400 text-indigo-500 dark:hover:bg-indigo-500/10 hover:bg-indigo-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
-              title="System prompt"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1">
+              {messages.length > 0 && (
+                <ExportMenu
+                  messages={messages}
+                  sessionTitle={sessions.find(s => s.id === chatId)?.title || 'Chat'}
+                />
+              )}
+              <button
+                onClick={() => setSystemPromptEditorOpen(true)}
+                className={`p-2 rounded-lg transition-colors cursor-pointer ${systemPrompt ? 'dark:text-indigo-400 text-indigo-500 dark:hover:bg-indigo-500/10 hover:bg-indigo-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
+                title="System prompt"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" />
+                </svg>
+              </button>
+            </div>
           </div>
         </header>
 
@@ -700,7 +951,7 @@ export default function Chat() {
                   </div>
                 ) : (
                   <div className={`
-                    px-5 py-3 max-w-[85%] sm:max-w-[75%] text-[15px] leading-relaxed
+                    px-5 py-3 max-w-[85%] sm:max-w-[75%] leading-relaxed ${fontSize === 'sm' ? 'text-sm' : fontSize === 'lg' ? 'text-lg' : 'text-[15px]'}
                     ${m.role === 'user'
                       ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-sm shadow-lg shadow-indigo-500/20"
                       : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm"}
@@ -708,10 +959,21 @@ export default function Chat() {
                     {m.role === 'assistant' ? (
                       <MarkdownRenderer content={m.parts?.map(p => p.type === 'text' ? p.text : '').join('') || ''} darkMode={darkMode} />
                     ) : (
-                      <div className="whitespace-pre-wrap">
-                        {m.parts?.map((part, index) =>
-                          part.type === 'text' ? <span key={index}>{part.text}</span> : null
+                      <div className="space-y-2">
+                        {m.parts?.some((p: any) => p.type === 'file') && (
+                          <div className="flex flex-wrap gap-2">
+                            {m.parts?.map((part: any, index: number) =>
+                              part.type === 'file' ? (
+                                <FilePreview key={index} url={part.url} mediaType={part.mediaType} filename={part.filename} />
+                              ) : null
+                            )}
+                          </div>
                         )}
+                        <div className="whitespace-pre-wrap">
+                          {m.parts?.map((part: any, index: number) =>
+                            part.type === 'text' ? <span key={index}>{part.text}</span> : null
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -719,7 +981,7 @@ export default function Chat() {
 
                 {/* Action buttons — below bubble */}
                 {editingMessageId !== m.id && (
-                  <div className={`flex gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200 ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
+                  <div className={`flex items-center gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200 ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
                     <button
                       onClick={() => copyMessage(m.id)}
                       className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
@@ -746,6 +1008,30 @@ export default function Chat() {
                         </svg>
                       </button>
                     )}
+                    {!isLoading && sessions.some(s => s.id === chatId) && (
+                      <button
+                        onClick={() => forkChat(m.id)}
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
+                        title="Fork conversation from here"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
+                        </svg>
+                      </button>
+                    )}
+                    {showTokenUsage && m.role === 'assistant' && tokenUsage[m.id] && (
+                      <span className="ml-1 text-[11px] dark:text-gray-600 text-gray-400">
+                        ~{(tokenUsage[m.id].totalTokens || 0).toLocaleString()} tokens
+                        {(() => {
+                          const cost = estimateCost(
+                            tokenUsage[m.id].model,
+                            tokenUsage[m.id].promptTokens || 0,
+                            tokenUsage[m.id].completionTokens || 0
+                          );
+                          return cost !== null ? ` · ~$${cost.toFixed(4)}` : '';
+                        })()}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -766,26 +1052,167 @@ export default function Chat() {
           </div>
         </div>
 
+        {/* Drag-and-drop overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 z-40 bg-indigo-500/10 border-2 border-dashed border-indigo-400 rounded-xl flex items-center justify-center pointer-events-none">
+            <div className="text-lg font-medium dark:text-indigo-300 text-indigo-600">Drop files here</div>
+          </div>
+        )}
+
         {/* Input area */}
-        <div className="absolute bottom-0 left-0 w-full pb-6 pt-16 px-4 pointer-events-none" style={{ background: darkMode ? 'linear-gradient(to top, #0d0d0e 40%, transparent)' : 'linear-gradient(to top, #f9fafb 40%, transparent)' }}>
+        <div
+          className="absolute bottom-0 left-0 w-full pb-6 pt-16 px-4 pointer-events-none"
+          style={{ background: darkMode ? 'linear-gradient(to top, #0d0d0e 40%, transparent)' : 'linear-gradient(to top, #f9fafb 40%, transparent)' }}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (e.dataTransfer.files.length > 0) {
+              handleFilesSelected(e.dataTransfer.files);
+            }
+          }}
+        >
           <div className="max-w-3xl mx-auto w-full pointer-events-auto">
-            <form onSubmit={onFormSubmit} className="relative flex items-center dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-200/50 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
-              <input
-                className="w-full py-4 pl-5 pr-14 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px]"
+            {/* Pending files strip */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 px-1">
+                {pendingFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg dark:bg-[#1e1f20] bg-gray-100 border dark:border-[#333537] border-gray-200 text-sm">
+                    {f.mediaType.startsWith('image/') ? (
+                      <img src={f.url} alt={f.filename} className="w-6 h-6 rounded object-cover" />
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 dark:text-gray-400 text-gray-500">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                      </svg>
+                    )}
+                    <span className="dark:text-gray-300 text-gray-700 truncate max-w-[120px]">{f.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(i)}
+                      className="p-0.5 rounded dark:hover:bg-white/[0.1] hover:bg-gray-200 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 cursor-pointer"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                {uploadingCount > 0 && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm dark:text-gray-500 text-gray-400">
+                    <div className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    Uploading...
+                  </div>
+                )}
+              </div>
+            )}
+            <form onSubmit={onFormSubmit} className="dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-200/50 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
+              {/* Textarea row */}
+              <textarea
+                className="w-full pt-4 pb-2 px-4 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px] resize-none max-h-40 overflow-y-auto"
+                rows={1}
                 value={inputValue}
                 placeholder={`Message ${currentProviderLabel}...`}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={(e) => {
+                  setInputValue(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                onKeyDown={(e) => {
+                  if (sendWithEnter) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (inputValue.trim() || pendingFiles.length > 0) {
+                        (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                      }
+                    }
+                  } else {
+                    if (e.key === 'Enter' && e.shiftKey) {
+                      e.preventDefault();
+                      if (inputValue.trim() || pendingFiles.length > 0) {
+                        (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                      }
+                    }
+                  }
+                }}
                 disabled={isLoading}
               />
-              <button
-                type="submit"
-                disabled={!inputValue.trim() || isLoading}
-                className={`absolute right-2.5 p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10' : 'text-gray-500'}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-                </svg>
-              </button>
+              {/* Toolbar row */}
+              <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
+                <div className="flex items-center gap-0.5">
+                  <FileUploadButton onFilesSelected={handleFilesSelected} disabled={isLoading} />
+                  {/* Model selector */}
+                  <div ref={modelDropdownRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setModelDropdownOpen(prev => !prev)}
+                      className="flex items-center gap-1.5 text-[11px] dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer rounded-lg px-2 py-1.5 dark:hover:bg-white/[0.06] hover:bg-gray-100"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                      </svg>
+                      {currentModelLabel}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-2.5 h-2.5">
+                        <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    {modelDropdownOpen && (
+                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl dark:shadow-black/40 shadow-gray-200/60 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-1 duration-150">
+                        <div className="max-h-64 overflow-y-auto py-1">
+                          {Object.entries(modelCatalog).map(([provider, models]) => {
+                            const hasKey = provider === 'ollama' || !!savedApiKeys[provider];
+                            return (
+                              <div key={provider}>
+                                <div className="px-3 pt-2 pb-1">
+                                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${hasKey ? 'dark:text-gray-400 text-gray-500' : 'dark:text-gray-600 text-gray-400'}`}>
+                                    {providerNames[provider] || provider}
+                                    {!hasKey && <span className="ml-1 normal-case tracking-normal font-normal">· no key</span>}
+                                  </span>
+                                </div>
+                                {models.map((m) => {
+                                  const isActive = selectedProvider === provider && selectedModel === m.id;
+                                  return (
+                                    <button
+                                      key={`${provider}-${m.id}`}
+                                      type="button"
+                                      disabled={!hasKey}
+                                      onClick={() => handleQuickModelSwitch(provider, m.id)}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                                        isActive
+                                          ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium cursor-pointer'
+                                          : hasKey
+                                            ? 'dark:text-gray-300 text-gray-700 dark:hover:bg-white/[0.06] hover:bg-gray-50 cursor-pointer'
+                                            : 'dark:text-gray-600 text-gray-350 opacity-40 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {m.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <VoiceInputButton
+                    onTranscript={(text) => setInputValue(prev => prev + (prev ? ' ' : '') + text)}
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="submit"
+                    disabled={(!inputValue.trim() && pendingFiles.length === 0) || isLoading}
+                    className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() || pendingFiles.length > 0 ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10' : 'text-gray-500'}`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                      <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </form>
             <div className="text-center mt-3 text-[11px] dark:text-gray-600 text-gray-400">
               AI can make mistakes. Verify important information.

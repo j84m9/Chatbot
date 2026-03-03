@@ -28,16 +28,20 @@ export async function GET(req: Request) {
 
   // Rebuild the messages into the AI SDK's expected format
   const formattedMessages = data.map((msg) => {
-    // We map over the parts array stored in Supabase to extract the raw text for the fallback 'content' field
+    // Extract text-only content for the fallback 'content' field
     const rawText = Array.isArray(msg.content)
-      ? msg.content.map((p: any) => p.text || '').join('')
+      ? msg.content
+          .filter((p: any) => p.type === 'text')
+          .map((p: any) => p.text || '')
+          .join('')
       : msg.content;
 
     return {
       id: msg.id,
       role: msg.role,
       content: rawText,
-      parts: msg.content // The actual parts array used for rendering
+      parts: msg.content, // The actual parts array used for rendering
+      ...(msg.token_usage ? { token_usage: msg.token_usage } : {}),
     };
   });
 

@@ -56,6 +56,9 @@ export default function DataExplorer() {
   // Lifted input state for QueryChat (allows schema browser to insert text)
   const [queryInput, setQueryInput] = useState('');
 
+  // Fire explosion easter egg
+  const [fireEffect, setFireEffect] = useState(false);
+
   // Draggable split pane
   const [splitPosition, setSplitPosition] = useState(45); // percentage
   const isDragging = useRef(false);
@@ -694,86 +697,132 @@ export default function DataExplorer() {
       />
 
       {/* Main content: split pane */}
-      <div ref={containerRef} className="flex-1 flex relative">
+      <div ref={containerRef} className="flex-1 flex flex-col relative">
         {/* Ambient glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
 
         {/* Header bar */}
-        <div className="absolute top-0 left-0 right-0 z-10 px-6 py-3 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-indigo-400">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125v-3.75" />
-            </svg>
-            <span className="text-base font-semibold dark:text-gray-100 text-gray-800">Data Explorer</span>
-            {activeConnectionId && connections.find(c => c.id === activeConnectionId) && (
-              <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">
-                {connections.find(c => c.id === activeConnectionId)?.name}
-              </span>
-            )}
+        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-400/50 ring-2 ring-emerald-400/20" />
+              <span className="text-base font-semibold dark:text-gray-100 text-gray-800">Data Explorer</span>
+              {activeConnectionId && connections.find(c => c.id === activeConnectionId) && (
+                <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">
+                  {connections.find(c => c.id === activeConnectionId)?.name}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {activeConnectionId && (
+                <div className="flex items-center gap-1.5 mr-2 text-xs dark:text-gray-500 text-gray-400">
+                  <span>{connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'SQLite' : 'MSSQL'}</span>
+                </div>
+              )}
+              <button
+                onClick={toggleDarkMode}
+                className="p-2 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-500 transition-colors cursor-pointer"
+                title="Toggle dark mode"
+              >
+                {darkMode ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
-          <button
-            onClick={toggleDarkMode}
-            className="p-2 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-500 transition-colors cursor-pointer"
-            title="Toggle dark mode"
+        </header>
+
+        {/* Pane row */}
+        <div className="flex-1 flex min-h-0">
+          {/* Left pane: Query Chat */}
+          <div
+            className="flex flex-col transition-[width] duration-300"
+            style={{ width: showResults ? `${splitPosition}%` : '100%' }}
           >
-            {darkMode ? (
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
-              </svg>
-            )}
-          </button>
+            <QueryChat
+              exchanges={exchanges}
+              selectedIndex={selectedExchangeIndex}
+              onSelectExchange={setSelectedExchangeIndex}
+              onSubmitQuestion={handleSubmitQuestion}
+              isQuerying={isQuerying}
+              hasConnection={!!activeConnectionId}
+              refineContext={refineContext}
+              onCancelRefine={handleCancelRefine}
+              onRefineSubmit={handleRefineSubmit}
+              inputValue={queryInput}
+              onInputChange={setQueryInput}
+              fireEffect={fireEffect}
+              onTriggerFire={() => { setFireEffect(true); setTimeout(() => setFireEffect(false), 1700); }}
+              darkMode={darkMode}
+            />
+          </div>
+
+          {showResults && (
+            <>
+              {/* Drag handle */}
+              <div
+                onMouseDown={handleMouseDown}
+                className="w-1.5 flex-shrink-0 cursor-col-resize dark:bg-[#1e1f20] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
+              >
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
+              </div>
+
+              {/* Right pane: Results Panel */}
+              <div
+                className="flex flex-col"
+                style={{ width: `${100 - splitPosition}%` }}
+              >
+                <ResultsPanel
+                  exchange={selectedExchange}
+                  darkMode={darkMode}
+                  onClose={() => setSelectedExchangeIndex(-1)}
+                  onRefineChart={handleRefineChart}
+                  onRefineSql={handleRefineSql}
+                  onRequestInsights={handleRequestInsights}
+                  onSaveQuery={handleSaveQuery}
+                />
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Left pane: Query Chat */}
-        <div
-          className="flex flex-col pt-[57px] transition-[width] duration-300"
-          style={{ width: showResults ? `${splitPosition}%` : '100%' }}
-        >
-          <QueryChat
-            exchanges={exchanges}
-            selectedIndex={selectedExchangeIndex}
-            onSelectExchange={setSelectedExchangeIndex}
-            onSubmitQuestion={handleSubmitQuestion}
-            isQuerying={isQuerying}
-            hasConnection={!!activeConnectionId}
-            refineContext={refineContext}
-            onCancelRefine={handleCancelRefine}
-            onRefineSubmit={handleRefineSubmit}
-            inputValue={queryInput}
-            onInputChange={setQueryInput}
-          />
-        </div>
-
-        {showResults && (
-          <>
-            {/* Drag handle */}
-            <div
-              onMouseDown={handleMouseDown}
-              className="w-1.5 flex-shrink-0 cursor-col-resize dark:bg-[#2a2b2d] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
-            >
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
-            </div>
-
-            {/* Right pane: Results Panel */}
-            <div
-              className="flex flex-col pt-[57px]"
-              style={{ width: `${100 - splitPosition}%` }}
-            >
-              <ResultsPanel
-                exchange={selectedExchange}
-                darkMode={darkMode}
-                onClose={() => setSelectedExchangeIndex(-1)}
-                onRefineChart={handleRefineChart}
-                onRefineSql={handleRefineSql}
-                onRequestInsights={handleRequestInsights}
-                onSaveQuery={handleSaveQuery}
+        {/* Full-page radar pulse — rings expand from icon position to window edges */}
+        {fireEffect && (
+          <div className="absolute inset-0 z-50 pointer-events-none overflow-hidden">
+            {[
+              { duration: '1.2s', delay: '0s', opacity: 0.35, width: 2 },
+              { duration: '1.2s', delay: '0.12s', opacity: 0.25, width: 1.5 },
+              { duration: '1.2s', delay: '0.24s', opacity: 0.18, width: 1 },
+              { duration: '1.2s', delay: '0.36s', opacity: 0.10, width: 0.5 },
+            ].map((ring, i) => (
+              <span
+                key={i}
+                className="absolute rounded-full"
+                style={{
+                  width: '200vmax',
+                  height: '200vmax',
+                  left: '50%',
+                  top: '40%',
+                  translate: '-50% -50%',
+                  scale: 0,
+                  borderWidth: `${ring.width}px`,
+                  borderStyle: 'solid',
+                  borderColor: `rgba(129, 140, 248, ${ring.opacity})`,
+                  animation: `db-radar-expand ${ring.duration} ease-out forwards`,
+                  animationDelay: ring.delay,
+                  // @ts-expect-error -- CSS custom property
+                  '--ring-opacity': ring.opacity,
+                }}
               />
-            </div>
-          </>
+            ))}
+          </div>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 # Chatbot Project
 
 ## Overview
-A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, OpenAI, Anthropic, Google) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer for natural language querying of MSSQL and SQLite databases.
+A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, Anthropic, Google, OpenAI) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer for natural language querying of MSSQL and SQLite databases.
 
 ## Tech Stack
 - **Framework**: Next.js 16 (App Router) with React 19, TypeScript, Tailwind CSS v4
@@ -13,13 +13,14 @@ A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v
 - **Rendering**: `react-markdown` + `remark-gfm` for markdown, `shiki` for syntax highlighting
 - **Charts**: `react-plotly.js` for data visualization in Data Explorer
 - **Local DB**: `better-sqlite3` for read-only SQLite querying in Data Explorer
+- **Export**: `jspdf` for client-side PDF generation
 
 ## Project Structure
 ```
 app/
-  page.tsx              — Main chat UI (sidebar, messages, input, settings panel)
+  page.tsx              — Main chat UI (sidebar, messages, input with toolbar, settings panel)
   layout.tsx            — Root layout (Geist fonts, dark class on <html>)
-  globals.css           — Tailwind imports, dark variant, custom animations
+  globals.css           — Tailwind imports, dark variant, custom animations (radar pulse, lightning)
   login/
     page.tsx            — Login/signup form
     actions.ts          — Server actions: login() and signup()
@@ -27,7 +28,9 @@ app/
     page.tsx            — Data Explorer UI (split pane, sidebar, query chat, results)
     report/page.tsx     — Standalone pop-out report window (BI report style)
   api/
-    chat/route.ts       — POST: streams AI response, saves user+assistant messages
+    chat/route.ts       — POST: streams AI response, saves user+assistant messages (+ token usage)
+    upload/route.ts     — POST: file upload to Supabase Storage (10MB limit, type validation)
+    fork/route.ts       — POST: fork a conversation from any message point
     sessions/route.ts   — GET: list sessions, PATCH: rename/update system prompt, DELETE: remove session + messages
     search/route.ts     — GET: full-text search across chat messages
     messages/route.ts   — GET: fetch messages for a session (rebuilds AI SDK format)
@@ -45,7 +48,7 @@ app/
   components/
     data-explorer/
       ResultsPanel.tsx  — SQL/Table/Chart/Insights tabs, CSV export, pop-out, refinement buttons
-      QueryChat.tsx     — Chat interface for natural language queries (+ refinement mode)
+      QueryChat.tsx     — Chat interface for natural language queries (floating input, refinement mode)
       ConnectionManager.tsx — Modal for adding/editing database connections
       PlotlyChart.tsx   — Plotly chart wrapper (8 chart types, color grouping, orientation)
       ChartGallery.tsx  — Multi-chart gallery with per-chart refine buttons
@@ -57,10 +60,16 @@ app/
     MarkdownRenderer.tsx — Markdown rendering for chat messages
     CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
     ChatPlot.tsx        — Inline chart rendering in chat messages
+    VoiceInputButton.tsx — Browser Speech API voice input (mic button, pulses red when recording)
+    ExportMenu.tsx      — Chat export dropdown (text + PDF)
+    FileUploadButton.tsx — Paperclip file upload button (images, PDFs, text, CSV)
+    FilePreview.tsx     — File/image preview in message bubbles (click-to-expand images)
 hooks/
   useKeyboardShortcuts.ts — Global keyboard shortcut hook (Cmd+K, Cmd+N, Cmd+/, Escape)
 utils/
-  ai/provider.ts        — getModel() factory, MODEL_CATALOG, PROVIDER_NAMES
+  chat-export.ts        — Client-side text + PDF export (jsPDF)
+  token-costs.ts        — Token cost estimation per model (cost per 1M tokens)
+  ai/provider.ts        — getModel() factory, MODEL_CATALOG (with vision flag), PROVIDER_NAMES
   ai/data-explorer-prompts.ts — Prompt templates for SQL generation and chart suggestion
   supabase/
     server.ts           — Server-side Supabase client (cookie-based)
@@ -74,6 +83,7 @@ scripts/
 types/
   plotly.d.ts          — Plotly type declarations
   react-plotly.d.ts    — React-Plotly type declarations
+  speech-recognition.d.ts — Web Speech API type augmentation
 middleware.ts          — Auth guard: redirects unauthenticated users to /login
 db/migrations/         — SQL migration files (dbmate format)
 ```
@@ -89,11 +99,14 @@ db/migrations/         — SQL migration files (dbmate format)
 
 ### `chat_sessions`
 - `id` UUID PK, `created_at` TIMESTAMPTZ, `title` TEXT, `system_prompt` TEXT nullable, `user_id` UUID (FK to auth.users)
+- `forked_from_session_id` UUID nullable (FK to chat_sessions, ON DELETE SET NULL)
+- `forked_at_message_id` UUID nullable (FK to chat_messages, ON DELETE SET NULL)
 - `system_prompt`: custom system prompt for the session (null = use default)
 - RLS enabled: users can only access their own sessions
 
 ### `chat_messages`
 - `id` UUID PK, `session_id` UUID (FK), `role` TEXT, `content` JSONB (parts array), `created_at`
+- `token_usage` JSONB nullable — `{ promptTokens, completionTokens, totalTokens, model }`
 - RLS enabled: access gated via session ownership (join-based policy)
 
 ### `profiles`
@@ -137,7 +150,7 @@ All API routes use a two-client pattern:
 ### API Key Encryption
 - API keys are encrypted before storing using pgcrypto's `pgp_sym_encrypt` via `encrypt_text()` RPC
 - Decrypted on read via `decrypt_text()` RPC using `DB_CONNECTIONS_ENCRYPTION_KEY` env var
-- Backward-compatible: if decryption fails (plain text value), falls back gracefully and re-encrypts on next save
+- If decryption fails or returns null, key is treated as absent (returns `null` to frontend)
 - Same encryption pattern used for MSSQL connection passwords in Data Explorer
 
 ### AI Provider Resolution
@@ -145,9 +158,12 @@ All API routes use a two-client pattern:
 - `chat/route.ts` and `data-explorer/query/route.ts` fetch settings, decrypt keys, call `getModel()` to instantiate the right provider
 - Frontend never sends API keys per-request; they're read and decrypted server-side
 - API keys are masked on GET (`...xxxx`), POST ignores masked values
+- Provider order: Ollama, Anthropic, Google, OpenAI (reflected in `MODEL_CATALOG` and `PROVIDER_NAMES`)
 
 ### Data Explorer Architecture
-- **Split pane layout**: QueryChat (left) + ResultsPanel (right), draggable divider
+- **Consistent layout with Chat**: Header is an in-flow `<header>` element (not absolute), both pages share the same header height (`px-6 py-4`), floating input pattern, and indigo color scheme
+- **Split pane layout**: QueryChat (left) + ResultsPanel (right), draggable divider. Panes sit inside a `flex-1 flex min-h-0` row below the header
+- **Floating input**: QueryChat uses absolute-positioned input at bottom with gradient overlay (matching chat page pattern), `darkMode` prop controls gradient colors
 - **Dynamic results panel**: Results pane only renders when an exchange has content (loading, sql, results, or error). QueryChat fills full width otherwise, with a `transition-[width] duration-300` animation
 - **Pop-out report window**: Expand button stores exchange data in `sessionStorage` and opens `/data-explorer/report` via `window.open()` in a new browser window (BI report style). The report page reads from `sessionStorage`, renders tabs with full Plotly interactivity
 - **Close button**: Dismisses results panel by deselecting the exchange index
@@ -162,6 +178,7 @@ All API routes use a two-client pattern:
 - **Chart refinement**: User clicks "Refine" on a chart → types instruction → backend returns updated chartConfigs → original exchange updates in place (no new SQL execution)
 - **SQL refinement**: User clicks "Refine SQL" → types instruction → creates new exchange with modified SQL + new results
 - **Data insights**: AI-generated bullet points about query results, available on the Insights tab. Generated on demand, cached in exchange
+- **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings from the icon that fade as they reach the window boundary
 
 ### Chat Search
 - `SearchModal.tsx` opens via `Cmd+K` or search icon in sidebar
@@ -199,12 +216,64 @@ All API routes use a two-client pattern:
 - Spinner + status text replaces bouncing dots during loading
 - Original `/api/data-explorer/query` kept for non-streaming callers (refinement, insights)
 
-### Frontend Architecture (page.tsx ~690 lines)
+### Voice Input
+- `VoiceInputButton.tsx` uses browser's built-in Web Speech API (`SpeechRecognition || webkitSpeechRecognition`)
+- Returns `null` if browser doesn't support it (graceful degradation)
+- Mic icon pulses red when recording, continuous mode, stops on toggle
+- Transcript appended to input value
+
+### Chat Export
+- Client-side generation following the CSV export pattern in Data Explorer
+- `utils/chat-export.ts`: pure functions `exportChatAsText()` and `exportChatAsPdf()`
+- Text export: role-labeled conversation with separator lines
+- PDF export: styled jsPDF document with colored role labels, word-wrapped text, auto page breaks
+- `ExportMenu.tsx`: dropdown in chat header, shown when messages exist
+
+### File Upload
+- `app/api/upload/route.ts`: FormData upload to Supabase Storage bucket `chat-files`
+- Validates: max 10MB, allowed types (image/png, jpeg, gif, webp, pdf, text/plain, csv)
+- `FileUploadButton.tsx`: paperclip icon, native file picker, multiple files
+- `FilePreview.tsx`: images render as thumbnails (click-to-expand lightbox), non-images as icon + filename + download link
+- Drag-and-drop overlay on chat container when vision model is selected
+- Pending files strip below input with remove buttons + upload spinner
+- `FileUploadButton` hidden when model doesn't support vision
+- Vision flag in `MODEL_CATALOG`: true for GPT-4o, Claude Sonnet/Haiku, all Gemini; false for o3-mini, Ollama
+
+### Chat Forking
+- Fork from any message: creates new session "Fork of {title}" with messages up to that point
+- `app/api/fork/route.ts`: copies messages, sets `forked_from_session_id` and `forked_at_message_id`
+- Fork button appears in message hover actions (share icon) next to copy/edit
+
+### Token/Cost Estimation
+- `utils/token-costs.ts`: cost lookup per model (per 1M tokens for input/output)
+- `chat/route.ts` saves `token_usage` JSONB on assistant messages via `result.usage`
+- Messages API returns `token_usage` when available
+- UI shows "~1,234 tokens · ~$0.002" on hover below assistant messages
+
+### Chat Input Bar
+- Two-row layout inside one rounded container:
+  - **Top**: Full-width textarea for message input
+  - **Bottom toolbar**: File upload (left), model selector with dropdown (left), voice input (right), send button (right)
+- Model selector dropdown opens upward showing all providers grouped with their models
+- Ollama models always selectable (local, no API key needed)
+- Other provider models greyed out with `opacity-40` if no API key is saved
+- Provider order in dropdown: Ollama, Anthropic, Google, OpenAI
+- Active model highlighted in indigo
+
+### API Key Saved Indicator
+- Purple checkmark with "Saved" text (indigo-400) shown next to API Key label in settings
+- No masked key value displayed — just a clean "Saved" confirmation
+
+### Frontend Architecture (page.tsx)
 - Single-page app with all state in `page.tsx`
 - `useChat` hook with `DefaultChatTransport` for streaming
 - Click-outside detection uses `mousedown` events with ref-based containment (not `stopPropagation`) to play nice with native `<select>` elements
 - Sidebar uses CSS transitions (not conditional rendering) to avoid glitchy collapse/expand
 - Dark mode toggle persists to `localStorage`, toggles `.dark` class on `<html>`
+
+### Consistent Design Language
+- Both Chat and Data Explorer pages share: indigo/purple color scheme, emerald status dot, in-flow `<header>` with `px-6 py-4`, floating absolute-positioned input with gradient overlay, `max-w-3xl` content centering, `mt-28` empty state, `text-3xl` headings, flex-wrap suggestion chips
+- Data Explorer icon button and radar pulse use indigo (not orange) to match chat's lightning bolt
 
 ### Environment Variables
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` — public, used in browser + server auth client
@@ -217,7 +286,8 @@ All API routes use a two-client pattern:
 - [x] Chat streaming with Ollama (local default)
 - [x] BYOK: OpenAI, Anthropic, Google provider support
 - [x] Provider/model selection in settings dropdown
-- [x] API key save with masked display
+- [x] Quick model switcher in chat input toolbar (grouped dropdown with API key gating)
+- [x] API key save with purple checkmark indicator
 - [x] API keys encrypted at rest (pgcrypto)
 - [x] Chat history sidebar with session list
 - [x] Delete chat sessions
@@ -227,10 +297,12 @@ All API routes use a two-client pattern:
 - [x] Dark/light mode toggle
 - [x] Markdown rendering for assistant messages (code blocks, bold, lists)
 - [x] Code syntax highlighting (Shiki)
-- [x] Lightning animation easter egg
+- [x] Lightning animation easter egg (chat)
+- [x] Radar pulse animation easter egg (Data Explorer)
 - [x] Suggestion chips on empty state
 - [x] Custom thin scrollbar styling
-- [x] Polished UI: gradient bubbles, frosted header, ambient glow
+- [x] Polished UI: gradient bubbles, frosted header, ambient glow, consistent indigo color scheme
+- [x] Consistent layout between Chat and Data Explorer (header, input, empty state alignment)
 - [x] Data Explorer: natural language → SQL against MSSQL and SQLite databases
 - [x] SQLite support with demo database included in repo
 - [x] Auto-generated multi-charts (Plotly) for Data Explorer results (1-3 charts per query)
@@ -257,6 +329,14 @@ All API routes use a two-client pattern:
 - [x] Schema browser in Data Explorer sidebar (collapsible tree, click-to-insert columns)
 - [x] Query history search in Data Explorer sidebar
 - [x] Streaming SQL generation with progressive status updates (SSE)
+- [x] Voice input via Web Speech API (mic button, graceful degradation)
+- [x] Chat export as Text (.txt) and PDF (jsPDF)
+- [x] File/image upload to Supabase Storage with drag-and-drop
+- [x] Vision capability guard: file upload only shown for vision-capable models
+- [x] File preview in messages (image thumbnails with lightbox, document icons)
+- [x] Chat forking from any message (creates new session with history up to that point)
+- [x] Token usage tracking and cost estimation per assistant message
+- [x] Two-row chat input with integrated toolbar (file upload, model selector, voice, send)
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
@@ -276,11 +356,15 @@ Pre-seeded SQLite database with 11 tables of realistic sample data:
 None currently tracked.
 
 ## Future Improvements
-- [ ] File/image upload support
-- [ ] Export chat as PDF/text
 - [ ] Responsive mobile layout
 - [ ] Rate limiting on API routes
 - [ ] Add error boundaries and loading states
 - [ ] PostgreSQL support in Data Explorer
 - [ ] MySQL support in Data Explorer
 - [ ] Multi-chart dashboard view (pinned charts)
+- [ ] Conversation memory / context window management
+- [ ] Streaming responses in Data Explorer (progressive chart rendering)
+- [ ] Drag-and-drop file upload in Data Explorer
+- [ ] Export Data Explorer results as PDF report
+- [ ] User preferences sync across devices
+- [ ] Admin dashboard for usage analytics

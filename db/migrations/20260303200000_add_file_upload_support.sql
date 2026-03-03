@@ -1,0 +1,13 @@
+-- migrate:up
+-- File upload support: files are stored in Supabase Storage bucket "chat-files"
+-- and referenced as FileUIPart objects in the existing content JSONB column of chat_messages.
+-- No schema changes needed — this migration documents the storage bucket setup.
+--
+-- Manual setup required in Supabase Dashboard:
+--   1. Create Storage bucket: "chat-files"
+--   2. Set bucket to public
+--   3. Set max file size to 10MB
+--   4. Add RLS policy: allow authenticated users to upload to their own folder (user_id/*)
+
+-- migrate:down
+-- No schema changes to revert. Remove the "chat-files" bucket manually if needed.

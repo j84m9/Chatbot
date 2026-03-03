@@ -31,10 +31,10 @@ async function decryptKey(
       encrypted_text: encryptedValue,
       encryption_key: encryptionKey,
     });
-    return decrypted || encryptedValue;
+    return decrypted || null;
   } catch {
-    // Value was likely stored as plain text before encryption was enabled
-    return encryptedValue;
+    // Decryption failed — treat as no key rather than exposing encrypted blob
+    return null;
   }
 }
 
