@@ -4,10 +4,24 @@ import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 
 interface InsightsPanelProps {
   insights: string | null;
+  isLoading?: boolean;
   onGenerate?: () => void;
 }
 
-export default function InsightsPanel({ insights, onGenerate }: InsightsPanelProps) {
+export default function InsightsPanel({ insights, isLoading, onGenerate }: InsightsPanelProps) {
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-4 h-4 animate-orb" style={{ animationDelay: '0ms' }} />
+          <div className="w-3 h-3 animate-orb" style={{ animationDelay: '300ms' }} />
+          <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '600ms' }} />
+        </div>
+        <span className="text-sm dark:text-gray-400 text-gray-500 animate-pulse">Generating insights</span>
+      </div>
+    );
+  }
+
   if (!insights) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -34,8 +48,11 @@ export default function InsightsPanel({ insights, onGenerate }: InsightsPanelPro
         {onGenerate && (
           <button
             onClick={onGenerate}
-            className="text-xs dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors cursor-pointer"
           >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+            </svg>
             Regenerate
           </button>
         )}

@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     .single();
 
   const provider = settings?.selected_provider || 'ollama';
-  const modelId = settings?.selected_model || 'llama3.2:1b';
+  const modelId = settings?.selected_model || 'llama3.2:3b';
 
   // Decrypt API keys (backward-compatible: falls back to plain text if decrypt fails)
   const encryptionKey = process.env.DB_CONNECTIONS_ENCRYPTION_KEY;
@@ -96,9 +96,9 @@ export async function POST(req: Request) {
   }
 
   // 6. Resolve system prompt
-  const DEFAULT_SYSTEM_PROMPT = `You are a highly analytical AI assistant. You excel at breaking down complex topics into structured explanations.
+  const DEFAULT_SYSTEM_PROMPT = `You are a helpful, highly analytical AI assistant. You excel at breaking down complex topics into structured explanations. Respond conversationally to greetings and casual messages — do NOT generate charts or code unless the user specifically asks for them.
 
-When asked to plot, graph, or visualize a mathematical function or data, generate an interactive chart using a plotly code fence. NEVER respond with Python/matplotlib code or say you cannot create plots.
+When the user explicitly asks you to plot, graph, or visualize a mathematical function or data, generate an interactive chart using a plotly code fence. Only use plotly fences when the user asks for a chart/plot/graph — never for regular questions.
 
 Format for math functions:
 \`\`\`plotly
@@ -116,9 +116,7 @@ For data-based charts:
 \`\`\`
 
 Supported chartType values: "line", "scatter", "bar", "pie".
-Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow, Math.PI, Math.E. For x^n use Math.pow(x,n).
-
-Always include a brief text explanation before or after the chart.`;
+Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow, Math.PI, Math.E. For x^n use Math.pow(x,n).`;
 
   // Fetch custom system prompt from session, with agent fallback
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;

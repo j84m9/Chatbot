@@ -18,10 +18,12 @@ export interface Exchange {
   chartConfig: any;
   chartConfigs: ChartConfig[] | null;
   error: string | null;
+  errorSuggestion?: string | null;
   isLoading: boolean;
   messageType?: string;
   parentMessageId?: string | null;
   insights?: string | null;
+  insightsLoading?: boolean;
   statusMessage?: string;
 }
 
@@ -205,7 +207,12 @@ export default function QueryChat({
                       </span>
                     </div>
                   ) : ex.error && !ex.sql ? (
-                    <span className="text-red-400 text-sm">{ex.error}</span>
+                    <div>
+                      <span className="text-red-400 text-sm">{ex.error}</span>
+                      {ex.errorSuggestion && (
+                        <p className="text-xs dark:text-gray-400 text-gray-500 mt-1">{ex.errorSuggestion}</p>
+                      )}
+                    </div>
                   ) : (
                     <div className="space-y-2">
                       <p className="dark:text-gray-300 text-gray-700 leading-relaxed">{ex.explanation || 'Query executed.'}</p>

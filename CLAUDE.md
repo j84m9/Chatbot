@@ -38,7 +38,7 @@ app/
     search/route.ts     — GET: full-text search across chat messages
     messages/route.ts   — GET: fetch messages for a session (rebuilds AI SDK format)
     settings/route.ts   — GET/POST: user provider/model/API key settings (encrypt/decrypt)
-    models/route.ts     — GET: static model catalog + provider names
+    models/route.ts     — GET: dynamic Ollama model discovery + static catalog for other providers
     data-explorer/
       query/route.ts    — POST: natural language → SQL → execute → multi-chart suggestion (+ chart/SQL refinement, insights)
       query-stream/route.ts — POST: SSE streaming version of query (progressive SQL → results → charts)
@@ -50,11 +50,14 @@ app/
       messages/route.ts — GET: fetch messages for a data explorer session
   components/
     data-explorer/
-      ResultsPanel.tsx  — SQL/Table/Chart/Insights tabs, CSV export, pop-out, refinement buttons
+      ResultsPanel.tsx  — SQL/Table/Chart/Insights tabs, CSV+PDF export, pop-out, refinement buttons
       QueryChat.tsx     — Chat interface for natural language queries (floating input, refinement mode)
       ConnectionManager.tsx — Modal for adding/editing database connections
-      PlotlyChart.tsx   — Plotly chart wrapper (8 chart types, color grouping, orientation)
-      ChartGallery.tsx  — Multi-chart gallery with per-chart refine buttons
+      PlotlyChart.tsx   — Plotly chart wrapper (13 chart types, color grouping, orientation, forwardRef for PDF)
+      ChartGallery.tsx  — Multi-chart gallery/grid with per-chart refine buttons, chart type switcher, entrance animations
+      ChartTypeSwitcher.tsx — Horizontal strip of chart type icon buttons for local type switching
+      KPICards.tsx       — Auto-detected summary metric cards with smart formatting and staggered entrance
+      DataTable.tsx     — Enhanced table with sorting, number formatting, conditional coloring, text truncation
       InsightsPanel.tsx — AI-generated data insights with regenerate
       DataExplorerSidebar.tsx — Sidebar with connections, schema browser, saved queries, sessions (AI titles), settings
       SchemaBrowser.tsx — Collapsible tree view of database tables/columns with click-to-insert
@@ -62,7 +65,7 @@ app/
     SystemPromptEditor.tsx — System prompt customization modal with presets (+ agent read-only mode)
     AgentBrowser.tsx     — Browse/install agents modal (Store + Installed tabs)
     MarkdownRenderer.tsx — Markdown rendering for chat messages
-    CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
+    CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki, module-level cache for flicker-free streaming)
     ChatPlot.tsx        — Inline chart rendering in chat messages
     VoiceInputButton.tsx — Browser Speech API voice input (mic button, pulses indigo when recording)
     ExportMenu.tsx      — Chat export dropdown (text + PDF)
@@ -72,6 +75,7 @@ hooks/
   useKeyboardShortcuts.ts — Global keyboard shortcut hook (Cmd+K, Cmd+N, Cmd+/, Escape)
 utils/
   chat-export.ts        — Client-side text + PDF export (jsPDF)
+  data-explorer-export.ts — Data Explorer PDF report export (jsPDF, landscape A4)
   token-costs.ts        — Token cost estimation per model (cost per 1M tokens)
   ai/provider.ts        — getModel() factory, MODEL_CATALOG (with vision flag), PROVIDER_NAMES
   ai/data-explorer-prompts.ts — Prompt templates for SQL generation and chart suggestion
@@ -121,7 +125,7 @@ db/migrations/         — SQL migration files (dbmate format)
 - RLS enabled: users can only SELECT/UPDATE their own row (WITH CHECK on UPDATE)
 
 ### `user_settings`
-- `user_id` UUID PK (FK to auth.users), `selected_provider` TEXT default 'ollama', `selected_model` TEXT default 'llama3.2:1b', `openai_api_key` TEXT (encrypted), `anthropic_api_key` TEXT (encrypted), `google_api_key` TEXT (encrypted), `updated_at` TIMESTAMPTZ
+- `user_id` UUID PK (FK to auth.users), `selected_provider` TEXT default 'ollama', `selected_model` TEXT default 'llama3.2:3b', `openai_api_key` TEXT (encrypted), `anthropic_api_key` TEXT (encrypted), `google_api_key` TEXT (encrypted), `updated_at` TIMESTAMPTZ
 - RLS enabled: users can only SELECT/INSERT/UPDATE their own row
 - API keys encrypted at rest via pgcrypto (`encrypt_text`/`decrypt_text` functions)
 
@@ -151,10 +155,11 @@ db/migrations/         — SQL migration files (dbmate format)
 - RLS enabled
 
 ### `data_explorer_messages`
-- `id` UUID PK, `session_id` UUID (FK), `question`, `sql_query`, `explanation`, `results` JSONB, `chart_config` JSONB, `chart_configs` JSONB, `error`, `execution_time_ms`, `row_count`, `message_type` TEXT (default 'query'), `parent_message_id` UUID (FK self-ref), `created_at`
+- `id` UUID PK, `session_id` UUID (FK), `question`, `sql_query`, `explanation`, `results` JSONB, `chart_config` JSONB, `chart_configs` JSONB, `error`, `execution_time_ms`, `row_count`, `message_type` TEXT (default 'query'), `parent_message_id` UUID (FK self-ref), `insights` TEXT nullable, `created_at`
 - `chart_configs`: array of chart configs (coexists with single `chart_config` for backward compat)
 - `message_type`: 'query' | 'chart_refinement' | 'sql_refinement' | 'insight'
 - `parent_message_id`: links refinement messages to their parent
+- `insights`: AI-generated data insights text, persisted when generated and reloaded with session
 - RLS enabled (messages gated via session ownership)
 
 ## Key Patterns
@@ -182,19 +187,31 @@ All API routes use a two-client pattern:
 - **Split pane layout**: QueryChat (left) + ResultsPanel (right), draggable divider. Panes sit inside a `flex-1 flex min-h-0` row below the header
 - **Floating input**: QueryChat uses absolute-positioned input at bottom with gradient overlay (matching chat page pattern), `darkMode` prop controls gradient colors
 - **Dynamic results panel**: Results pane only renders when an exchange has content (loading, sql, results, or error). QueryChat fills full width otherwise, with a `transition-[width] duration-300` animation
-- **Pop-out report window**: Expand button stores exchange data in `sessionStorage` and opens `/data-explorer/report` via `window.open()` in a new browser window (BI report style). The report page reads from `sessionStorage`, renders tabs with full Plotly interactivity
+- **Pop-out report window**: Dashboard layout (no tabs) — KPI cards → charts (grid) → data table → insights → SQL (collapsible). Header with print + CSV export buttons. Includes insights in sessionStorage data transfer
 - **Close button**: Dismisses results panel by deselecting the exchange index
 - **CSV export**: Client-side CSV generation from table data with proper escaping, available on Table tab
 - **SQLite support**: Read-only queries via `better-sqlite3`, SQL validation blocks writes, auto LIMIT injection (max 1000 rows)
 - **Exchange model**: Each query creates an `Exchange` object with `{ id, question, sql, explanation, results, chartConfig, chartConfigs, error, isLoading, messageType, parentMessageId, insights }`
 - **Multi-chart support**: AI suggests 1-3 charts per query. ChartGallery renders them in a scrollable gallery. Backward compat: wraps single `chartConfig` in array if `chartConfigs` is null
-- **Chart types**: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar. Supports `colorColumn` for grouping, `orientation` for horizontal bars, `yAxisType` for log scale
-- **Conversation context**: Last 5 messages injected into SQL generation prompt for follow-up queries ("group that by department")
+- **Chart types**: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar, area, box, funnel, waterfall, gauge. Supports `colorColumn` for grouping, `orientation` for horizontal bars, `yAxisType` for log scale
+- **Chart type switcher**: `ChartTypeSwitcher.tsx` renders icon buttons above each chart to switch types locally (no API call). Disabled types greyed out based on data shape (gauge disabled for multi-row, pie for >8 categories, etc.)
+- **KPI summary cards**: `KPICards.tsx` auto-detects summary metrics from query results. Single-row results → each numeric column becomes a KPI card. Multi-row → derives total/avg/max for prioritized numeric columns. Smart formatting: `$` for currency columns, `%` for rate columns, K/M abbreviation. Staggered entrance animation
+- **Chart gallery grid layout**: Toggle between list view and grid view (`grid-cols-2`). 3 charts → 2 top + 1 full-width bottom. Staggered chart entrance animations (150ms delay per chart)
+- **Enhanced data table**: `DataTable.tsx` with column sorting (click header → asc/desc/clear), number formatting (`toLocaleString()`, `$` prefix for currency), conditional formatting (indigo gradient intensity based on value position), long text truncation with expand/collapse, row metadata display
+- **PDF export**: `utils/data-explorer-export.ts` using jsPDF. Landscape A4 with title, KPI values, chart images, table (first 50 rows), SQL, insights. "Download PDF" button in ResultsPanel tab bar
+- **Conversation context**: Last 5 messages injected into SQL generation prompt for follow-up queries ("group that by department"). Context capped at 4000 chars, truncates oldest first
 - **AI session titles**: Auto-generated after 1st and 3rd query, shown in sidebar
 - **FK-enhanced DDL**: Foreign keys fetched via `PRAGMA foreign_key_list` (SQLite) and `sys.foreign_keys` (MSSQL), included in schema prompt text
 - **Chart refinement**: User clicks "Refine" on a chart → types instruction → backend returns updated chartConfigs → original exchange updates in place (no new SQL execution)
 - **SQL refinement**: User clicks "Refine SQL" → types instruction → creates new exchange with modified SQL + new results
-- **Data insights**: AI-generated bullet points about query results, available on the Insights tab. Generated on demand, cached in exchange
+- **Data insights**: AI-generated bullet points about query results, available on the Insights tab. Generated on demand, persisted to `data_explorer_messages.insights` column and reloaded with session. Morphing orb loader during generation. Prominent indigo regenerate button
+- **Schema sanitization**: `sanitizeIdentifier()` in both connection utils strips characters that could be prompt injection (`[^\w\s._-]`) from table/column names before use in prompts
+- **Improved SQL validation**: String literals stripped before blocked keyword checking to eliminate false positives (e.g. `WHERE status = 'DELETED'` no longer triggers `DELETE` block)
+- **Sample data in prompts**: 3 sample rows per table (capped at 15 tables) fetched and appended to schema text for more accurate SQL generation
+- **Categorized errors**: `categorizeError()` classifies errors into timeout, permission, syntax, schema, blocked, unknown — each with user-friendly message + actionable suggestion
+- **20-color palette**: PlotlyChart expanded from 10 → 20 perceptually distinct colors (indigo, violet, pink, rose, orange, yellow, green, teal, cyan, blue + lighter variants)
+- **Chart axis formatting**: Auto-detect dates → `tickformat: '%b %Y'`, currency columns → `tickprefix: '$'`, animated chart transitions (`transition: { duration: 500 }`)
+- **Print styles**: `@media print` rules in globals.css: `.no-print` hides interactive elements, force light colors, page breaks between sections
 - **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings from the icon that fade as they reach the window boundary
 
 ### Chat Search
@@ -296,6 +313,20 @@ All API routes use a two-client pattern:
 - Purple checkmark with "Saved" text (indigo-400) shown next to API Key label in settings
 - No masked key value displayed — just a clean "Saved" confirmation
 
+### Dynamic Ollama Model Discovery
+- `/api/models` route fetches installed models from Ollama's `/api/tags` endpoint at `localhost:11434`
+- Falls back to hardcoded `MODEL_CATALOG` if Ollama isn't running (3s timeout)
+- Merges dynamic Ollama models with static catalog for other providers (Anthropic, Google, OpenAI)
+- Only shows models actually installed locally, preventing confusion when selecting models
+
+### Code Block Syntax Highlighting (Streaming)
+- `CodeBlock.tsx` uses Shiki for async syntax highlighting with a module-level `highlightCache` (`Map<string, string>`)
+- Cache survives component remounts caused by react-markdown rebuilding the tree on each streamed token
+- Dark mode read synchronously from DOM (`document.documentElement.classList.contains('dark')`) — no `useState` lag that would cause cache key mismatches
+- Displayed HTML derived directly from cache during render — no component state for the HTML means remounts never flash empty
+- Debounce (150ms) only when code is actively changing (being streamed); immediate highlight on fresh mount with stable code
+- `detectLanguage()` heuristic for unlabeled code blocks (Python, JS/TS, SQL, Bash, HTML, CSS, JSON, Rust, Go)
+
 ### Frontend Architecture (page.tsx)
 - Single-page app with all state in `page.tsx`
 - `useChat` hook with `DefaultChatTransport` for streaming
@@ -312,7 +343,7 @@ All API routes use a two-client pattern:
 - Message action buttons (copy/edit/fork): `hover:scale-110 active:scale-95` micro-interactions
 - Suggestion chips: `hover:scale-[1.02] active:scale-[0.98]` tactile feedback
 - Send button: `send-glow` class (indigo box-shadow) when input has text
-- Loading dots: `animate-dot-wave` (gentle float) replaces `animate-bounce`
+- Loading indicator: morphing orbs (`animate-orb`) with shape-shifting border-radius, vertical float, pulsing indigo glow, and color shift (indigo → violet → lavender). "Thinking" label with `animate-pulse`. Shimmer bar below
 - Assistant message bubbles: faint indigo ambient glow in dark mode (`dark:shadow-[0_0_20px_-5px_rgba(99,102,241,0.06)]`)
 - Login button: `hover:shadow-xl hover:shadow-indigo-500/25` lift effect
 
@@ -348,7 +379,20 @@ All API routes use a two-client pattern:
 - [x] Data Explorer: natural language → SQL against MSSQL and SQLite databases
 - [x] SQLite support with demo database included in repo
 - [x] Auto-generated multi-charts (Plotly) for Data Explorer results (1-3 charts per query)
-- [x] 8 chart types: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar
+- [x] 13 chart types: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar, area, box, funnel, waterfall, gauge
+- [x] Chart type switcher: local chart type switching via icon buttons (no API call)
+- [x] KPI summary cards: auto-detected metrics with smart formatting ($, %, K/M), staggered animation
+- [x] Enhanced data table: column sorting, number formatting, conditional coloring, text truncation
+- [x] Chart gallery grid layout with list/grid toggle and chart entrance animations
+- [x] PDF export for Data Explorer (landscape A4 with KPIs, charts, table, SQL, insights)
+- [x] Dashboard report window (scrollable layout instead of tabs, with print support)
+- [x] 20-color expanded chart palette with auto axis formatting (dates, currency, large numbers)
+- [x] Schema metadata sanitization for prompt injection protection
+- [x] Improved SQL validation: string literal stripping eliminates false positives
+- [x] Sample data in prompts: 3 rows per table for more accurate SQL generation
+- [x] Conversation context cap (4000 chars, truncates oldest first)
+- [x] Categorized error responses with actionable suggestions
+- [x] Print styles (@media print) for Data Explorer report
 - [x] Chart refinement: modify charts via natural language without re-running SQL
 - [x] SQL refinement: modify SQL via natural language, creates new exchange with updated results
 - [x] Data insights: AI-generated bullet points about query results (on-demand)
@@ -386,6 +430,11 @@ All API routes use a two-client pattern:
 - [x] Agent detach: copy agent prompt to custom system prompt for editing
 - [x] Forked sessions inherit agent assignment
 - [x] UI micro-interactions: scale transforms on buttons/chips, send button glow, smooth dot-wave loading, ambient message shadows, sidebar active accent border, badge inner highlights
+- [x] Morphing orb loading animation (chat "Thinking" + Data Explorer "Generating insights")
+- [x] Dynamic Ollama model discovery: models route fetches installed models from local Ollama API
+- [x] Flicker-free code block highlighting during streaming (module-level cache, synchronous dark mode read)
+- [x] Insights persistence: saved to database and reloaded with session (like charts)
+- [x] Prominent insights regenerate button with refresh icon
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
@@ -410,11 +459,9 @@ None currently tracked.
 - [ ] Add error boundaries and loading states
 - [ ] PostgreSQL support in Data Explorer
 - [ ] MySQL support in Data Explorer
-- [ ] Multi-chart dashboard view (pinned charts)
+- [ ] Multi-chart dashboard view (pinned charts across queries)
 - [ ] Conversation memory / context window management
-- [ ] Streaming responses in Data Explorer (progressive chart rendering)
 - [ ] Drag-and-drop file upload in Data Explorer
-- [ ] Export Data Explorer results as PDF report
 - [ ] User preferences sync across devices
 - [ ] Admin dashboard for usage analytics
 - [ ] Agent tools/skills execution (beyond MVP named-prompt approach)
@@ -423,3 +470,9 @@ None currently tracked.
 - [ ] Custom local-only agents (create agents without the store)
 - [ ] Agent-specific conversation starters / suggestion chips
 - [ ] Data Explorer agent integration (SQL-specialized agents)
+- [ ] Natural language chart refinement with streaming feedback
+- [ ] Query result comparison (diff two queries side by side)
+- [ ] Scheduled/recurring queries with alerting
+- [ ] Data Explorer collaboration (shared sessions/dashboards)
+- [ ] Chart annotation and commentary
+- [ ] Export full session as interactive HTML report

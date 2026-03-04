@@ -216,3 +216,54 @@ body {
   30% { transform: translateY(-4px); }
 }
 .animate-dot-wave { animation: dot-wave 1.2s ease-in-out infinite; }
+
+/* Thinking orbs — morphing blob animation */
+@keyframes orb-morph {
+  0%, 100% { border-radius: 50%; transform: scale(1) rotate(0deg); }
+  25% { border-radius: 40% 60% 55% 45% / 55% 45% 60% 40%; transform: scale(1.15) rotate(45deg); }
+  50% { border-radius: 55% 45% 40% 60% / 45% 60% 40% 55%; transform: scale(0.9) rotate(90deg); }
+  75% { border-radius: 45% 55% 60% 40% / 60% 40% 55% 45%; transform: scale(1.1) rotate(135deg); }
+}
+@keyframes orb-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes orb-pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(99, 102, 241, 0.2); }
+  50% { box-shadow: 0 0 12px 3px rgba(99, 102, 241, 0.4); }
+}
+@keyframes orb-color-shift {
+  0%, 100% { background: #6366f1; }
+  33% { background: #8b5cf6; }
+  66% { background: #a78bfa; }
+}
+.animate-orb {
+  animation:
+    orb-morph 3s ease-in-out infinite,
+    orb-float 2s ease-in-out infinite,
+    orb-pulse-glow 2s ease-in-out infinite,
+    orb-color-shift 4s ease-in-out infinite;
+}
+
+/* KPI card staggered entrance */
+@keyframes kpi-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-kpi-enter { animation: kpi-enter 400ms ease-out both; }
+
+/* Chart entrance animation */
+@keyframes chart-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-chart-enter { animation: chart-enter 400ms ease-out both; }
+
+/* Print styles for Data Explorer */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
+  .dark { background: white !important; color: black !important; }
+  * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-break { page-break-before: always; }
+}

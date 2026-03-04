@@ -6,6 +6,11 @@ const BLOCKED_KEYWORDS = [
   'ATTACH', 'DETACH', 'REINDEX', 'VACUUM', 'REPLACE',
 ];
 
+/** Strip characters that could be prompt injection from identifiers */
+export function sanitizeIdentifier(name: string): string {
+  return name.replace(/[^\w\s._-]/g, '');
+}
+
 export function testConnection(filePath: string): { success: boolean; version?: string; error?: string } {
   try {
     const db = new Database(filePath, { readonly: true });
@@ -65,7 +70,11 @@ export function fetchSchema(filePath: string): SchemaTable[] {
 }
 
 function validateSqlReadOnly(sqlText: string): { valid: boolean; reason?: string } {
-  const upper = sqlText.toUpperCase().replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // Strip string literals to avoid false positives (e.g. WHERE status = 'DELETED')
+  const stripped = sqlText
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")   // single-quoted strings → ''
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""');   // double-quoted strings → ""
+  const upper = stripped.toUpperCase().replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
   for (const keyword of BLOCKED_KEYWORDS) {
     const regex = new RegExp(`\\b${keyword}\\b`, 'i');
@@ -75,6 +84,19 @@ function validateSqlReadOnly(sqlText: string): { valid: boolean; reason?: string
   }
 
   return { valid: true };
+}
+
+/** Fetch sample rows for prompt context */
+export function fetchSampleRows(filePath: string, tableName: string, limit: number = 3): Record<string, any>[] {
+  const db = new Database(filePath, { readonly: true });
+  try {
+    const safeName = sanitizeIdentifier(tableName);
+    return db.prepare(`SELECT * FROM "${safeName}" LIMIT ${limit}`).all() as Record<string, any>[];
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
 }
 
 function injectLimitIfMissing(sqlText: string, maxRows: number): string {

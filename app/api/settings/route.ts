@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 const DEFAULTS = {
   selected_provider: 'ollama',
-  selected_model: 'llama3.2:1b',
+  selected_model: 'llama3.2:3b',
   openai_api_key: null,
   anthropic_api_key: null,
   google_api_key: null,

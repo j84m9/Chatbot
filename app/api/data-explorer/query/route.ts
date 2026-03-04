@@ -3,8 +3,8 @@ import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { getModel } from '@/utils/ai/provider';
-import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
-import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
+import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable, fetchSampleRows as fetchMssqlSampleRows } from '@/utils/mssql/connection';
+import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema, fetchSampleRows as fetchSqliteSampleRows } from '@/utils/sqlite/connection';
 import {
   buildSqlGenerationSystemPromptWithContext,
   buildMultiChartSuggestionSystemPrompt,
@@ -16,6 +16,7 @@ import {
   buildSqlRefinementUserPrompt,
   buildInsightSystemPrompt,
   buildInsightUserPrompt,
+  categorizeError,
 } from '@/utils/ai/data-explorer-prompts';
 
 // Reuse the schema cache from the schema route
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
     .single();
 
   const provider = settings?.selected_provider || 'ollama';
-  const modelId = settings?.selected_model || 'llama3.2:1b';
+  const modelId = settings?.selected_model || 'llama3.2:3b';
 
   // Decrypt API keys (backward-compatible: falls back to plain text if decrypt fails)
   async function decryptApiKey(value: string | null): Promise<string | null> {
@@ -147,11 +148,33 @@ export async function POST(req: Request) {
   }
 
   if (type === 'insight') {
-    return handleInsightGeneration(model, question, exchangeData);
+    return handleInsightGeneration(model, question, exchangeData, body.messageId, dbAdmin);
   }
 
   // For sql_refinement, we generate new SQL then execute it (falls through to standard flow with modified prompt)
-  const schemaText = schemaToPromptText(schema);
+  let schemaText = schemaToPromptText(schema);
+
+  // 3b. Fetch sample rows (capped at 15 tables)
+  const tablesToSample = schema.slice(0, 15);
+  const sampleTexts: string[] = [];
+  for (const table of tablesToSample) {
+    try {
+      let sampleRows: Record<string, any>[];
+      if (isSqlite) {
+        sampleRows = fetchSqliteSampleRows(conn.file_path, table.name, 3);
+      } else {
+        sampleRows = await fetchMssqlSampleRows(mssqlConfig!, table.schema, table.name, 3);
+      }
+      if (sampleRows.length > 0) {
+        sampleTexts.push(`Sample rows from ${table.name}: ${JSON.stringify(sampleRows)}`);
+      }
+    } catch {
+      // Skip
+    }
+  }
+  if (sampleTexts.length > 0) {
+    schemaText += '\n\n## Sample Data\n' + sampleTexts.join('\n');
+  }
 
   // 4. Fetch conversation context (last 5 messages from session)
   let conversationContext = '';
@@ -217,11 +240,12 @@ export async function POST(req: Request) {
       results = await executeMssql(mssqlConfig!, sqlQuery);
     }
   } catch (err: any) {
-    // Return the SQL even if execution fails
+    const categorized = categorizeError(err);
     return NextResponse.json({
       sql: sqlQuery,
       explanation,
-      error: `Query execution failed: ${err.message}`,
+      error: `Query execution failed: ${categorized.message}`,
+      errorSuggestion: categorized.suggestion,
       results: null,
       chartConfig: null,
       chartConfigs: null,
@@ -415,6 +439,8 @@ async function handleInsightGeneration(
   model: any,
   question: string,
   exchangeData: any,
+  messageId: string | null,
+  dbAdmin: any,
 ) {
   if (!exchangeData?.results) {
     return NextResponse.json({ error: 'Missing exchange data' }, { status: 400 });
@@ -432,8 +458,18 @@ async function handleInsightGeneration(
       ),
     });
 
+    const insights = result.text.trim();
+
+    // Persist insights to the parent message row
+    if (messageId) {
+      await dbAdmin
+        .from('data_explorer_messages')
+        .update({ insights })
+        .eq('id', messageId);
+    }
+
     return NextResponse.json({
-      insights: result.text.trim(),
+      insights,
       error: null,
     });
   } catch (err: any) {

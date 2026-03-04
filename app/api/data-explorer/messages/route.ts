@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   // Fetch messages ordered chronologically
   const { data: messages, error: msgError } = await dbAdmin
     .from('data_explorer_messages')
-    .select('id, question, sql_query, explanation, results, chart_config, chart_configs, error, execution_time_ms, row_count, message_type, parent_message_id, created_at')
+    .select('id, question, sql_query, explanation, results, chart_config, chart_configs, error, execution_time_ms, row_count, message_type, parent_message_id, insights, created_at')
     .eq('session_id', sessionId)
     .order('created_at', { ascending: true });
 

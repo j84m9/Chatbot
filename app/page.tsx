@@ -66,7 +66,7 @@ export default function Chat() {
 
   // BYOK state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
-  const [selectedModel, setSelectedModel] = useState('llama3.2:1b');
+  const [selectedModel, setSelectedModel] = useState('llama3.2:3b');
   const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string; vision?: boolean }[]>>({});
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -1294,10 +1294,13 @@ export default function Chat() {
             {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
               <div className="flex justify-start animate-message-in">
                 <div className="dark:bg-[#161718] bg-white border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '0ms' }} />
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '150ms' }} />
-                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '300ms' }} />
+                  <div className="px-5 py-4 flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '0ms' }} />
+                      <div className="w-2 h-2 animate-orb" style={{ animationDelay: '300ms' }} />
+                      <div className="w-1.5 h-1.5 animate-orb" style={{ animationDelay: '600ms' }} />
+                    </div>
+                    <span className="text-xs dark:text-gray-500 text-gray-400 animate-pulse">Thinking</span>
                   </div>
                   <div className="h-0.5 rounded-b-full overflow-hidden">
                     <div className="h-full loading-shimmer" />

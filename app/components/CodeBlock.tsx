@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // Simple language detection for unlabeled code blocks
 function detectLanguage(code: string): string | undefined {
@@ -23,6 +23,10 @@ function detectLanguage(code: string): string | undefined {
   return undefined;
 }
 
+// Module-level cache: survives component remounts caused by react-markdown
+// re-rendering the tree on each streamed token. Key = lang:theme:code → HTML.
+const highlightCache = new Map<string, string>();
+
 interface CodeBlockProps {
   code: string;
   language?: string;
@@ -30,39 +34,69 @@ interface CodeBlockProps {
 
 export default function CodeBlock({ code, language }: CodeBlockProps) {
   const resolvedLanguage = language || detectLanguage(code);
-  const [highlightedHtml, setHighlightedHtml] = useState<string>('');
+  const lang = resolvedLanguage || 'text';
   const [copied, setCopied] = useState(false);
-  const [isDark, setIsDark] = useState(true);
 
-  // Track dark mode
+  // Read dark mode synchronously from DOM — correct on every render including
+  // remounts, avoiding the useState(true) → effect → setState lag that caused
+  // cache key mismatches and flicker.
+  const isDark = typeof document !== 'undefined'
+    ? document.documentElement.classList.contains('dark')
+    : true;
+
+  // Force re-render when dark mode toggles mid-session
+  const [, setRenderTick] = useState(0);
   useEffect(() => {
-    const root = document.documentElement;
-    const update = () => setIsDark(root.classList.contains('dark'));
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    const observer = new MutationObserver(() => setRenderTick(n => n + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
   }, []);
 
-  // Highlight with Shiki — simple direct call, no singleton management
-  useEffect(() => {
-    let cancelled = false;
+  // Derive displayed HTML from module-level cache during render — no component
+  // state for the HTML means remounts never flash empty.
+  const cacheKey = `${lang}:${isDark ? 'dark' : 'light'}:${code}`;
+  const highlightedHtml = highlightCache.get(cacheKey) || '';
 
-    (async () => {
+  // Async highlight only when cache misses
+  const prevCodeRef = useRef<string>(code);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const effectIdRef = useRef(0);
+
+  useEffect(() => {
+    if (highlightCache.has(cacheKey)) return;
+
+    const codeChanged = code !== prevCodeRef.current;
+    prevCodeRef.current = code;
+    const currentId = ++effectIdRef.current;
+
+    const doHighlight = async () => {
       try {
         const { codeToHtml } = await import('shiki/bundle/web');
         const html = await codeToHtml(code, {
-          lang: resolvedLanguage || 'text',
+          lang,
           theme: isDark ? 'github-dark' : 'github-light',
         });
-        if (!cancelled) setHighlightedHtml(html);
+        highlightCache.set(cacheKey, html);
+        if (effectIdRef.current === currentId) {
+          setRenderTick(n => n + 1);
+        }
       } catch {
-        // Shiki failed — plain text fallback is already showing
+        // Shiki failed — keep showing plain fallback
       }
-    })();
+    };
 
-    return () => { cancelled = true; };
-  }, [code, resolvedLanguage, isDark]);
+    clearTimeout(debounceRef.current);
+
+    if (codeChanged) {
+      // Code actively changing (being streamed) — debounce
+      debounceRef.current = setTimeout(doHighlight, 150);
+    } else {
+      // Fresh mount with stable code — highlight immediately
+      doHighlight();
+    }
+
+    return () => clearTimeout(debounceRef.current);
+  }, [cacheKey, code, lang, isDark]);
 
   const copyCode = () => {
     navigator.clipboard.writeText(code);

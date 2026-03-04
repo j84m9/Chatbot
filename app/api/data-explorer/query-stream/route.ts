@@ -2,14 +2,15 @@ import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { getModel } from '@/utils/ai/provider';
-import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
-import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
+import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable, fetchSampleRows as fetchMssqlSampleRows } from '@/utils/mssql/connection';
+import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema, fetchSampleRows as fetchSqliteSampleRows } from '@/utils/sqlite/connection';
 import {
   buildSqlGenerationSystemPromptWithContext,
   buildMultiChartSuggestionSystemPrompt,
   buildChartSuggestionUserPrompt,
   buildSessionTitlePrompt,
   buildConversationContext,
+  categorizeError,
 } from '@/utils/ai/data-explorer-prompts';
 
 // Reuse the schema cache
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
           .single();
 
         const provider = settings?.selected_provider || 'ollama';
-        const modelId = settings?.selected_model || 'llama3.2:1b';
+        const modelId = settings?.selected_model || 'llama3.2:3b';
 
         async function decryptApiKey(value: string | null): Promise<string | null> {
           if (!value || !encryptionKey) return value;
@@ -131,7 +132,29 @@ export async function POST(req: Request) {
 
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
 
-        const schemaText = schemaToPromptText(schema);
+        let schemaText = schemaToPromptText(schema);
+
+        // 3b. Fetch sample rows (capped at 15 tables)
+        const tablesToSample = schema.slice(0, 15);
+        const sampleTexts: string[] = [];
+        for (const table of tablesToSample) {
+          try {
+            let sampleRows: Record<string, any>[];
+            if (isSqlite) {
+              sampleRows = fetchSqliteSampleRows(conn.file_path, table.name, 3);
+            } else {
+              sampleRows = await fetchMssqlSampleRows(mssqlConfig!, table.schema, table.name, 3);
+            }
+            if (sampleRows.length > 0) {
+              sampleTexts.push(`Sample rows from ${table.name}: ${JSON.stringify(sampleRows)}`);
+            }
+          } catch {
+            // Skip tables that fail
+          }
+        }
+        if (sampleTexts.length > 0) {
+          schemaText += '\n\n## Sample Data\n' + sampleTexts.join('\n');
+        }
 
         // 4. Conversation context
         let conversationContext = '';
@@ -174,7 +197,12 @@ export async function POST(req: Request) {
             results = await executeMssql(mssqlConfig!, sqlQuery);
           }
         } catch (err: any) {
-          sendEvent(controller, 'error', { message: `Query execution failed: ${err.message}`, sql: sqlQuery });
+          const categorized = categorizeError(err);
+          sendEvent(controller, 'error', {
+            message: `Query execution failed: ${categorized.message}`,
+            suggestion: categorized.suggestion,
+            sql: sqlQuery,
+          });
           // Still save the message
           let activeSessionId = sessionId;
           if (!activeSessionId) {
@@ -190,7 +218,7 @@ export async function POST(req: Request) {
               session_id: activeSessionId,
               question,
               sql_query: sqlQuery,
-              error: `Query execution failed: ${err.message}`,
+              error: `Query execution failed: ${categorized.message}`,
               message_type: 'query',
             });
           }

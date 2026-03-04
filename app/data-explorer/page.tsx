@@ -45,7 +45,7 @@ export default function DataExplorer() {
 
   // BYOK settings state
   const [selectedProvider, setSelectedProvider] = useState('ollama');
-  const [selectedModel, setSelectedModel] = useState('llama3.2:1b');
+  const [selectedModel, setSelectedModel] = useState('llama3.2:3b');
   const [modelCatalog, setModelCatalog] = useState<Record<string, { id: string; label: string }[]>>({});
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [savedApiKeys, setSavedApiKeys] = useState<Record<string, string | null>>({});
@@ -317,6 +317,7 @@ export default function DataExplorer() {
           isLoading: false,
           messageType: msg.message_type ?? 'query',
           parentMessageId: msg.parent_message_id ?? null,
+          insights: msg.insights ?? null,
         } satisfies Exchange;
       });
 
@@ -412,6 +413,7 @@ export default function DataExplorer() {
                     return {
                       ...ex,
                       error: data.message,
+                      errorSuggestion: data.suggestion || null,
                       sql: data.sql || ex.sql,
                       isLoading: false,
                     };
@@ -444,6 +446,21 @@ export default function DataExplorer() {
     } finally {
       setIsQuerying(false);
     }
+  };
+
+  // Chart type change handler (local switch, no API call)
+  const handleChangeChartType = (chartIndex: number, newType: string) => {
+    setExchanges(prev =>
+      prev.map((ex, i) => {
+        if (i !== selectedExchangeIndex) return ex;
+        const configs = ex.chartConfigs
+          || (ex.chartConfig ? [ex.chartConfig] : []);
+        const updated = configs.map((c, ci) =>
+          ci === chartIndex ? { ...c, chartType: newType as any } : c
+        );
+        return { ...ex, chartConfigs: updated, chartConfig: updated[0] || ex.chartConfig };
+      })
+    );
   };
 
   // Chart refinement handler
@@ -593,10 +610,10 @@ export default function DataExplorer() {
     const exchange = exchanges[selectedExchangeIndex];
     if (!exchange || !activeConnectionId) return;
 
-    // Set loading state on insights
+    // Set loading state
     setExchanges(prev =>
       prev.map((ex, i) =>
-        i === selectedExchangeIndex ? { ...ex, insights: 'Generating insights...' } : ex
+        i === selectedExchangeIndex ? { ...ex, insightsLoading: true, insights: null } : ex
       )
     );
 
@@ -608,6 +625,7 @@ export default function DataExplorer() {
           question: exchange.question,
           connectionId: activeConnectionId,
           messageType: 'insight',
+          messageId: exchange.id,
           exchangeData: {
             results: {
               columns: exchange.results?.columns,
@@ -623,7 +641,7 @@ export default function DataExplorer() {
       setExchanges(prev =>
         prev.map((ex, i) =>
           i === selectedExchangeIndex
-            ? { ...ex, insights: data.insights || data.error || 'No insights available.' }
+            ? { ...ex, insightsLoading: false, insights: data.insights || data.error || 'No insights available.' }
             : ex
         )
       );
@@ -631,7 +649,7 @@ export default function DataExplorer() {
       setExchanges(prev =>
         prev.map((ex, i) =>
           i === selectedExchangeIndex
-            ? { ...ex, insights: 'Failed to generate insights.' }
+            ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.' }
             : ex
         )
       );
@@ -799,6 +817,7 @@ export default function DataExplorer() {
                   onRefineSql={handleRefineSql}
                   onRequestInsights={handleRequestInsights}
                   onSaveQuery={handleSaveQuery}
+                  onChangeChartType={handleChangeChartType}
                 />
               </div>
             </>

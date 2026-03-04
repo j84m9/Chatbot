@@ -93,7 +93,7 @@ export function buildMultiChartSuggestionSystemPrompt(): string {
 
 Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each element has this structure:
 {
-  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar",
+  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar" | "area" | "box" | "funnel" | "waterfall" | "gauge",
   "title": "Chart title",
   "xColumn": "column name for x-axis",
   "yColumn": "column name for y-axis or values",
@@ -109,7 +109,12 @@ Rules:
 - Suggest 1 chart for simple data (few columns, single metric)
 - Suggest 2-3 charts for multi-dimensional data (multiple metrics, categories + time, etc.)
 - Maximum 3 charts
-- Always include a line chart if there's a time/date column
+- Always include a line or area chart if there's a time/date column
+- Use "area" for time series showing volume or cumulative values
+- Use "box" for distribution analysis across categories (salary by department, scores by group)
+- Use "funnel" for pipeline or stage data with decreasing values (max 15 categories)
+- Use "waterfall" for revenue breakdowns, cumulative effects, or sequential changes
+- Use "gauge" ONLY for single-row results showing one KPI value
 - Use "histogram" for single-column distribution analysis
 - Use "heatmap" for two categorical columns with a numeric value
 - Use "grouped_bar" when comparing categories across groups
@@ -157,16 +162,29 @@ Rules:
 }
 
 export function buildConversationContext(
-  messages: { question: string; sql_query: string | null; row_count: number | null }[]
+  messages: { question: string; sql_query: string | null; row_count: number | null }[],
+  maxChars: number = 4000
 ): string {
   if (messages.length === 0) return '';
 
-  return messages.map((msg, i) => {
+  const blocks = messages.map((msg, i) => {
     const parts = [`--- Previous query ${i + 1} ---`, `Question: ${msg.question}`];
     if (msg.sql_query) parts.push(`SQL: ${msg.sql_query}`);
     if (msg.row_count !== null) parts.push(`Result: ${msg.row_count} rows`);
     return parts.join('\n');
-  }).join('\n\n');
+  });
+
+  // Build context from most recent messages first, staying under maxChars
+  let result = '';
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const candidate = i < blocks.length - 1
+      ? blocks[i] + '\n\n' + result
+      : blocks[i];
+    if (candidate.length > maxChars) break;
+    result = candidate;
+  }
+
+  return result;
 }
 
 // Phase 3: Refinement prompts
@@ -176,7 +194,7 @@ export function buildChartRefinementSystemPrompt(): string {
 
 Respond with ONLY a valid JSON array of chart configurations (no markdown fences, no explanation). Each element has this structure:
 {
-  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar",
+  "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar" | "area" | "box" | "funnel" | "waterfall" | "gauge",
   "title": "Chart title",
   "xColumn": "column name for x-axis",
   "yColumn": "column name for y-axis or values",
@@ -230,6 +248,29 @@ ${originalSql}
 User wants to modify the query: "${instruction}"
 
 Generate the updated ${dialectLabel} SELECT query. Output ONLY the SQL query, no explanations, no markdown fences.`;
+}
+
+export function categorizeError(err: any): { category: string; message: string; suggestion: string } {
+  const msg = err?.message || String(err);
+  const lower = msg.toLowerCase();
+
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return { category: 'timeout', message: 'Query timed out', suggestion: 'Try simplifying the query or adding filters to reduce the data set.' };
+  }
+  if (lower.includes('permission') || lower.includes('access denied') || lower.includes('not authorized')) {
+    return { category: 'permission', message: 'Access denied', suggestion: 'Check that the database user has SELECT permissions on the referenced tables.' };
+  }
+  if (lower.includes('syntax') || lower.includes('incorrect syntax') || lower.includes('near')) {
+    return { category: 'syntax', message: 'SQL syntax error', suggestion: 'Try rephrasing your question or use the "Refine SQL" button to fix the query.' };
+  }
+  if (lower.includes('invalid column') || lower.includes('invalid object') || lower.includes('no such table') || lower.includes('no such column')) {
+    return { category: 'schema', message: 'Table or column not found', suggestion: 'Check the schema browser for available tables and columns, then try again.' };
+  }
+  if (lower.includes('blocked keyword')) {
+    return { category: 'blocked', message: msg, suggestion: 'Only SELECT queries are allowed. Rephrase your question to read data instead of modifying it.' };
+  }
+
+  return { category: 'unknown', message: msg, suggestion: 'Try rephrasing your question or check the database connection.' };
 }
 
 export function buildInsightSystemPrompt(): string {

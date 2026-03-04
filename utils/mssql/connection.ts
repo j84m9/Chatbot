@@ -46,6 +46,11 @@ const BLOCKED_KEYWORDS = [
   'DBCC', 'BACKUP', 'RESTORE',
 ];
 
+/** Strip characters that could be prompt injection from identifiers */
+export function sanitizeIdentifier(name: string): string {
+  return name.replace(/[^\w\s._-]/g, '');
+}
+
 export function buildPoolConfig(config: ConnectionConfig): sql.config {
   const poolConfig: sql.config = {
     server: config.server,
@@ -171,23 +176,30 @@ export async function fetchSchema(config: ConnectionConfig): Promise<SchemaTable
 
 export function schemaToPromptText(schema: SchemaTable[]): string {
   return schema.map(table => {
+    const safeTableName = sanitizeIdentifier(table.name);
+    const safeSchema = sanitizeIdentifier(table.schema);
     const cols = table.columns.map(c => {
-      let desc = `  ${c.name} ${c.type}`;
+      const safeName = sanitizeIdentifier(c.name);
+      let desc = `  ${safeName} ${c.type}`;
       if (c.isPrimaryKey) desc += ' PK';
       if (!c.nullable) desc += ' NOT NULL';
       return desc;
     }).join('\n');
     const fks = (table.foreignKeys || []).map(fk =>
-      `  FK: ${fk.fromColumn} -> ${fk.toTable}(${fk.toColumn})`
+      `  FK: ${sanitizeIdentifier(fk.fromColumn)} -> ${sanitizeIdentifier(fk.toTable)}(${sanitizeIdentifier(fk.toColumn)})`
     ).join('\n');
-    const parts = [`[${table.schema}].[${table.name}]`, cols];
+    const parts = [`[${safeSchema}].[${safeTableName}]`, cols];
     if (fks) parts.push(fks);
     return parts.join('\n');
   }).join('\n\n');
 }
 
 function validateSqlReadOnly(sqlText: string): { valid: boolean; reason?: string } {
-  const upper = sqlText.toUpperCase().replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // Strip string literals to avoid false positives (e.g. WHERE status = 'DELETED')
+  const stripped = sqlText
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const upper = stripped.toUpperCase().replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
   for (const keyword of BLOCKED_KEYWORDS) {
     const regex = new RegExp(`\\b${keyword}\\b`, 'i');
@@ -197,6 +209,22 @@ function validateSqlReadOnly(sqlText: string): { valid: boolean; reason?: string
   }
 
   return { valid: true };
+}
+
+/** Fetch sample rows for prompt context */
+export async function fetchSampleRows(config: ConnectionConfig, schema: string, tableName: string, limit: number = 3): Promise<Record<string, any>[]> {
+  let pool: sql.ConnectionPool | null = null;
+  try {
+    pool = await sql.connect(buildPoolConfig(config));
+    const safeName = sanitizeIdentifier(tableName);
+    const safeSchema = sanitizeIdentifier(schema);
+    const result = await pool.request().query(`SELECT TOP ${limit} * FROM [${safeSchema}].[${safeName}]`);
+    return result.recordset || [];
+  } catch {
+    return [];
+  } finally {
+    if (pool) await pool.close();
+  }
 }
 
 function injectTopIfMissing(sqlText: string, maxRows: number): string {
