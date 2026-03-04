@@ -7,6 +7,7 @@ import ConnectionManager from '@/app/components/data-explorer/ConnectionManager'
 import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
 import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard';
+import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 
@@ -567,13 +568,51 @@ export default function DataExplorer() {
     );
   };
 
-  // Chart refinement handler
-  const handleRefineChart = (chartIndex: number) => {
-    setRefineContext({
-      exchangeIndex: selectedExchangeIndex,
-      type: 'chart',
-      chartIndex,
+  // Direct chart refinement handler (called inline from ChartGallery)
+  const handleDirectChartRefine = async (chartIndex: number, instruction: string) => {
+    if (!activeConnectionId) return;
+
+    const targetExchange = exchanges[selectedExchangeIndex];
+    if (!targetExchange) return;
+
+    const currentConfigs = targetExchange.chartConfigs
+      || (targetExchange.chartConfig ? [targetExchange.chartConfig] : []);
+
+    const res = await fetch('/api/data-explorer/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: instruction,
+        connectionId: activeConnectionId,
+        sessionId,
+        messageType: 'chart_refinement',
+        parentMessageId: targetExchange.id,
+        chartConfigs: currentConfigs,
+        exchangeData: {
+          results: targetExchange.results,
+        },
+      }),
     });
+
+    if (!res.ok) {
+      throw new Error(`Chart refinement failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    if (data.chartConfigs) {
+      setExchanges(prev =>
+        prev.map((ex, i) =>
+          i === selectedExchangeIndex
+            ? {
+                ...ex,
+                chartConfig: data.chartConfig || data.chartConfigs?.[0] || ex.chartConfig,
+                chartConfigs: data.chartConfigs,
+              }
+            : ex
+        )
+      );
+    }
   };
 
   // SQL refinement handler
@@ -762,37 +801,36 @@ export default function DataExplorer() {
 
   // Annotation handler
   const handleAddAnnotation = async (chartIndex: number, x: number | string, y: number | string, text: string) => {
+    const annotationId = crypto.randomUUID();
+    let persistConfigs: ChartConfig[] = [];
+
     setExchanges(prev =>
       prev.map((ex, i) => {
         if (i !== selectedExchangeIndex) return ex;
         const configs = ex.chartConfigs || (ex.chartConfig ? [ex.chartConfig] : []);
         const updated = configs.map((c, ci) => {
           if (ci !== chartIndex) return c;
-          const annotations = [...(c.annotations || []), { id: crypto.randomUUID(), x, y, text }];
+          const annotations = [...(c.annotations || []), { id: annotationId, x, y, text }];
           return { ...c, annotations, showAnnotations: true };
         });
+        persistConfigs = updated;
         return { ...ex, chartConfigs: updated, chartConfig: updated[0] || ex.chartConfig };
       })
     );
 
     // Persist to DB
     const exchange = exchanges[selectedExchangeIndex];
-    if (exchange?.id) {
-      const configs = exchange.chartConfigs || (exchange.chartConfig ? [exchange.chartConfig] : []);
-      const updatedConfigs = configs.map((c, ci) => {
-        if (ci !== chartIndex) return c;
-        return { ...c, annotations: [...(c.annotations || []), { id: crypto.randomUUID(), x, y, text }], showAnnotations: true };
-      });
+    if (exchange?.id && persistConfigs.length > 0) {
       fetch('/api/data-explorer/messages', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId: exchange.id, chart_configs: updatedConfigs }),
-      }).catch(() => {});
+        body: JSON.stringify({ messageId: exchange.id, chart_configs: persistConfigs }),
+      }).catch(err => console.error('Failed to save annotation:', err));
     }
   };
 
   const handleToggleAnnotations = async (chartIndex: number) => {
-    let updatedConfigs: any[] = [];
+    let updatedConfigs: ChartConfig[] = [];
     setExchanges(prev =>
       prev.map((ex, i) => {
         if (i !== selectedExchangeIndex) return ex;
@@ -812,7 +850,7 @@ export default function DataExplorer() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messageId: exchange.id, chart_configs: updatedConfigs }),
-      }).catch(() => {});
+      }).catch(err => console.error('Failed to toggle annotations:', err));
     }
   };
 
@@ -825,14 +863,23 @@ export default function DataExplorer() {
         const data = await res.json();
         setPinnedCharts(data);
       }
-    } catch {
-      // Silently fail
+    } catch (err) {
+      console.error('Failed to fetch pinned charts:', err);
     }
   }, [activeConnectionId]);
 
   useEffect(() => {
     fetchPinnedCharts();
   }, [fetchPinnedCharts]);
+
+  const pinnedSourceMap = useMemo(
+    () => new Map(
+      pinnedCharts
+        .filter(p => (p.chart_config as any)._sourceKey)
+        .map(p => [(p.chart_config as any)._sourceKey as string, p.id])
+    ),
+    [pinnedCharts]
+  );
 
   const handlePinChart = async (chartIndex: number) => {
     const exchange = exchanges[selectedExchangeIndex];
@@ -842,6 +889,9 @@ export default function DataExplorer() {
     const config = configs[chartIndex];
     if (!config) return;
 
+    const sourceKey = `${exchange.id}:${chartIndex}`;
+    if (pinnedSourceMap.has(sourceKey)) return; // already pinned
+
     try {
       const res = await fetch('/api/data-explorer/pinned-charts', {
         method: 'POST',
@@ -849,7 +899,7 @@ export default function DataExplorer() {
         body: JSON.stringify({
           connection_id: activeConnectionId,
           title: config.title || `Chart from "${exchange.question}"`,
-          chart_config: config,
+          chart_config: { ...config, _sourceKey: sourceKey },
           results_snapshot: {
             rows: exchange.results.rows,
             columns: exchange.results.columns,
@@ -861,8 +911,8 @@ export default function DataExplorer() {
       if (res.ok) {
         fetchPinnedCharts();
       }
-    } catch {
-      // Silently fail
+    } catch (err) {
+      console.error('Failed to pin chart:', err);
     }
   };
 
@@ -872,8 +922,9 @@ export default function DataExplorer() {
       if (res.ok) {
         setPinnedCharts(prev => prev.filter(p => p.id !== id));
       }
-    } catch {
-      // Silently fail
+    } catch (err) {
+      console.error('Failed to unpin chart:', err);
+      fetchPinnedCharts();
     }
   };
 
@@ -885,7 +936,57 @@ export default function DataExplorer() {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, layout }),
-    }).catch(() => {});
+    }).catch(err => console.error('Failed to save layout:', err));
+  };
+
+  const handleDashboardChartTypeChange = (id: string, newType: string) => {
+    setPinnedCharts(prev => prev.map(p =>
+      p.id === id
+        ? { ...p, chart_config: { ...p.chart_config, chartType: newType as ChartConfig['chartType'] } }
+        : p
+    ));
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, chart_config: { ...pinnedCharts.find(p => p.id === id)?.chart_config, chartType: newType } }),
+    }).catch(err => console.error('Failed to save chart type:', err));
+  };
+
+  // Dashboard annotation handlers
+  const handleDashboardAddAnnotation = (id: string, x: number | string, y: number | string, text: string) => {
+    const pin = pinnedCharts.find(p => p.id === id);
+    if (!pin) return;
+    const existing = pin.chart_config.annotations || [];
+    const updatedConfig = {
+      ...pin.chart_config,
+      annotations: [...existing, { id: crypto.randomUUID(), x, y, text }],
+      showAnnotations: true,
+    };
+    setPinnedCharts(prev => prev.map(p =>
+      p.id === id ? { ...p, chart_config: updatedConfig } : p
+    ));
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, chart_config: updatedConfig }),
+    }).catch(err => console.error('Failed to save dashboard annotation:', err));
+  };
+
+  const handleDashboardToggleAnnotations = (id: string) => {
+    const pin = pinnedCharts.find(p => p.id === id);
+    if (!pin) return;
+    const updatedConfig = {
+      ...pin.chart_config,
+      showAnnotations: pin.chart_config.showAnnotations === false ? true : false,
+    };
+    setPinnedCharts(prev => prev.map(p =>
+      p.id === id ? { ...p, chart_config: updatedConfig } : p
+    ));
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, chart_config: updatedConfig }),
+    }).catch(err => console.error('Failed to toggle dashboard annotations:', err));
   };
 
   // Drag handle for split pane
@@ -1101,6 +1202,9 @@ export default function DataExplorer() {
               darkMode={darkMode}
               onUnpin={handleUnpinChart}
               onLayoutChange={handleLayoutChange}
+              onChangeChartType={handleDashboardChartTypeChange}
+              onAddAnnotation={handleDashboardAddAnnotation}
+              onToggleAnnotations={handleDashboardToggleAnnotations}
               connectionName={connections.find(c => c.id === activeConnectionId)?.name}
             />
           ) : (
@@ -1153,7 +1257,7 @@ export default function DataExplorer() {
                   exchange={selectedExchange}
                   darkMode={darkMode}
                   onClose={() => setSelectedExchangeIndex(-1)}
-                  onRefineChart={handleRefineChart}
+                  onRefineSubmit={handleDirectChartRefine}
                   onRefineSql={handleRefineSql}
                   onRequestInsights={handleRequestInsights}
                   onSaveQuery={handleSaveQuery}
@@ -1161,6 +1265,8 @@ export default function DataExplorer() {
                   onAddAnnotation={handleAddAnnotation}
                   onToggleAnnotations={handleToggleAnnotations}
                   onPinChart={handlePinChart}
+                  onUnpinChart={handleUnpinChart}
+                  pinnedSourceMap={pinnedSourceMap}
                 />
               </div>
             </>

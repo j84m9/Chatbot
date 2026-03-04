@@ -111,6 +111,7 @@ export async function PATCH(request: NextRequest) {
 
   const updates: Record<string, any> = {};
   if (layout !== undefined) updates.layout = layout;
+  if (body.chart_config !== undefined) updates.chart_config = body.chart_config;
 
   const { error } = await dbAdmin
     .from('pinned_charts')

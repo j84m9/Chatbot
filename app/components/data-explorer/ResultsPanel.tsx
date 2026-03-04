@@ -9,7 +9,7 @@ interface ResultsPanelProps {
   exchange: Exchange | null;
   darkMode: boolean;
   onClose?: () => void;
-  onRefineChart?: (chartIndex: number) => void;
+  onRefineSubmit?: (chartIndex: number, instruction: string) => Promise<void>;
   onRefineSql?: () => void;
   onRequestInsights?: () => void;
   onSaveQuery?: (data: { question: string; sql: string; explanation: string | null; chartConfigs: any }) => void;
@@ -17,6 +17,8 @@ interface ResultsPanelProps {
   onAddAnnotation?: (chartIndex: number, x: number | string, y: number | string, text: string) => void;
   onToggleAnnotations?: (chartIndex: number) => void;
   onPinChart?: (chartIndex: number) => void;
+  onUnpinChart?: (pinnedId: string) => void;
+  pinnedSourceMap?: Map<string, string>;
 }
 
 // Lazy load chart components since they're heavy
@@ -26,7 +28,7 @@ const InsightsPanel = dynamic(() => import('./InsightsPanel'), { ssr: false });
 import KPICards from './KPICards';
 import DataTable from './DataTable';
 
-export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights, onSaveQuery, onChangeChartType, onAddAnnotation, onToggleAnnotations, onPinChart }: ResultsPanelProps) {
+export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubmit, onRefineSql, onRequestInsights, onSaveQuery, onChangeChartType, onAddAnnotation, onToggleAnnotations, onPinChart, onUnpinChart, pinnedSourceMap }: ResultsPanelProps) {
   const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart' | 'insights'>('sql');
   const prevExchangeKey = useRef<string | null>(null);
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -318,11 +320,14 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChar
               chartConfigs={resolvedChartConfigs}
               rows={exchange.results.rows}
               darkMode={darkMode}
-              onRefineChart={onRefineChart}
+              onRefineSubmit={onRefineSubmit}
               onChangeChartType={onChangeChartType}
               onAddAnnotation={onAddAnnotation}
               onToggleAnnotations={onToggleAnnotations}
               onPinChart={onPinChart}
+              onUnpinChart={onUnpinChart}
+              pinnedSourceMap={pinnedSourceMap}
+              exchangeId={exchange.id}
             />
           </div>
         )}
