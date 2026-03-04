@@ -1,3 +1,15 @@
+export function wrapWithDomainContext(basePrompt: string, domainContext: string | null): string {
+  if (!domainContext) return basePrompt;
+  return `## Domain Context
+The following domain knowledge should inform your SQL generation and data interpretation:
+
+${domainContext}
+
+---
+
+${basePrompt}`;
+}
+
 export function buildSqlGenerationSystemPrompt(schemaText: string, dialect: 'tsql' | 'sqlite' = 'tsql'): string {
   if (dialect === 'sqlite') {
     return `You are a SQLite SQL expert. Given a database schema and a natural language question, generate a valid SQLite SELECT query.

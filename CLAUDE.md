@@ -12,6 +12,7 @@ A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v
 - **Migrations**: SQL files in `db/migrations/`, managed with dbmate
 - **Rendering**: `react-markdown` + `remark-gfm` for markdown, `shiki` for syntax highlighting
 - **Charts**: `react-plotly.js` for data visualization in Data Explorer
+- **Dashboard**: `react-grid-layout` for drag-and-resize pinned chart dashboard
 - **Local DB**: `better-sqlite3` for read-only SQLite querying in Data Explorer
 - **Export**: `jspdf` for client-side PDF generation
 
@@ -41,20 +42,22 @@ app/
     models/route.ts     — GET: dynamic Ollama model discovery + static catalog for other providers
     data-explorer/
       query/route.ts    — POST: natural language → SQL → execute → multi-chart suggestion (+ chart/SQL refinement, insights)
-      query-stream/route.ts — POST: SSE streaming version of query (progressive SQL → results → charts)
+      query-stream/route.ts — POST: SSE streaming version of query (progressive SQL → results → charts), agent domain context injection
+      pinned-charts/route.ts — GET/POST/PATCH/DELETE: pinned chart dashboard CRUD with layout persistence
       saved-queries/route.ts — GET/POST/DELETE: saved/pinned queries per connection
       connections/route.ts — CRUD for database connections (MSSQL + SQLite)
       connections/test/route.ts — POST: test a database connection
       schema/route.ts   — GET: fetch and cache database schema
-      sessions/route.ts — GET/DELETE: data explorer session management
-      messages/route.ts — GET: fetch messages for a data explorer session
+      sessions/route.ts — GET/PATCH/DELETE: data explorer session management (includes agent_id)
+      messages/route.ts — GET/PATCH: fetch messages, update chart_configs (annotations)
   components/
     data-explorer/
       ResultsPanel.tsx  — SQL/Table/Chart/Insights tabs, CSV+PDF export, pop-out, refinement buttons
       QueryChat.tsx     — Chat interface for natural language queries (floating input, refinement mode)
       ConnectionManager.tsx — Modal for adding/editing database connections
-      PlotlyChart.tsx   — Plotly chart wrapper (13 chart types, color grouping, orientation, forwardRef for PDF)
-      ChartGallery.tsx  — Multi-chart gallery/grid with per-chart refine buttons, chart type switcher, entrance animations
+      PlotlyChart.tsx   — Plotly chart wrapper (13 chart types, color grouping, orientation, annotations, forwardRef for PDF)
+      ChartGallery.tsx  — Carousel gallery with prev/next navigation, dot indicators, pin/annotate/refine buttons
+      Dashboard.tsx     — Pinned chart dashboard with react-grid-layout drag-and-resize grid
       ChartTypeSwitcher.tsx — Horizontal strip of chart type icon buttons for local type switching
       KPICards.tsx       — Auto-detected summary metric cards with smart formatting and staggered entrance
       DataTable.tsx     — Enhanced table with sorting, number formatting, conditional coloring, text truncation
@@ -78,7 +81,7 @@ utils/
   data-explorer-export.ts — Data Explorer PDF report export (jsPDF, landscape A4)
   token-costs.ts        — Token cost estimation per model (cost per 1M tokens)
   ai/provider.ts        — getModel() factory, MODEL_CATALOG (with vision flag), PROVIDER_NAMES
-  ai/data-explorer-prompts.ts — Prompt templates for SQL generation and chart suggestion
+  ai/data-explorer-prompts.ts — Prompt templates for SQL generation, chart suggestion, and agent domain context wrapping
   supabase/
     server.ts           — Server-side Supabase client (cookie-based)
     client.ts           — Browser-side Supabase client
@@ -150,9 +153,18 @@ db/migrations/         — SQL migration files (dbmate format)
 - RLS enabled: full CRUD gated on `auth.uid() = user_id`
 
 ### `data_explorer_sessions`
-- `id` UUID PK, `user_id` UUID (FK), `connection_id` UUID (FK), `title` TEXT, `ai_title` TEXT nullable, `created_at` TIMESTAMPTZ
+- `id` UUID PK, `user_id` UUID (FK), `connection_id` UUID (FK), `title` TEXT, `ai_title` TEXT nullable, `agent_id` UUID nullable (FK to installed_agents, ON DELETE SET NULL), `created_at` TIMESTAMPTZ
 - `ai_title`: AI-generated descriptive title (auto-updated after 1st and 3rd query)
+- `agent_id`: links session to an installed agent for domain-specific SQL generation (null = no agent)
 - RLS enabled
+
+### `pinned_charts`
+- `id` UUID PK, `user_id` UUID (FK to auth.users, CASCADE), `connection_id` UUID (FK to db_connections, CASCADE), `source_message_id` UUID nullable (FK to data_explorer_messages, SET NULL)
+- `title` TEXT NOT NULL, `chart_config` JSONB NOT NULL, `results_snapshot` JSONB NOT NULL (frozen `{ rows, columns, types }`)
+- `display_order` INTEGER NOT NULL DEFAULT 0, `layout` JSONB nullable (`{ x, y, w, h }` for grid position)
+- `created_at` TIMESTAMPTZ
+- Charts are frozen snapshots — data does not update when underlying tables change
+- RLS enabled: all operations gated on `auth.uid() = user_id`
 
 ### `data_explorer_messages`
 - `id` UUID PK, `session_id` UUID (FK), `question`, `sql_query`, `explanation`, `results` JSONB, `chart_config` JSONB, `chart_configs` JSONB, `error`, `execution_time_ms`, `row_count`, `message_type` TEXT (default 'query'), `parent_message_id` UUID (FK self-ref), `insights` TEXT nullable, `created_at`
@@ -192,11 +204,11 @@ All API routes use a two-client pattern:
 - **CSV export**: Client-side CSV generation from table data with proper escaping, available on Table tab
 - **SQLite support**: Read-only queries via `better-sqlite3`, SQL validation blocks writes, auto LIMIT injection (max 1000 rows)
 - **Exchange model**: Each query creates an `Exchange` object with `{ id, question, sql, explanation, results, chartConfig, chartConfigs, error, isLoading, messageType, parentMessageId, insights }`
-- **Multi-chart support**: AI suggests 1-3 charts per query. ChartGallery renders them in a scrollable gallery. Backward compat: wraps single `chartConfig` in array if `chartConfigs` is null
+- **Multi-chart support**: AI suggests 1-3 charts per query. ChartGallery renders them in a carousel with prev/next arrows and dot indicators. Backward compat: wraps single `chartConfig` in array if `chartConfigs` is null
 - **Chart types**: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar, area, box, funnel, waterfall, gauge. Supports `colorColumn` for grouping, `orientation` for horizontal bars, `yAxisType` for log scale
 - **Chart type switcher**: `ChartTypeSwitcher.tsx` renders icon buttons above each chart to switch types locally (no API call). Disabled types greyed out based on data shape (gauge disabled for multi-row, pie for >8 categories, etc.)
 - **KPI summary cards**: `KPICards.tsx` auto-detects summary metrics from query results. Single-row results → each numeric column becomes a KPI card. Multi-row → derives total/avg/max for prioritized numeric columns. Smart formatting: `$` for currency columns, `%` for rate columns, K/M abbreviation. Staggered entrance animation
-- **Chart gallery grid layout**: Toggle between list view and grid view (`grid-cols-2`). 3 charts → 2 top + 1 full-width bottom. Staggered chart entrance animations (150ms delay per chart)
+- **Chart gallery carousel**: Single chart visible at a time with left/right navigation arrows and dot indicators. Title displayed in external header row alongside Pin/Annotate/Refine action buttons. `hideTitle` prop on PlotlyChart prevents title collision with Plotly modebar
 - **Enhanced data table**: `DataTable.tsx` with column sorting (click header → asc/desc/clear), number formatting (`toLocaleString()`, `$` prefix for currency), conditional formatting (indigo gradient intensity based on value position), long text truncation with expand/collapse, row metadata display
 - **PDF export**: `utils/data-explorer-export.ts` using jsPDF. Landscape A4 with title, KPI values, chart images, table (first 50 rows), SQL, insights. "Download PDF" button in ResultsPanel tab bar
 - **Conversation context**: Last 5 messages injected into SQL generation prompt for follow-up queries ("group that by department"). Context capped at 4000 chars, truncates oldest first
@@ -212,6 +224,10 @@ All API routes use a two-client pattern:
 - **20-color palette**: PlotlyChart expanded from 10 → 20 perceptually distinct colors (indigo, violet, pink, rose, orange, yellow, green, teal, cyan, blue + lighter variants)
 - **Chart axis formatting**: Auto-detect dates → `tickformat: '%b %Y'`, currency columns → `tickprefix: '$'`, animated chart transitions (`transition: { duration: 500 }`)
 - **Print styles**: `@media print` rules in globals.css: `.no-print` hides interactive elements, force light colors, page breaks between sections
+- **Chart annotations**: `ChartAnnotation` interface (`{ id, x, y, text }`), added to `ChartConfig` as `annotations?` and `showAnnotations?`. PlotlyChart renders as Plotly native annotations with indigo arrows and themed labels. Annotation mode: click "Annotate" → click data point → enter text → saved to DB via PATCH. Eye icon toggles visibility. Annotations persist across sessions and render in pop-out report and PDF export
+- **Pinned chart dashboard**: Pin charts from carousel to a persistent dashboard. `Dashboard.tsx` uses `react-grid-layout` (WidthProvider + Responsive, dynamic import) for drag-and-resize. Cards have drag handle header + title + unpin on hover. 12-column grid, 80px row height, breakpoints at 996/768/480px. Layout positions persisted to `pinned_charts.layout` JSONB (debounced 500ms). Dashboard view toggled from header with badge showing pin count
+- **Data Explorer agent integration**: Agents provide domain context for SQL generation. `wrapWithDomainContext()` in `data-explorer-prompts.ts` prepends agent's system_prompt as `## Domain Context` before SQL instructions. Agent dropdown in Data Explorer header (teal badge). Agent persisted per-session via `data_explorer_sessions.agent_id`. Restored on session load
+- **Morphing orb loading**: SQL generation and insights loading use morphing orb animation (`animate-orb`) instead of spinner — consistent with chat "Thinking" state
 - **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings from the icon that fade as they reach the window boundary
 
 ### Chat Search
@@ -262,8 +278,9 @@ All API routes use a two-client pattern:
 - SSE via `/api/data-explorer/query-stream` using `ReadableStream`
 - Stages: `status` → `sql` → `results` → `explanation` + `charts` (parallel) → `complete`
 - Frontend parses events, updates exchange progressively
-- Spinner + status text replaces bouncing dots during loading
+- Morphing orb animation + status text during loading (matches chat "Thinking" style)
 - Original `/api/data-explorer/query` kept for non-streaming callers (refinement, insights)
+- Both routes accept `agentId` for domain context injection via `wrapWithDomainContext()`
 
 ### Voice Input
 - `VoiceInputButton.tsx` uses browser's built-in Web Speech API (`SpeechRecognition || webkitSpeechRecognition`)
@@ -435,6 +452,12 @@ All API routes use a two-client pattern:
 - [x] Flicker-free code block highlighting during streaming (module-level cache, synchronous dark mode read)
 - [x] Insights persistence: saved to database and reloaded with session (like charts)
 - [x] Prominent insights regenerate button with refresh icon
+- [x] Chart annotations: click-to-annotate data points with text labels, toggle visibility, persisted to DB
+- [x] Multi-chart dashboard: pin charts from query results, drag-and-resize grid (react-grid-layout), layout persistence
+- [x] Chart carousel: prev/next navigation with dot indicators, single chart view with external title/actions
+- [x] Data Explorer agent integration: domain-specific agents inject context into SQL generation prompts
+- [x] Agent dropdown in Data Explorer header with per-session persistence
+- [x] Morphing orb loading animation for SQL generation (consistent with chat/insights)
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
@@ -454,25 +477,60 @@ Pre-seeded SQLite database with 11 tables of realistic sample data:
 None currently tracked.
 
 ## Future Improvements
-- [ ] Responsive mobile layout
-- [ ] Rate limiting on API routes
-- [ ] Add error boundaries and loading states
+
+### SQL & Data Explorer
 - [ ] PostgreSQL support in Data Explorer
 - [ ] MySQL support in Data Explorer
-- [ ] Multi-chart dashboard view (pinned charts across queries)
-- [ ] Conversation memory / context window management
+- [ ] Query result comparison (diff two queries side by side)
+- [ ] Scheduled/recurring queries with alerting
+- [ ] SQL autocomplete in manual SQL editor (schema-aware)
+- [ ] Query explain plan visualization (EXPLAIN output as tree/graph)
+- [ ] Parameterized queries with user input variables
+- [ ] Data Explorer collaboration (shared sessions/dashboards)
+- [ ] Cross-database joins and federated queries
+- [ ] Natural language data alerts ("notify me when sales drop below X")
+
+### Interactive Plots & Visualization
+- [ ] Natural language chart refinement with streaming feedback
+- [ ] Interactive drill-down: click chart segment to filter and re-query
+- [ ] Chart zoom/pan with data-level filtering (linked to SQL WHERE clauses)
+- [ ] Dashboard auto-refresh with configurable intervals
+- [ ] Live-updating pinned charts (re-execute source query on refresh)
+- [ ] Dashboard filters: global date range / category selectors that filter all pinned charts
+- [ ] Chart export as standalone interactive HTML (Plotly HTML export)
+- [ ] Correlation matrix and regression line overlays
+- [ ] Geographic/map chart type (choropleth for regional data)
+- [ ] Sparkline mini-charts in data table cells
+
+### UI & Interface Polish
+- [ ] Responsive mobile layout
+- [ ] Add error boundaries and loading states
+- [ ] Dashboard themes/templates (pre-built layouts for common analytics)
 - [ ] Drag-and-drop file upload in Data Explorer
-- [ ] User preferences sync across devices
-- [ ] Admin dashboard for usage analytics
+- [ ] Keyboard shortcuts for chart navigation (arrow keys in carousel)
+- [ ] Chart color palette customization per dashboard
+- [ ] Fullscreen mode for individual charts
+- [ ] Dark/light mode per-component override
+- [ ] Animated transitions between query/dashboard view modes
+- [ ] Onboarding tour for first-time Data Explorer users
+
+### Agentic Integration
 - [ ] Agent tools/skills execution (beyond MVP named-prompt approach)
+- [ ] Agent-generated SQL templates: agents suggest common queries for their domain
+- [ ] Multi-agent pipeline: chain agents (e.g., SQL agent → analysis agent → report agent)
 - [ ] Agent version sync — detect when store agent has been updated, prompt user to reinstall
 - [ ] Agent marketplace ratings/reviews
 - [ ] Custom local-only agents (create agents without the store)
 - [ ] Agent-specific conversation starters / suggestion chips
-- [ ] Data Explorer agent integration (SQL-specialized agents)
-- [ ] Natural language chart refinement with streaming feedback
-- [ ] Query result comparison (diff two queries side by side)
-- [ ] Scheduled/recurring queries with alerting
-- [ ] Data Explorer collaboration (shared sessions/dashboards)
-- [ ] Chart annotation and commentary
+- [ ] Agent memory: agents that remember past queries and user preferences
+- [ ] Autonomous data exploration: agent proactively suggests queries based on schema
+- [ ] Agent-driven anomaly detection: agents flag outliers and unusual patterns in results
+
+### Platform & Infrastructure
+- [ ] Rate limiting on API routes
+- [ ] User preferences sync across devices
+- [ ] Admin dashboard for usage analytics
 - [ ] Export full session as interactive HTML report
+- [ ] Conversation memory / context window management
+- [ ] Webhook integrations (Slack/email notifications for query results)
+- [ ] API access for programmatic querying (external clients)

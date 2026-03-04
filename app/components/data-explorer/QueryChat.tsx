@@ -200,9 +200,13 @@ export default function QueryChat({
                   }`}
                 >
                   {ex.isLoading ? (
-                    <div className="flex items-center gap-2.5 py-1">
-                      <div className="w-3.5 h-3.5 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin flex-shrink-0" />
-                      <span className="text-xs dark:text-gray-400 text-gray-500">
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '0ms' }} />
+                        <div className="w-2 h-2 animate-orb" style={{ animationDelay: '300ms' }} />
+                        <div className="w-1.5 h-1.5 animate-orb" style={{ animationDelay: '600ms' }} />
+                      </div>
+                      <span className="text-xs dark:text-gray-400 text-gray-500 animate-pulse">
                         {ex.statusMessage || 'Processing...'}
                       </span>
                     </div>

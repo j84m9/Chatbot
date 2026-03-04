@@ -13,6 +13,7 @@ declare module 'react-plotly.js' {
     onUpdate?: (figure: any, graphDiv: HTMLElement) => void;
     onPurge?: (figure: any, graphDiv: HTMLElement) => void;
     onError?: (err: Error) => void;
+    onClick?: (event: any) => void;
   }
 
   class Plot extends Component<PlotParams> {}

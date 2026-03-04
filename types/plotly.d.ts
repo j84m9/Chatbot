@@ -13,6 +13,7 @@ declare module 'react-plotly.js/factory' {
     onUpdate?: (figure: any, graphDiv: HTMLElement) => void;
     onPurge?: (figure: any, graphDiv: HTMLElement) => void;
     onError?: (err: Error) => void;
+    onClick?: (event: any) => void;
   }
 
   function createPlotlyComponent(plotly: any): React.ComponentType<PlotParams>;

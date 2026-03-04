@@ -6,6 +6,8 @@ import DataExplorerSidebar, { SavedQuery } from '@/app/components/data-explorer/
 import ConnectionManager from '@/app/components/data-explorer/ConnectionManager';
 import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
+import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard';
+import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 
 interface RefineContext {
@@ -55,6 +57,16 @@ export default function DataExplorer() {
 
   // Lifted input state for QueryChat (allows schema browser to insert text)
   const [queryInput, setQueryInput] = useState('');
+
+  // Dashboard state
+  const [pinnedCharts, setPinnedCharts] = useState<PinnedChart[]>([]);
+  const [viewMode, setViewMode] = useState<'query' | 'dashboard'>('query');
+
+  // Agent state
+  const [installedAgents, setInstalledAgents] = useState<any[]>([]);
+  const [activeAgent, setActiveAgent] = useState<any>(null);
+  const [agentBrowserOpen, setAgentBrowserOpen] = useState(false);
+  const [agentDropdownOpen, setAgentDropdownOpen] = useState(false);
 
   // Fire explosion easter egg
   const [fireEffect, setFireEffect] = useState(false);
@@ -145,6 +157,88 @@ export default function DataExplorer() {
     setSelectedModel(model);
     saveSettings({ selected_provider: provider, selected_model: model });
   };
+
+  // Agent handlers
+  const fetchInstalledAgents = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agents');
+      if (res.ok) {
+        const data = await res.json();
+        setInstalledAgents(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch installed agents:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchInstalledAgents();
+  }, [fetchInstalledAgents]);
+
+  const selectAgent = async (agent: any | null) => {
+    setActiveAgent(agent);
+    if (sessionId) {
+      await fetch('/api/data-explorer/sessions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sessionId, agent_id: agent?.id || null }),
+      });
+    }
+  };
+
+  const installAgent = async (storeAgent: any) => {
+    try {
+      const res = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          store_agent_id: storeAgent.id,
+          name: storeAgent.name,
+          description: storeAgent.description,
+          system_prompt: storeAgent.system_prompt,
+          job_category: storeAgent.job_category,
+          logo_url: storeAgent.logo_url,
+          downloads: storeAgent.downloads,
+          tools: storeAgent.tools,
+          skills: storeAgent.skills,
+          parent_agent_id: storeAgent.parent_agent_id,
+          store_created_by: storeAgent.created_by,
+        }),
+      });
+      if (res.ok) {
+        await fetchInstalledAgents();
+      }
+    } catch (err) {
+      console.error('Failed to install agent:', err);
+    }
+  };
+
+  const uninstallAgent = async (agentId: string) => {
+    try {
+      const res = await fetch(`/api/agents?id=${agentId}`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchInstalledAgents();
+        if (activeAgent?.id === agentId) {
+          setActiveAgent(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to uninstall agent:', err);
+    }
+  };
+
+  // Close agent dropdown on outside click
+  const agentDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!agentDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (agentDropdownRef.current && !agentDropdownRef.current.contains(e.target as Node)) {
+        setAgentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [agentDropdownOpen]);
 
   const toggleDarkMode = () => {
     const next = !darkMode;
@@ -263,6 +357,7 @@ export default function DataExplorer() {
     setExchanges([]);
     setSelectedExchangeIndex(-1);
     setRefineContext(null);
+    setActiveAgent(null);
   };
 
   const handleSelectSession = async (id: string) => {
@@ -279,6 +374,14 @@ export default function DataExplorer() {
       // Switch to the session's connection so the user can continue querying
       if (data.connectionId) {
         setActiveConnectionId(data.connectionId);
+      }
+
+      // Restore agent if session has one
+      if (data.agentId) {
+        const agent = installedAgents.find(a => a.id === data.agentId);
+        setActiveAgent(agent || null);
+      } else {
+        setActiveAgent(null);
       }
 
       const loaded: Exchange[] = (data.messages ?? []).map((msg: any) => {
@@ -367,6 +470,7 @@ export default function DataExplorer() {
           question,
           connectionId: activeConnectionId,
           sessionId,
+          agentId: activeAgent?.id || null,
         }),
       });
 
@@ -656,6 +760,134 @@ export default function DataExplorer() {
     }
   };
 
+  // Annotation handler
+  const handleAddAnnotation = async (chartIndex: number, x: number | string, y: number | string, text: string) => {
+    setExchanges(prev =>
+      prev.map((ex, i) => {
+        if (i !== selectedExchangeIndex) return ex;
+        const configs = ex.chartConfigs || (ex.chartConfig ? [ex.chartConfig] : []);
+        const updated = configs.map((c, ci) => {
+          if (ci !== chartIndex) return c;
+          const annotations = [...(c.annotations || []), { id: crypto.randomUUID(), x, y, text }];
+          return { ...c, annotations, showAnnotations: true };
+        });
+        return { ...ex, chartConfigs: updated, chartConfig: updated[0] || ex.chartConfig };
+      })
+    );
+
+    // Persist to DB
+    const exchange = exchanges[selectedExchangeIndex];
+    if (exchange?.id) {
+      const configs = exchange.chartConfigs || (exchange.chartConfig ? [exchange.chartConfig] : []);
+      const updatedConfigs = configs.map((c, ci) => {
+        if (ci !== chartIndex) return c;
+        return { ...c, annotations: [...(c.annotations || []), { id: crypto.randomUUID(), x, y, text }], showAnnotations: true };
+      });
+      fetch('/api/data-explorer/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: exchange.id, chart_configs: updatedConfigs }),
+      }).catch(() => {});
+    }
+  };
+
+  const handleToggleAnnotations = async (chartIndex: number) => {
+    let updatedConfigs: any[] = [];
+    setExchanges(prev =>
+      prev.map((ex, i) => {
+        if (i !== selectedExchangeIndex) return ex;
+        const configs = ex.chartConfigs || (ex.chartConfig ? [ex.chartConfig] : []);
+        updatedConfigs = configs.map((c, ci) => {
+          if (ci !== chartIndex) return c;
+          return { ...c, showAnnotations: c.showAnnotations === false ? true : false };
+        });
+        return { ...ex, chartConfigs: updatedConfigs, chartConfig: updatedConfigs[0] || ex.chartConfig };
+      })
+    );
+
+    // Persist to DB
+    const exchange = exchanges[selectedExchangeIndex];
+    if (exchange?.id && updatedConfigs.length > 0) {
+      fetch('/api/data-explorer/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: exchange.id, chart_configs: updatedConfigs }),
+      }).catch(() => {});
+    }
+  };
+
+  // Pinned chart handlers
+  const fetchPinnedCharts = useCallback(async () => {
+    if (!activeConnectionId) return;
+    try {
+      const res = await fetch(`/api/data-explorer/pinned-charts?connectionId=${activeConnectionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPinnedCharts(data);
+      }
+    } catch {
+      // Silently fail
+    }
+  }, [activeConnectionId]);
+
+  useEffect(() => {
+    fetchPinnedCharts();
+  }, [fetchPinnedCharts]);
+
+  const handlePinChart = async (chartIndex: number) => {
+    const exchange = exchanges[selectedExchangeIndex];
+    if (!exchange || !activeConnectionId || !exchange.results) return;
+
+    const configs = exchange.chartConfigs || (exchange.chartConfig ? [exchange.chartConfig] : []);
+    const config = configs[chartIndex];
+    if (!config) return;
+
+    try {
+      const res = await fetch('/api/data-explorer/pinned-charts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: activeConnectionId,
+          title: config.title || `Chart from "${exchange.question}"`,
+          chart_config: config,
+          results_snapshot: {
+            rows: exchange.results.rows,
+            columns: exchange.results.columns,
+            types: exchange.results.types,
+          },
+          source_message_id: null,
+        }),
+      });
+      if (res.ok) {
+        fetchPinnedCharts();
+      }
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleUnpinChart = async (id: string) => {
+    try {
+      const res = await fetch(`/api/data-explorer/pinned-charts?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setPinnedCharts(prev => prev.filter(p => p.id !== id));
+      }
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleLayoutChange = async (id: string, layout: { x: number; y: number; w: number; h: number }) => {
+    // Optimistic update
+    setPinnedCharts(prev => prev.map(p => p.id === id ? { ...p, layout } : p));
+    // Persist
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, layout }),
+    }).catch(() => {});
+  };
+
   // Drag handle for split pane
   const handleMouseDown = () => {
     isDragging.current = true;
@@ -737,6 +969,11 @@ export default function DataExplorer() {
                   {connections.find(c => c.id === activeConnectionId)?.name}
                 </span>
               )}
+              {activeAgent && (
+                <span className="text-xs bg-gradient-to-r from-emerald-500/15 to-teal-500/15 dark:text-emerald-300 text-emerald-600 px-3 py-1 rounded-full font-semibold border dark:border-emerald-400/20 border-emerald-300/30 shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+                  {activeAgent.name}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
               {activeConnectionId && (
@@ -744,6 +981,99 @@ export default function DataExplorer() {
                   <span>{connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'SQLite' : 'MSSQL'}</span>
                 </div>
               )}
+              {/* Query / Dashboard toggle */}
+              <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('query')}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'query' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="Query view"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode('dashboard')}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer relative ${viewMode === 'dashboard' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="Dashboard view"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
+                  </svg>
+                  {pinnedCharts.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-indigo-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                      {pinnedCharts.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {/* Agent dropdown */}
+              <div ref={agentDropdownRef} className="relative">
+                <button
+                  onClick={() => setAgentDropdownOpen(!agentDropdownOpen)}
+                  className={`p-2 rounded-lg transition-colors cursor-pointer ${activeAgent ? 'dark:text-emerald-400 text-emerald-500 dark:hover:bg-emerald-500/10 hover:bg-emerald-50' : 'dark:text-gray-500 text-gray-400 dark:hover:bg-[#2a2b2d] hover:bg-gray-200'}`}
+                  title="Select agent"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                  </svg>
+                </button>
+                {agentDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-56 dark:bg-[#1e1f20] bg-white rounded-xl border dark:border-[#2a2b2d] border-gray-200 shadow-xl z-50 py-1 overflow-hidden">
+                    {installedAgents.length > 0 && (
+                      <div className="max-h-48 overflow-y-auto">
+                        {activeAgent && (
+                          <button
+                            onClick={() => { selectAgent(null); setAgentDropdownOpen(false); }}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                            </svg>
+                            No agent
+                          </button>
+                        )}
+                        {installedAgents.map(agent => (
+                          <button
+                            key={agent.id}
+                            onClick={() => { selectAgent(agent); setAgentDropdownOpen(false); }}
+                            className={`flex items-center gap-2 w-full px-3 py-2 text-sm transition-colors cursor-pointer ${
+                              activeAgent?.id === agent.id
+                                ? 'dark:bg-emerald-500/10 bg-emerald-50 dark:text-emerald-300 text-emerald-600'
+                                : 'dark:text-gray-300 text-gray-700 dark:hover:bg-[#2a2b2d] hover:bg-gray-100'
+                            }`}
+                          >
+                            {agent.logo_url ? (
+                              <img src={agent.logo_url} alt="" className="w-4 h-4 rounded object-cover flex-shrink-0" />
+                            ) : (
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 flex-shrink-0">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+                              </svg>
+                            )}
+                            <span className="truncate">{agent.name}</span>
+                            {activeAgent?.id === agent.id && (
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 ml-auto flex-shrink-0">
+                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="border-t dark:border-[#2a2b2d] border-gray-200">
+                      <button
+                        onClick={() => { setAgentBrowserOpen(true); setAgentDropdownOpen(false); }}
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm dark:text-indigo-400 text-indigo-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" />
+                        </svg>
+                        Browse agents...
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={toggleDarkMode}
                 className="p-2 rounded-lg dark:hover:bg-[#2a2b2d] hover:bg-gray-200 dark:text-gray-400 text-gray-500 transition-colors cursor-pointer"
@@ -765,6 +1095,16 @@ export default function DataExplorer() {
 
         {/* Pane row */}
         <div className="flex-1 flex min-h-0">
+          {viewMode === 'dashboard' ? (
+            <Dashboard
+              pinnedCharts={pinnedCharts}
+              darkMode={darkMode}
+              onUnpin={handleUnpinChart}
+              onLayoutChange={handleLayoutChange}
+              connectionName={connections.find(c => c.id === activeConnectionId)?.name}
+            />
+          ) : (
+          <>
           {/* Left pane: Query Chat */}
           <div
             className="flex flex-col transition-[width] duration-300"
@@ -818,9 +1158,14 @@ export default function DataExplorer() {
                   onRequestInsights={handleRequestInsights}
                   onSaveQuery={handleSaveQuery}
                   onChangeChartType={handleChangeChartType}
+                  onAddAnnotation={handleAddAnnotation}
+                  onToggleAnnotations={handleToggleAnnotations}
+                  onPinChart={handlePinChart}
                 />
               </div>
             </>
+          )}
+          </>
           )}
         </div>
 
@@ -862,6 +1207,17 @@ export default function DataExplorer() {
         <ConnectionManager
           onSave={handleConnectionSave}
           onClose={() => setShowConnectionModal(false)}
+        />
+      )}
+
+      {/* Agent browser modal */}
+      {agentBrowserOpen && (
+        <AgentBrowser
+          installedAgents={installedAgents}
+          onInstall={installAgent}
+          onUninstall={uninstallAgent}
+          onSelect={selectAgent}
+          onClose={() => setAgentBrowserOpen(false)}
         />
       )}
     </div>

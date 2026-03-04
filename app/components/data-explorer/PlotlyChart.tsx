@@ -11,6 +11,13 @@ const Plot = dynamic(
   { ssr: false }
 );
 
+export interface ChartAnnotation {
+  id: string;
+  x: number | string;
+  y: number | string;
+  text: string;
+}
+
 export interface ChartConfig {
   chartType: 'bar' | 'line' | 'scatter' | 'pie' | 'histogram' | 'heatmap' | 'grouped_bar' | 'stacked_bar' | 'area' | 'box' | 'funnel' | 'waterfall' | 'gauge';
   title: string;
@@ -23,6 +30,8 @@ export interface ChartConfig {
   aggregation?: 'sum' | 'avg' | 'count' | 'none';
   yAxisType?: 'linear' | 'log';
   fillGradient?: boolean;
+  annotations?: ChartAnnotation[];
+  showAnnotations?: boolean;
 }
 
 export interface PlotlyChartHandle {
@@ -33,6 +42,9 @@ interface PlotlyChartProps {
   chartConfig: ChartConfig;
   rows: Record<string, any>[];
   darkMode: boolean;
+  annotationMode?: boolean;
+  onChartClick?: (x: number | string, y: number | string) => void;
+  hideTitle?: boolean;
 }
 
 const CHART_COLORS = [
@@ -45,7 +57,7 @@ const CHART_COLORS = [
 const CURRENCY_PATTERNS = /revenue|salary|cost|price|amount|total_sales|income|profit|budget|payment|fee|spend/i;
 const DATE_PATTERNS = /date|time|created|updated|timestamp|month|year|day|week|quarter/i;
 
-const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode }, ref) {
+const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode, annotationMode, onChartClick, hideTitle }, ref) {
   const plotRef = useRef<any>(null);
 
   const onInitialized = useCallback((_figure: any, graphDiv: HTMLElement) => {
@@ -334,14 +346,11 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     const xTickprefix = isHorizontal && CURRENCY_PATTERNS.test(yCol) ? '$' : undefined;
 
     const plotLayout: any = {
-      title: {
-        text: chartConfig.title,
-        font: { color: colors.text, size: 14 },
-      },
+      ...(hideTitle ? {} : { title: { text: chartConfig.title, font: { color: colors.text, size: 14 } } }),
       paper_bgcolor: colors.paper,
       plot_bgcolor: colors.bg,
       font: { color: colors.text },
-      margin: { l: 60, r: 30, t: 50, b: 60 },
+      margin: { l: 60, r: 30, t: hideTitle ? 20 : 50, b: 60 },
       xaxis: {
         title: isHorizontal
           ? (chartConfig.yLabel || chartConfig.yColumn)
@@ -373,11 +382,40 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       delete plotLayout.yaxis;
     }
 
+    // Map ChartAnnotation[] to Plotly annotations
+    if (chartConfig.annotations && chartConfig.annotations.length > 0 && chartConfig.showAnnotations !== false) {
+      plotLayout.annotations = chartConfig.annotations.map(a => ({
+        x: a.x,
+        y: a.y,
+        text: a.text,
+        showarrow: true,
+        arrowhead: 2,
+        arrowsize: 1,
+        arrowwidth: 1.5,
+        arrowcolor: '#6366f1',
+        ax: 0,
+        ay: -40,
+        bgcolor: darkMode ? '#1e1f20' : '#ffffff',
+        bordercolor: darkMode ? '#2a2b2d' : '#e5e7eb',
+        borderwidth: 1,
+        borderpad: 4,
+        font: { color: darkMode ? '#d1d5db' : '#374151', size: 11 },
+      }));
+    }
+
     return { data: traces, layout: plotLayout };
   }, [chartConfig, rows, darkMode]);
 
+  const handlePlotClick = useCallback((event: any) => {
+    if (!annotationMode || !onChartClick) return;
+    const point = event.points?.[0];
+    if (point) {
+      onChartClick(point.x, point.y);
+    }
+  }, [annotationMode, onChartClick]);
+
   return (
-    <div className="w-full h-full min-h-[300px]">
+    <div className={`w-full h-full min-h-[300px] ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : ''}`}>
       <Plot
         data={data}
         layout={layout}
@@ -386,6 +424,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
         style={{ width: '100%', height: '100%' }}
         onInitialized={onInitialized}
         onUpdate={(_figure: any, graphDiv: HTMLElement) => { plotRef.current = graphDiv; }}
+        onClick={handlePlotClick}
       />
     </div>
   );

@@ -11,6 +11,7 @@ import {
   buildSessionTitlePrompt,
   buildConversationContext,
   categorizeError,
+  wrapWithDomainContext,
 } from '@/utils/ai/data-explorer-prompts';
 
 // Reuse the schema cache
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { question, connectionId, sessionId } = body;
+  const { question, connectionId, sessionId, agentId } = body;
 
   if (!question || !connectionId) {
     return new Response('Missing question or connectionId', { status: 400 });
@@ -156,6 +157,27 @@ export async function POST(req: Request) {
           schemaText += '\n\n## Sample Data\n' + sampleTexts.join('\n');
         }
 
+        // 3c. Fetch agent domain context
+        let domainContext: string | null = null;
+        // Check session for agent_id, or use agentId from body
+        let resolvedAgentId = agentId || null;
+        if (sessionId && !resolvedAgentId) {
+          const { data: existingSession } = await dbAdmin
+            .from('data_explorer_sessions')
+            .select('agent_id')
+            .eq('id', sessionId)
+            .single();
+          if (existingSession?.agent_id) resolvedAgentId = existingSession.agent_id;
+        }
+        if (resolvedAgentId) {
+          const { data: agent } = await dbAdmin
+            .from('installed_agents')
+            .select('system_prompt')
+            .eq('id', resolvedAgentId)
+            .single();
+          if (agent?.system_prompt) domainContext = agent.system_prompt;
+        }
+
         // 4. Conversation context
         let conversationContext = '';
         if (sessionId) {
@@ -177,7 +199,7 @@ export async function POST(req: Request) {
         const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
         const sqlResult = await generateText({
           model,
-          system: buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext),
+          system: wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext),
           prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
         });
 
@@ -206,9 +228,11 @@ export async function POST(req: Request) {
           // Still save the message
           let activeSessionId = sessionId;
           if (!activeSessionId) {
+            const sessionInsert: any = { user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) };
+            if (resolvedAgentId) sessionInsert.agent_id = resolvedAgentId;
             const { data: newSession } = await dbAdmin
               .from('data_explorer_sessions')
-              .insert({ user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) })
+              .insert(sessionInsert)
               .select('id')
               .single();
             if (newSession) activeSessionId = newSession.id;
@@ -276,9 +300,11 @@ export async function POST(req: Request) {
         // 8. Save to database
         let activeSessionId = sessionId;
         if (!activeSessionId) {
+          const sessionInsert: any = { user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) };
+          if (resolvedAgentId) sessionInsert.agent_id = resolvedAgentId;
           const { data: newSession } = await dbAdmin
             .from('data_explorer_sessions')
-            .insert({ user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) })
+            .insert(sessionInsert)
             .select('id')
             .single();
           if (newSession) activeSessionId = newSession.id;

@@ -14,6 +14,9 @@ interface ResultsPanelProps {
   onRequestInsights?: () => void;
   onSaveQuery?: (data: { question: string; sql: string; explanation: string | null; chartConfigs: any }) => void;
   onChangeChartType?: (chartIndex: number, newType: string) => void;
+  onAddAnnotation?: (chartIndex: number, x: number | string, y: number | string, text: string) => void;
+  onToggleAnnotations?: (chartIndex: number) => void;
+  onPinChart?: (chartIndex: number) => void;
 }
 
 // Lazy load chart components since they're heavy
@@ -23,7 +26,7 @@ const InsightsPanel = dynamic(() => import('./InsightsPanel'), { ssr: false });
 import KPICards from './KPICards';
 import DataTable from './DataTable';
 
-export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights, onSaveQuery, onChangeChartType }: ResultsPanelProps) {
+export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChart, onRefineSql, onRequestInsights, onSaveQuery, onChangeChartType, onAddAnnotation, onToggleAnnotations, onPinChart }: ResultsPanelProps) {
   const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart' | 'insights'>('sql');
   const prevExchangeKey = useRef<string | null>(null);
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -101,8 +104,12 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChar
       <div className="flex flex-col items-center justify-center h-full dark:text-gray-500 text-gray-400">
         {exchange?.isLoading ? (
           <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-            <span className="text-sm">Generating query...</span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-4 h-4 animate-orb" style={{ animationDelay: '0ms' }} />
+              <div className="w-3 h-3 animate-orb" style={{ animationDelay: '300ms' }} />
+              <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '600ms' }} />
+            </div>
+            <span className="text-sm animate-pulse">{exchange.statusMessage || 'Generating query...'}</span>
           </div>
         ) : (
           <div className="text-center">
@@ -313,6 +320,9 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineChar
               darkMode={darkMode}
               onRefineChart={onRefineChart}
               onChangeChartType={onChangeChartType}
+              onAddAnnotation={onAddAnnotation}
+              onToggleAnnotations={onToggleAnnotations}
+              onPinChart={onPinChart}
             />
           </div>
         )}

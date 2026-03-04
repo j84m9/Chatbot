@@ -17,6 +17,7 @@ import {
   buildInsightSystemPrompt,
   buildInsightUserPrompt,
   categorizeError,
+  wrapWithDomainContext,
 } from '@/utils/ai/data-explorer-prompts';
 
 // Reuse the schema cache from the schema route
@@ -140,6 +141,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: err.message }, { status: 400 });
   }
 
+  // Fetch agent domain context
+  let domainContext: string | null = null;
+  let resolvedAgentId = body.agentId || null;
+  if (sessionId && !resolvedAgentId) {
+    const { data: existingSession } = await dbAdmin
+      .from('data_explorer_sessions')
+      .select('agent_id')
+      .eq('id', sessionId)
+      .single();
+    if (existingSession?.agent_id) resolvedAgentId = existingSession.agent_id;
+  }
+  if (resolvedAgentId) {
+    const { data: agent } = await dbAdmin
+      .from('installed_agents')
+      .select('system_prompt')
+      .eq('id', resolvedAgentId)
+      .single();
+    if (agent?.system_prompt) domainContext = agent.system_prompt;
+  }
+
   // Route by message type
   const type = messageType || 'query';
 
@@ -206,7 +227,7 @@ export async function POST(req: Request) {
 
     const sqlResult = await generateText({
       model,
-      system: buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext),
+      system: wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext),
       prompt,
     });
 
