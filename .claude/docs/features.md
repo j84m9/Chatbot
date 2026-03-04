@@ -1,0 +1,88 @@
+# Implemented Features
+
+- [x] User auth (login/signup with email or username)
+- [x] Chat streaming with Ollama (local default)
+- [x] BYOK: OpenAI, Anthropic, Google provider support
+- [x] Provider/model selection in settings dropdown
+- [x] Quick model switcher in chat input toolbar (grouped dropdown with API key gating)
+- [x] API key save with purple checkmark indicator
+- [x] API keys encrypted at rest (pgcrypto)
+- [x] Chat history sidebar with session list
+- [x] Delete chat sessions
+- [x] Collapsible sidebar (CSS transitions, icons visible when collapsed)
+- [x] Edit & resend user messages
+- [x] Copy message to clipboard
+- [x] Dark/light mode toggle
+- [x] Markdown rendering for assistant messages (code blocks, bold, lists)
+- [x] Code syntax highlighting (Shiki)
+- [x] Lightning animation easter egg (chat)
+- [x] Radar pulse animation easter egg (Data Explorer)
+- [x] Suggestion chips on empty state
+- [x] Custom thin scrollbar styling
+- [x] Polished UI: gradient bubbles, frosted header, ambient glow, consistent indigo color scheme
+- [x] Consistent layout between Chat and Data Explorer (header, input, empty state alignment)
+- [x] Data Explorer: natural language -> SQL against MSSQL and SQLite databases
+- [x] SQLite support with demo database included in repo
+- [x] Auto-generated multi-charts (Plotly) for Data Explorer results (1-3 charts per query)
+- [x] 13 chart types: bar, line, scatter, pie, histogram, heatmap, grouped_bar, stacked_bar, area, box, funnel, waterfall, gauge
+- [x] Chart type switcher: local chart type switching via icon buttons (no API call)
+- [x] KPI summary cards: auto-detected metrics with smart formatting ($, %, K/M), staggered animation
+- [x] Enhanced data table: column sorting, number formatting, conditional coloring, text truncation
+- [x] Chart gallery grid layout with list/grid toggle and chart entrance animations
+- [x] PDF export for Data Explorer (landscape A4 with KPIs, charts, table, SQL, insights)
+- [x] Dashboard report window (scrollable layout instead of tabs, with print support)
+- [x] 20-color expanded chart palette with auto axis formatting (dates, currency, large numbers)
+- [x] Schema metadata sanitization for prompt injection protection
+- [x] Improved SQL validation: string literal stripping eliminates false positives
+- [x] Sample data in prompts: 3 rows per table for more accurate SQL generation
+- [x] Conversation context cap (4000 chars, truncates oldest first)
+- [x] Categorized error responses with actionable suggestions
+- [x] Print styles (@media print) for Data Explorer report
+- [x] Chart refinement: modify charts via natural language without re-running SQL
+- [x] SQL refinement: modify SQL via natural language, creates new exchange with updated results
+- [x] Data insights: AI-generated bullet points about query results (on-demand)
+- [x] Conversation context: follow-up queries understand previous questions/results
+- [x] AI-generated session titles in Data Explorer sidebar
+- [x] FK-enhanced DDL in schema prompts for better multi-table JOINs
+- [x] MSSQL connection management with encrypted passwords
+- [x] Row Level Security on all user data tables
+- [x] Per-request admin client in messages route (serverless-safe)
+- [x] Dynamic results panel (hidden when no results, smooth width transition)
+- [x] Close button to dismiss results panel
+- [x] Pop-out report window (opens results in new browser window, BI report style)
+- [x] CSV export for Data Explorer table results
+- [x] Data Explorer message history persistence and reload
+- [x] Keyboard shortcuts: Cmd+K (search), Cmd+N (new chat/query), Cmd+/ (toggle sidebar), Escape
+- [x] Rename chat sessions (double-click or 3-dot menu)
+- [x] Chat search: full-text search across all messages (Cmd+K modal)
+- [x] System prompt customization per chat session (with presets)
+- [x] Saved/pinned queries in Data Explorer (per connection)
+- [x] Schema browser in Data Explorer sidebar (collapsible tree, click-to-insert columns)
+- [x] Query history search in Data Explorer sidebar
+- [x] Streaming SQL generation with progressive status updates (SSE)
+- [x] Voice input via Web Speech API (mic button, graceful degradation)
+- [x] Chat export as Text (.txt) and PDF (jsPDF)
+- [x] File/image upload to Supabase Storage with drag-and-drop
+- [x] Vision capability guard: file upload only shown for vision-capable models
+- [x] File preview in messages (image thumbnails with lightbox, document icons)
+- [x] Chat forking from any message (creates new session with history up to that point)
+- [x] Token usage tracking and cost estimation per assistant message
+- [x] Two-row chat input with integrated toolbar (file upload, model selector, voice, send)
+- [x] AI Agent Store: browse, install, and use agents as named system prompts
+- [x] Agent browser modal with Store (search, category filters) and Installed tabs
+- [x] Agent quick-switch dropdown in chat header
+- [x] Agent prompt resolution chain (custom > agent > default)
+- [x] Agent detach: copy agent prompt to custom system prompt for editing
+- [x] Forked sessions inherit agent assignment
+- [x] UI micro-interactions: scale transforms on buttons/chips, send button glow, smooth dot-wave loading, ambient message shadows, sidebar active accent border, badge inner highlights
+- [x] Morphing orb loading animation (chat "Thinking" + Data Explorer "Generating insights")
+- [x] Dynamic Ollama model discovery: models route fetches installed models from local Ollama API
+- [x] Flicker-free code block highlighting during streaming (module-level cache, synchronous dark mode read)
+- [x] Insights persistence: saved to database and reloaded with session (like charts)
+- [x] Prominent insights regenerate button with refresh icon
+- [x] Chart annotations: click-to-annotate data points with text labels, toggle visibility, persisted to DB
+- [x] Multi-chart dashboard: pin charts from query results, drag-and-resize grid (react-grid-layout), layout persistence
+- [x] Chart carousel: prev/next navigation with dot indicators, single chart view with external title/actions
+- [x] Data Explorer agent integration: domain-specific agents inject context into SQL generation prompts
+- [x] Agent dropdown in Data Explorer header with per-session persistence
+- [x] Morphing orb loading animation for SQL generation (consistent with chat/insights)
