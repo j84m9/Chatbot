@@ -97,9 +97,9 @@ export default function AgentBrowser({ installedAgents, onInstall, onUninstall, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[8vh]" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-backdrop-in" />
       <div
-        className="relative w-full max-w-2xl max-h-[80vh] dark:bg-[#1a1b1c] bg-white rounded-2xl shadow-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 flex flex-col"
+        className="relative w-full max-w-2xl max-h-[80vh] dark:bg-[#1a1b1c] bg-white rounded-2xl shadow-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden animate-modal-in flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

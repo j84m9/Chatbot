@@ -42,8 +42,7 @@ export default function VoiceInputButton({ onTranscript, disabled }: VoiceInputB
       }
     };
 
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
+    recognition.onerror = () => {
       setIsRecording(false);
     };
 
@@ -63,9 +62,9 @@ export default function VoiceInputButton({ onTranscript, disabled }: VoiceInputB
       type="button"
       onClick={toggleRecording}
       disabled={disabled}
-      className={`p-2 rounded-xl transition-all duration-200 cursor-pointer ${
+      className={`relative z-10 p-2 rounded-xl transition-all duration-200 cursor-pointer ${
         isRecording
-          ? 'text-indigo-600 hover:text-indigo-500 hover:bg-indigo-500/10 animate-pulse'
+          ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 animate-recording-pulse'
           : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-white/[0.06]'
       } disabled:opacity-40 disabled:cursor-not-allowed`}
       title={isRecording ? 'Stop recording' : 'Voice input'}

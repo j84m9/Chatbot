@@ -81,9 +81,9 @@ export default function SearchModal({ onClose, onSelectResult }: SearchModalProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-backdrop-in" />
       <div
-        className="relative w-full max-w-lg dark:bg-[#1a1b1c] bg-white rounded-2xl shadow-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+        className="relative w-full max-w-lg dark:bg-[#1a1b1c] bg-white rounded-2xl shadow-2xl border dark:border-[#2a2b2d] border-gray-200 overflow-hidden animate-modal-in"
         onClick={e => e.stopPropagation()}
       >
         {/* Search input */}

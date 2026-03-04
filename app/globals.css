@@ -35,11 +35,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.25);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.35);
+  background: rgba(128, 128, 128, 0.4);
 }
 .dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
@@ -142,3 +142,77 @@ body {
 .animate-db-radar { animation: db-radar-icon 0.8s ease-out; }
 .animate-db-radar-ring { animation: db-radar-ring 1s ease-out forwards; }
 .animate-db-radar-glow { animation: db-radar-glow 0.9s ease-out forwards; }
+
+/* ── UI Polish Animations ── */
+
+/* Modal scale + fade entrance */
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(-10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-modal-in { animation: modal-in 250ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-backdrop-in { animation: backdrop-in 200ms ease-out forwards; }
+
+/* Dropdown fade-in */
+@keyframes slide-up-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-slide-up { animation: slide-up-in 150ms ease-out forwards; }
+
+/* Message fade-in */
+@keyframes message-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-message-in { animation: message-in 300ms ease-out forwards; }
+
+/* Copy feedback fade-in-out */
+@keyframes fade-in-out {
+  0% { opacity: 0; transform: scale(0.8); }
+  15% { opacity: 1; transform: scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.8); }
+}
+.animate-copy-feedback { animation: fade-in-out 2s ease forwards; }
+
+/* Status dot glow — replaces aggressive animate-pulse */
+@keyframes status-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(52, 211, 153, 0.3); }
+  50% { box-shadow: 0 0 8px 2px rgba(52, 211, 153, 0.5), 0 0 0 4px rgba(52, 211, 153, 0.05); }
+}
+.animate-status-glow { animation: status-glow 2.5s ease-in-out infinite; }
+
+/* Loading shimmer bar */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.loading-shimmer {
+  background: linear-gradient(90deg, rgba(99,102,241,0.15) 0%, rgba(99,102,241,0.4) 50%, rgba(99,102,241,0.15) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Recording pulse for voice button */
+@keyframes recording-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+}
+.animate-recording-pulse { animation: recording-pulse 1.5s ease-in-out infinite; }
+
+/* Send button glow when active */
+.send-glow {
+  box-shadow: 0 0 12px 2px rgba(99, 102, 241, 0.3), 0 0 4px 1px rgba(99, 102, 241, 0.2);
+}
+
+/* Smoother loading dots */
+@keyframes dot-wave {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+.animate-dot-wave { animation: dot-wave 1.2s ease-in-out infinite; }

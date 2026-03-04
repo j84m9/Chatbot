@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChartConfig } from './PlotlyChart';
 
 export interface Exchange {
@@ -49,6 +49,13 @@ interface QueryChatProps {
   onTriggerFire?: () => void;
   // Dark mode (needed for gradient overlay)
   darkMode?: boolean;
+  // Model selector
+  selectedProvider?: string;
+  selectedModel?: string;
+  modelCatalog?: Record<string, { id: string; label: string }[]>;
+  providerNames?: Record<string, string>;
+  savedApiKeys?: Record<string, string | null>;
+  onQuickModelSwitch?: (provider: string, model: string) => void;
 }
 
 export default function QueryChat({
@@ -57,11 +64,29 @@ export default function QueryChat({
   inputValue: controlledInput, onInputChange,
   fireEffect, onTriggerFire,
   darkMode,
+  selectedProvider, selectedModel, modelCatalog, providerNames, savedApiKeys, onQuickModelSwitch,
 }: QueryChatProps) {
   const [internalInput, setInternalInput] = useState('');
   const input = controlledInput !== undefined ? controlledInput : internalInput;
   const setInput = onInputChange || setInternalInput;
   const endRef = useRef<HTMLDivElement>(null);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close model dropdown on outside click
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (modelDropdownRef.current?.contains(e.target as Node)) return;
+      setModelDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [modelDropdownOpen]);
+
+  const currentModelLabel = modelCatalog && selectedProvider && selectedModel
+    ? modelCatalog[selectedProvider]?.find(m => m.id === selectedModel)?.label || selectedModel
+    : selectedModel || '';
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -98,7 +123,7 @@ export default function QueryChat({
       <div className="flex-1 overflow-y-auto w-full scroll-smooth px-4">
         <div className="max-w-3xl mx-auto py-8 pb-44 space-y-6">
           {exchanges.length === 0 && (
-            <div className="flex flex-col items-center justify-center text-center mt-28 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex flex-col items-center justify-center text-center mt-28">
               <button
                 onClick={onTriggerFire}
                 className="w-16 h-16 dark:bg-[#1a1b1c] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl shadow-indigo-500/5 flex items-center justify-center mb-8 cursor-pointer relative active:scale-95 transition-transform hover:shadow-indigo-500/15 hover:border-indigo-500/30"
@@ -245,9 +270,11 @@ export default function QueryChat({
               )}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="relative flex items-center dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-200/50 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all">
-            <input
-              className="w-full py-4 pl-4 pr-12 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px]"
+          <form onSubmit={handleSubmit} className="dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-300/40 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
+            {/* Textarea row */}
+            <textarea
+              className="w-full pt-4 pb-2 px-4 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px] resize-none max-h-40 overflow-y-auto"
+              rows={1}
               value={input}
               placeholder={
                 refineContext
@@ -258,18 +285,94 @@ export default function QueryChat({
                     ? 'Ask a question about your data...'
                     : 'Add a connection first...'
               }
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = e.target.scrollHeight + 'px';
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (input.trim() && !isQuerying && hasConnection) {
+                    (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                  }
+                }
+              }}
               disabled={isQuerying || !hasConnection}
             />
-            <button
-              type="submit"
-              disabled={!input.trim() || isQuerying || !hasConnection}
-              className={`absolute right-2.5 p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${input.trim() ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10' : 'text-gray-500'}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-              </svg>
-            </button>
+            {/* Toolbar row */}
+            <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
+              <div className="flex items-center gap-0.5">
+                {/* Model selector */}
+                {modelCatalog && providerNames && onQuickModelSwitch && (
+                  <div ref={modelDropdownRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setModelDropdownOpen(prev => !prev)}
+                      className="flex items-center gap-1.5 text-[11px] dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer rounded-lg px-2 py-1.5 dark:hover:bg-white/[0.06] hover:bg-gray-100"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                      </svg>
+                      {currentModelLabel}
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-2.5 h-2.5">
+                        <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    {modelDropdownOpen && (
+                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-50 animate-slide-up">
+                        <div className="max-h-64 overflow-y-auto py-1">
+                          {Object.entries(modelCatalog).map(([provider, models]) => {
+                            const hasKey = provider === 'ollama' || !!savedApiKeys?.[provider];
+                            return (
+                              <div key={provider}>
+                                <div className="px-3 pt-2 pb-1">
+                                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${hasKey ? 'dark:text-gray-400 text-gray-500' : 'dark:text-gray-600 text-gray-400'}`}>
+                                    {providerNames[provider] || provider}
+                                    {!hasKey && <span className="ml-1 normal-case tracking-normal font-normal">· no key</span>}
+                                  </span>
+                                </div>
+                                {models.map((m) => {
+                                  const isActive = selectedProvider === provider && selectedModel === m.id;
+                                  return (
+                                    <button
+                                      key={`${provider}-${m.id}`}
+                                      type="button"
+                                      disabled={!hasKey}
+                                      onClick={() => { onQuickModelSwitch(provider, m.id); setModelDropdownOpen(false); }}
+                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                                        isActive
+                                          ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium cursor-pointer'
+                                          : hasKey
+                                            ? 'dark:text-gray-300 text-gray-700 dark:hover:bg-white/[0.06] hover:bg-gray-50 cursor-pointer'
+                                            : 'dark:text-gray-600 text-gray-350 opacity-40 cursor-not-allowed'
+                                      }`}
+                                    >
+                                      {m.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="submit"
+                  disabled={!input.trim() || isQuerying || !hasConnection}
+                  className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${input.trim() ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 hover:shadow-md hover:shadow-indigo-500/20' : 'text-gray-500'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                    <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </form>
           <div className="text-center mt-3 text-[11px] dark:text-gray-600 text-gray-400">
             AI-generated SQL may be imprecise. Always verify before running on production data.

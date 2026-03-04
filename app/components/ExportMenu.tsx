@@ -34,7 +34,7 @@ export default function ExportMenu({ messages, sessionTitle }: ExportMenuProps) 
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-48 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute right-0 top-full mt-1 w-48 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] z-30 overflow-hidden animate-slide-up">
           <button
             onClick={() => { exportChatAsText(messages, sessionTitle); setOpen(false); }}
             className="flex items-center gap-2 px-4 py-2.5 text-sm dark:text-gray-300 text-gray-700 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 w-full text-left cursor-pointer transition-colors"

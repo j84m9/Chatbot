@@ -24,10 +24,10 @@ export default function FilePreview({ url, mediaType, filename }: FilePreviewPro
         />
         {expanded && (
           <div
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer animate-backdrop-in"
             onClick={() => setExpanded(false)}
           >
-            <img src={url} alt={displayName} className="max-w-full max-h-full rounded-lg" />
+            <img src={url} alt={displayName} className="max-w-full max-h-full rounded-lg animate-modal-in" />
           </div>
         )}
       </>

@@ -140,6 +140,12 @@ export default function DataExplorer() {
     saveSettings({ [apiKeyField]: apiKey });
   };
 
+  const handleQuickModelSwitch = (provider: string, model: string) => {
+    setSelectedProvider(provider);
+    setSelectedModel(model);
+    saveSettings({ selected_provider: provider, selected_model: model });
+  };
+
   const toggleDarkMode = () => {
     const next = !darkMode;
     setDarkMode(next);
@@ -699,14 +705,14 @@ export default function DataExplorer() {
       {/* Main content: split pane */}
       <div ref={containerRef} className="flex-1 flex flex-col relative">
         {/* Ambient glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.08] dark:bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.06] dark:bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
 
         {/* Header bar */}
-        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl">
+        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-white/70 backdrop-blur-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.05)] dark:shadow-none">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-400/50 ring-2 ring-emerald-400/20" />
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-status-glow ring-2 ring-emerald-400/20" />
               <span className="text-base font-semibold dark:text-gray-100 text-gray-800">Data Explorer</span>
               {activeConnectionId && connections.find(c => c.id === activeConnectionId) && (
                 <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">
@@ -761,6 +767,12 @@ export default function DataExplorer() {
               fireEffect={fireEffect}
               onTriggerFire={() => { setFireEffect(true); setTimeout(() => setFireEffect(false), 1700); }}
               darkMode={darkMode}
+              selectedProvider={selectedProvider}
+              selectedModel={selectedModel}
+              modelCatalog={modelCatalog}
+              providerNames={providerNames}
+              savedApiKeys={savedApiKeys}
+              onQuickModelSwitch={handleQuickModelSwitch}
             />
           </div>
 

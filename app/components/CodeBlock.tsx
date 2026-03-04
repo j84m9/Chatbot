@@ -73,7 +73,7 @@ export default function CodeBlock({ code, language }: CodeBlockProps) {
   const displayLang = resolvedLanguage || 'text';
 
   return (
-    <div className="code-block-wrapper rounded-xl overflow-hidden my-3 border dark:border-white/[0.08] border-gray-200">
+    <div className="code-block-wrapper rounded-xl overflow-hidden my-3 border dark:border-white/[0.08] border-gray-200 shadow-md shadow-gray-200/50 dark:shadow-black/20">
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-2 dark:bg-[#1e1f20] bg-gray-100 border-b dark:border-white/[0.06] border-gray-200">
         <span className="text-xs font-medium dark:text-gray-400 text-gray-500">{displayLang}</span>

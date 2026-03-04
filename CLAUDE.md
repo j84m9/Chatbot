@@ -20,7 +20,7 @@ A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v
 app/
   page.tsx              — Main chat UI (sidebar, messages, input with toolbar, settings panel)
   layout.tsx            — Root layout (Geist fonts, dark class on <html>)
-  globals.css           — Tailwind imports, dark variant, custom animations (radar pulse, lightning)
+  globals.css           — Tailwind imports, dark variant, custom animations (radar pulse, lightning, dot-wave, send-glow)
   login/
     page.tsx            — Login/signup form
     actions.ts          — Server actions: login() and signup()
@@ -64,7 +64,7 @@ app/
     MarkdownRenderer.tsx — Markdown rendering for chat messages
     CodeBlock.tsx       — Syntax-highlighted code blocks (Shiki)
     ChatPlot.tsx        — Inline chart rendering in chat messages
-    VoiceInputButton.tsx — Browser Speech API voice input (mic button, pulses red when recording)
+    VoiceInputButton.tsx — Browser Speech API voice input (mic button, pulses indigo when recording)
     ExportMenu.tsx      — Chat export dropdown (text + PDF)
     FileUploadButton.tsx — Paperclip file upload button (images, PDFs, text, CSV)
     FilePreview.tsx     — File/image preview in message bubbles (click-to-expand images)
@@ -251,7 +251,7 @@ All API routes use a two-client pattern:
 ### Voice Input
 - `VoiceInputButton.tsx` uses browser's built-in Web Speech API (`SpeechRecognition || webkitSpeechRecognition`)
 - Returns `null` if browser doesn't support it (graceful degradation)
-- Mic icon pulses red when recording, continuous mode, stops on toggle
+- Mic icon pulses indigo when recording, continuous mode, stops on toggle
 - Transcript appended to input value
 
 ### Chat Export
@@ -306,6 +306,15 @@ All API routes use a two-client pattern:
 ### Consistent Design Language
 - Both Chat and Data Explorer pages share: indigo/purple color scheme, emerald status dot, in-flow `<header>` with `px-6 py-4`, floating absolute-positioned input with gradient overlay, `max-w-3xl` content centering, `mt-28` empty state, `text-3xl` headings, flex-wrap suggestion chips
 - Data Explorer icon button and radar pulse use indigo (not orange) to match chat's lightning bolt
+- Sidebar active session: indigo tinted bg (`indigo-500/[0.08]`) + `border-l-2 border-indigo-500` accent (both pages)
+- Sidebar inactive hover: `white/[0.04]` in dark mode for softer highlight
+- Header badges (model + agent): `dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]` inner highlight
+- Message action buttons (copy/edit/fork): `hover:scale-110 active:scale-95` micro-interactions
+- Suggestion chips: `hover:scale-[1.02] active:scale-[0.98]` tactile feedback
+- Send button: `send-glow` class (indigo box-shadow) when input has text
+- Loading dots: `animate-dot-wave` (gentle float) replaces `animate-bounce`
+- Assistant message bubbles: faint indigo ambient glow in dark mode (`dark:shadow-[0_0_20px_-5px_rgba(99,102,241,0.06)]`)
+- Login button: `hover:shadow-xl hover:shadow-indigo-500/25` lift effect
 
 ### Environment Variables
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` — public, used in browser + server auth client
@@ -376,6 +385,7 @@ All API routes use a two-client pattern:
 - [x] Agent prompt resolution chain (custom > agent > default)
 - [x] Agent detach: copy agent prompt to custom system prompt for editing
 - [x] Forked sessions inherit agent assignment
+- [x] UI micro-interactions: scale transforms on buttons/chips, send button glow, smooth dot-wave loading, ambient message shadows, sidebar active accent border, badge inner highlights
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:

@@ -689,8 +689,8 @@ export default function Chat() {
                     onDoubleClick={() => startRenaming(session.id)}
                     className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
                       chatId === session.id
-                        ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
-                        : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
+                        ? 'dark:bg-indigo-500/[0.08] bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium border-l-2 border-indigo-500 dark:border-indigo-400'
+                        : 'dark:hover:bg-white/[0.04] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
                     }`}
                   >
                     {session.title ? session.title : `Chat from ${formatTime(session.created_at)}`}
@@ -698,17 +698,17 @@ export default function Chat() {
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === session.id ? null : session.id); }}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-[#333537] text-gray-500 hover:text-gray-200 transition-all cursor-pointer"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 dark:hover:bg-white/[0.08] hover:bg-gray-200 text-gray-500 hover:text-gray-200 transition-all cursor-pointer"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path d="M10 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM10 8.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM11.5 15.5a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0Z" />
                   </svg>
                 </button>
                 {menuOpenId === session.id && (
-                  <div ref={menuRef} className="absolute right-0 top-full mt-1 bg-[#1e1f20] border border-[#333537] rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div ref={menuRef} className="absolute right-0 top-full mt-1 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] z-30 overflow-hidden animate-slide-up">
                     <button
                       onClick={() => startRenaming(session.id)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm dark:text-gray-300 text-gray-700 hover:bg-[#2a2b2d] w-full text-left cursor-pointer transition-colors"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm dark:text-gray-300 text-gray-700 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 w-full text-left cursor-pointer transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                         <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
@@ -717,7 +717,7 @@ export default function Chat() {
                     </button>
                     <button
                       onClick={() => deleteChat(session.id)}
-                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 w-full text-left cursor-pointer transition-colors"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-red-400 dark:hover:bg-red-500/10 hover:bg-red-50 w-full text-left cursor-pointer transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                         <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
@@ -732,7 +732,7 @@ export default function Chat() {
         </div>
 
         {/* User Profile Box */}
-        <div className="border-t border-[#2a2b2d] dark:bg-[#1a1b1c] bg-gray-100 flex flex-col gap-3 relative p-3">
+        <div className="border-t dark:border-[#2a2b2d] border-gray-200 dark:bg-[#1a1b1c] bg-gray-100 flex flex-col gap-3 relative p-3">
           <div ref={settingsToggleRef} className={`flex ${sidebarCollapsed ? 'flex-col items-center gap-2' : 'items-center gap-3 px-1'}`}>
             <button
               onClick={(e) => { e.stopPropagation(); setSettingsOpen(!settingsOpen); }}
@@ -762,7 +762,7 @@ export default function Chat() {
 
           {/* Settings Dropdown */}
           {settingsOpen && (
-            <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-80 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 overflow-hidden max-h-[70vh] overflow-y-auto">
+            <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-80 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] z-50 animate-slide-up overflow-hidden max-h-[70vh] overflow-y-auto">
               {/* Header */}
               <div className="px-4 pt-4 pb-3 border-b dark:border-[#2a2b2d] border-gray-100 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
                 <div className="flex items-center gap-2">
@@ -1024,20 +1024,20 @@ export default function Chat() {
       {/* Main Chat */}
       <div className="flex-1 flex flex-col relative dark:bg-[#0d0d0e] bg-gray-50">
         {/* Ambient glow */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
-        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.08] dark:bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.06] dark:bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
 
         {/* Header */}
-        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-gray-50/80 backdrop-blur-xl">
+        <header className="flex-shrink-0 px-6 py-4 relative z-10 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/80 bg-white/70 backdrop-blur-xl shadow-[0_1px_3px_0_rgba(0,0,0,0.05)] dark:shadow-none">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-md shadow-emerald-400/50 ring-2 ring-emerald-400/20" />
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-status-glow ring-2 ring-emerald-400/20" />
               <span className="text-base font-semibold dark:text-gray-100 text-gray-800">{currentProviderLabel}</span>
-              <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm">{currentModelLabel}</span>
+              <span className="text-xs bg-gradient-to-r from-indigo-500/15 to-purple-500/15 dark:text-indigo-300 text-indigo-600 px-3 py-1 rounded-full font-semibold border dark:border-indigo-400/20 border-indigo-300/30 shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">{currentModelLabel}</span>
               {activeAgent && (
                 <button
                   onClick={() => setAgentBrowserOpen(true)}
-                  className="text-xs bg-gradient-to-r from-emerald-500/15 to-teal-500/15 dark:text-emerald-300 text-emerald-600 px-3 py-1 rounded-full font-semibold border dark:border-emerald-400/20 border-emerald-300/30 shadow-sm hover:from-emerald-500/25 hover:to-teal-500/25 transition-colors cursor-pointer flex items-center gap-1.5"
+                  className="text-xs bg-gradient-to-r from-emerald-500/15 to-teal-500/15 dark:text-emerald-300 text-emerald-600 px-3 py-1 rounded-full font-semibold border dark:border-emerald-400/20 border-emerald-300/30 shadow-sm dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:from-emerald-500/25 hover:to-teal-500/25 transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
@@ -1065,7 +1065,7 @@ export default function Chat() {
                   </svg>
                 </button>
                 {agentDropdownOpen && (
-                  <div className="absolute right-0 top-full mt-1 w-56 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="absolute right-0 top-full mt-1 w-56 dark:bg-[#1e1f20] bg-white border dark:border-[#333537] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] z-30 overflow-hidden animate-slide-up">
                     {installedAgents.length > 0 && (
                       <div className="py-1">
                         <div className="px-3 py-1.5 text-[10px] font-semibold dark:text-gray-500 text-gray-400 uppercase tracking-wider">Installed Agents</div>
@@ -1138,17 +1138,14 @@ export default function Chat() {
           <div className="max-w-3xl mx-auto py-8 pb-44 space-y-6">
 
             {messages.length === 0 && (
-               <div className="flex flex-col items-center justify-center text-center mt-28 animate-in fade-in slide-in-from-bottom-4 duration-700">
+               <div className="flex flex-col items-center justify-center text-center mt-28">
                  <button
                    onClick={() => { setLightningStrike(true); setTimeout(() => setLightningStrike(false), 1200); }}
-                   className="w-16 h-16 dark:bg-[#1a1b1c] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl shadow-indigo-500/5 flex items-center justify-center mb-8 cursor-pointer relative overflow-hidden active:scale-95 transition-transform hover:shadow-indigo-500/15 hover:border-indigo-500/30"
+                   className="w-16 h-16 dark:bg-[#1a1b1c] bg-white rounded-2xl border dark:border-[#2a2b2d] border-gray-200 shadow-2xl shadow-indigo-500/10 dark:shadow-indigo-500/5 flex items-center justify-center mb-8 cursor-pointer relative overflow-hidden active:scale-95 transition-transform hover:shadow-indigo-500/15 hover:border-indigo-500/30"
                  >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={`w-8 h-8 text-indigo-400 relative z-10 ${lightningStrike ? 'animate-lightning' : ''}`}>
                       <path fillRule="evenodd" d="M14.615 1.595a.75.75 0 0 1 .359.852L12.982 9.75h7.268a.75.75 0 0 1 .548 1.262l-10.5 11.25a.75.75 0 0 1-1.272-.71l1.992-7.302H3.75a.75.75 0 0 1-.548-1.262l10.5-11.25a.75.75 0 0 1 .913-.143Z" clipRule="evenodd" />
                     </svg>
-                    {lightningStrike && (
-                      <div className="absolute inset-0 bg-indigo-400/30 animate-flash rounded-2xl" />
-                    )}
                  </button>
                  <h2 className="text-3xl font-semibold dark:text-gray-100 text-gray-800 tracking-tight">
                    Hi {userProfile?.first_name || 'there'}, how can I help?
@@ -1166,7 +1163,7 @@ export default function Chat() {
                      <button
                        key={suggestion}
                        onClick={() => { setInputValue(suggestion); }}
-                       className="px-4 py-2 text-sm dark:bg-white/[0.04] bg-white dark:text-gray-400 text-gray-500 rounded-xl border dark:border-white/[0.08] border-gray-200 dark:hover:bg-white/[0.08] hover:bg-gray-100 dark:hover:text-gray-200 hover:text-gray-700 dark:hover:border-white/[0.12] hover:border-gray-300 transition-all cursor-pointer"
+                       className="px-4 py-2 text-sm dark:bg-white/[0.04] bg-white dark:text-gray-400 text-gray-500 rounded-xl border dark:border-white/[0.08] border-gray-200 dark:hover:bg-white/[0.08] hover:bg-gray-100 dark:hover:text-gray-200 hover:text-gray-700 dark:hover:border-white/[0.12] hover:border-gray-300 shadow-sm hover:shadow-md dark:shadow-none transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                      >
                        {suggestion}
                      </button>
@@ -1176,7 +1173,7 @@ export default function Chat() {
             )}
 
             {messages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300 group/msg`}>
+              <div key={m.id} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'} animate-message-in group/msg`}>
                 {/* Inline edit mode */}
                 {m.role === 'user' && editingMessageId === m.id ? (
                   <div className="max-w-[85%] sm:max-w-[75%] w-full">
@@ -1208,8 +1205,8 @@ export default function Chat() {
                   <div className={`
                     px-5 py-3 max-w-[85%] sm:max-w-[75%] leading-relaxed ${fontSize === 'sm' ? 'text-sm' : fontSize === 'lg' ? 'text-lg' : 'text-[15px]'}
                     ${m.role === 'user'
-                      ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-sm shadow-lg shadow-indigo-500/20"
-                      : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm"}
+                      ? "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-2xl rounded-br-sm shadow-lg shadow-indigo-500/25 dark:shadow-indigo-500/20"
+                      : "dark:bg-[#161718] bg-white dark:text-gray-300 text-gray-700 border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-md shadow-gray-200/50 dark:shadow-[0_0_20px_-5px_rgba(99,102,241,0.06)]"}
                   `}>
                     {m.role === 'assistant' ? (
                       <MarkdownRenderer content={m.parts?.map(p => p.type === 'text' ? p.text : '').join('') || ''} darkMode={darkMode} />
@@ -1239,13 +1236,15 @@ export default function Chat() {
                   <div className={`flex items-center gap-0.5 mt-1 opacity-0 group-hover/msg:opacity-100 transition-all duration-200 ${m.role === 'user' ? 'mr-1' : 'ml-1'}`}>
                     <button
                       onClick={() => copyMessage(m.id)}
-                      className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
+                      className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
                       title="Copy"
                     >
                       {copiedMessageId === m.id ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-400">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                        </svg>
+                        <span className="animate-copy-feedback">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-400">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                          </svg>
+                        </span>
                       ) : (
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
@@ -1255,7 +1254,7 @@ export default function Chat() {
                     {m.role === 'user' && !isLoading && (
                       <button
                         onClick={() => startEditing(m.id)}
-                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
                         title="Edit & resend"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -1266,7 +1265,7 @@ export default function Chat() {
                     {!isLoading && sessions.some(s => s.id === chatId) && (
                       <button
                         onClick={() => forkChat(m.id)}
-                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer"
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
                         title="Fork conversation from here"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -1293,11 +1292,16 @@ export default function Chat() {
             ))}
 
             {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-              <div className="flex justify-start animate-in fade-in duration-300">
-                <div className="dark:bg-[#161718] bg-white border dark:border-white/[0.06] border-gray-200/80 px-5 py-4 rounded-2xl rounded-bl-sm shadow-sm flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <div className="flex justify-start animate-message-in">
+                <div className="dark:bg-[#161718] bg-white border dark:border-white/[0.06] border-gray-200/80 rounded-2xl rounded-bl-sm shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '0ms' }} />
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '150ms' }} />
+                    <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-dot-wave" style={{ animationDelay: '300ms' }} />
+                  </div>
+                  <div className="h-0.5 rounded-b-full overflow-hidden">
+                    <div className="h-full loading-shimmer" />
+                  </div>
                 </div>
               </div>
             )}
@@ -1309,7 +1313,7 @@ export default function Chat() {
 
         {/* Drag-and-drop overlay */}
         {isDragging && (
-          <div className="absolute inset-0 z-40 bg-indigo-500/10 border-2 border-dashed border-indigo-400 rounded-xl flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 z-40 bg-indigo-500/10 border-2 border-dashed border-indigo-400 rounded-xl flex items-center justify-center pointer-events-none animate-backdrop-in">
             <div className="text-lg font-medium dark:text-indigo-300 text-indigo-600">Drop files here</div>
           </div>
         )}
@@ -1361,7 +1365,7 @@ export default function Chat() {
                 )}
               </div>
             )}
-            <form onSubmit={onFormSubmit} className="dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-200/50 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
+            <form onSubmit={onFormSubmit} className="dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-300/40 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
               {/* Textarea row */}
               <textarea
                 className="w-full pt-4 pb-2 px-4 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px] resize-none max-h-40 overflow-y-auto"
@@ -1412,7 +1416,7 @@ export default function Chat() {
                       </svg>
                     </button>
                     {modelDropdownOpen && (
-                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl dark:shadow-black/40 shadow-gray-200/60 overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-1 duration-150">
+                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-50 animate-slide-up">
                         <div className="max-h-64 overflow-y-auto py-1">
                           {Object.entries(modelCatalog).map(([provider, models]) => {
                             const hasKey = provider === 'ollama' || !!savedApiKeys[provider];
@@ -1460,7 +1464,7 @@ export default function Chat() {
                   <button
                     type="submit"
                     disabled={(!inputValue.trim() && pendingFiles.length === 0) || isLoading}
-                    className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() || pendingFiles.length > 0 ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10' : 'text-gray-500'}`}
+                    className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() || pendingFiles.length > 0 ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 hover:shadow-md hover:shadow-indigo-500/20 send-glow' : 'text-gray-500'}`}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                       <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />

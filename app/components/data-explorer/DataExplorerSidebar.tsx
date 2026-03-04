@@ -247,8 +247,8 @@ export default function DataExplorerSidebar({
                     onClick={() => onSelectSession(session.id)}
                     className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
                       activeSessionId === session.id
-                        ? 'dark:bg-[#2a2b2d] bg-indigo-50 text-indigo-300 font-medium'
-                        : 'dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
+                        ? 'dark:bg-indigo-500/[0.08] bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium border-l-2 border-indigo-500 dark:border-indigo-400'
+                        : 'dark:hover:bg-white/[0.04] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
                     }`}
                   >
                     {session.ai_title || session.title}
@@ -362,7 +362,7 @@ function UserProfileBox({
 
       {/* Settings Dropdown */}
       {settingsOpen && (
-        <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-72 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 overflow-hidden">
+        <div ref={settingsRef} className="absolute bottom-full left-0 mb-2 w-72 dark:bg-[#1a1b1c] bg-white dark:border-[#2a2b2d] border-gray-200 border rounded-2xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] z-50 animate-slide-up overflow-hidden">
           <div className="px-4 pt-4 pb-2">
             <h3 className="text-sm font-semibold dark:text-gray-200 text-gray-800">Settings</h3>
           </div>
