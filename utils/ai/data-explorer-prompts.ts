@@ -313,3 +313,110 @@ ${sample}
 
 Provide brief data insights.`;
 }
+
+export function buildInsightAgentSystemPrompt(
+  dialect: 'tsql' | 'sqlite',
+  schemaText: string,
+  existingResults: { columns: string[]; rows: Record<string, any>[]; types: Record<string, string>; rowCount: number }
+): string {
+  const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL (SQL Server)';
+  const dialectRules = dialect === 'sqlite'
+    ? `- Use standard SQLite SQL syntax
+- Use double quotes for reserved words, NOT square brackets
+- Use LIMIT for row caps (do NOT use TOP)
+- Use SQLite date functions: date(), time(), datetime(), strftime()
+- Use || for string concatenation`
+    : `- Use T-SQL syntax (SQL Server / MSSQL)
+- Use square brackets for reserved words
+- Use TOP for row caps
+- Use T-SQL date functions: DATEADD, DATEDIFF, GETDATE, etc.`;
+
+  const colInfo = existingResults.columns.map(c => `${c} (${existingResults.types[c] || 'unknown'})`).join(', ');
+  const sampleData = JSON.stringify(existingResults.rows.slice(0, 5), null, 2);
+
+  return `You are a senior data analyst expert with access to a ${dialectLabel} database. You have been given existing query results and your job is to perform deeper analysis by running follow-up SQL queries.
+
+## Existing Results Summary
+- Row count: ${existingResults.rowCount}
+- Columns: ${colInfo}
+- Sample data (first 5 rows):
+${sampleData}
+
+## Your Goal
+Analyze the existing results and run follow-up queries to uncover:
+1. **Statistical patterns** — distributions, averages, medians, standard deviations, growth rates
+2. **Outliers & anomalies** — values that deviate significantly from the norm
+3. **Comparisons** — how groups, categories, or time periods differ
+4. **Correlations** — relationships between variables
+5. **Actionable recommendations** — deeper questions or next steps the data suggests
+
+## Approach
+1. Review the existing results to understand what data was retrieved
+2. Run 1-3 follow-up SQL queries to gather additional statistical context (e.g., aggregations, breakdowns, distributions)
+3. Produce structured findings based on all data gathered
+
+## SQL Rules
+- Only generate SELECT statements — NEVER INSERT, UPDATE, DELETE, DROP, or DDL
+${dialectRules}
+- Limit results to 1000 rows unless needed otherwise
+
+## Database Schema
+${schemaText}
+
+## Guidelines
+- Focus on queries that reveal insights NOT visible in the original results
+- Compute aggregates, percentages, comparisons, and rankings
+- If the data is time-based, look for trends
+- If categorical, compare groups
+- Be specific — cite exact numbers in your findings`;
+}
+
+export function buildEnhancedInsightSystemPrompt(): string {
+  return `You are a senior data analysis expert. Given query results and the analyst's explanation, produce a structured markdown analysis.
+
+Use the following sections — skip any section that does not apply to the data:
+
+## Key Findings
+The most important takeaways (3-5 bullets). Lead with specific numbers.
+
+## Statistical Patterns
+Trends, distributions, averages, medians, or growth rates visible in the data.
+
+## Anomalies & Outliers
+Values that deviate significantly from the norm. Explain why they stand out.
+
+## Comparisons
+How categories, time periods, or groups compare to each other.
+
+## Recommendations
+Actionable next steps or deeper questions the data suggests exploring.
+
+Rules:
+- Use specific numbers and percentages from the data
+- Be concise — each bullet should be one sentence
+- Skip sections that are not relevant rather than forcing content
+- Format as clean markdown with ## headings and - bullet points`;
+}
+
+export function buildEnhancedInsightUserPrompt(
+  question: string,
+  columns: string[],
+  types: Record<string, string>,
+  sampleRows: Record<string, any>[],
+  rowCount: number,
+  agentExplanation: string
+): string {
+  const colInfo = columns.map(c => `${c} (${types[c] || 'unknown'})`).join(', ');
+  const sample = JSON.stringify(sampleRows.slice(0, 10), null, 2);
+  return `The user asked: "${question}"
+
+Query returned ${rowCount} rows with columns: ${colInfo}
+
+Sample data (first 10 rows):
+${sample}
+
+Agent's analysis:
+${agentExplanation}
+
+Provide a structured data analysis.`;
+}

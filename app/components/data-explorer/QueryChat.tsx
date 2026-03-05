@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChartConfig } from './PlotlyChart';
+import AgentStepsTimeline, { AgentStepEvent } from './AgentStepsTimeline';
 
 export interface Exchange {
   id: string;
@@ -25,6 +26,8 @@ export interface Exchange {
   insights?: string | null;
   insightsLoading?: boolean;
   statusMessage?: string;
+  agentSteps?: AgentStepEvent[];
+  isAgentMode?: boolean;
 }
 
 interface RefineContext {
@@ -200,15 +203,20 @@ export default function QueryChat({
                   }`}
                 >
                   {ex.isLoading ? (
-                    <div className="flex items-center gap-2 py-1">
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '0ms' }} />
-                        <div className="w-2 h-2 animate-orb" style={{ animationDelay: '300ms' }} />
-                        <div className="w-1.5 h-1.5 animate-orb" style={{ animationDelay: '600ms' }} />
+                    <div>
+                      <div className="flex items-center gap-2 py-1">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '0ms' }} />
+                          <div className="w-2 h-2 animate-orb" style={{ animationDelay: '300ms' }} />
+                          <div className="w-1.5 h-1.5 animate-orb" style={{ animationDelay: '600ms' }} />
+                        </div>
+                        <span className="text-xs dark:text-gray-400 text-gray-500 animate-pulse">
+                          {ex.statusMessage || 'Processing...'}
+                        </span>
                       </div>
-                      <span className="text-xs dark:text-gray-400 text-gray-500 animate-pulse">
-                        {ex.statusMessage || 'Processing...'}
-                      </span>
+                      {ex.isAgentMode && ex.agentSteps && ex.agentSteps.length > 0 && (
+                        <AgentStepsTimeline steps={ex.agentSteps} isLoading />
+                      )}
                     </div>
                   ) : ex.error && !ex.sql ? (
                     <div>
@@ -219,8 +227,14 @@ export default function QueryChat({
                     </div>
                   ) : (
                     <div className="space-y-2">
+                      {ex.isAgentMode && ex.agentSteps && ex.agentSteps.length > 0 && (
+                        <AgentStepsTimeline steps={ex.agentSteps} />
+                      )}
                       <p className="dark:text-gray-300 text-gray-700 leading-relaxed">{ex.explanation || 'Query executed.'}</p>
                       <div className="flex flex-wrap gap-1.5">
+                        {ex.isAgentMode && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Agent</span>
+                        )}
                         {ex.sql && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-medium">SQL</span>
                         )}

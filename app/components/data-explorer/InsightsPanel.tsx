@@ -6,9 +6,10 @@ interface InsightsPanelProps {
   insights: string | null;
   isLoading?: boolean;
   onGenerate?: () => void;
+  statusMessage?: string;
 }
 
-export default function InsightsPanel({ insights, isLoading, onGenerate }: InsightsPanelProps) {
+export default function InsightsPanel({ insights, isLoading, onGenerate, statusMessage }: InsightsPanelProps) {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -17,7 +18,7 @@ export default function InsightsPanel({ insights, isLoading, onGenerate }: Insig
           <div className="w-3 h-3 animate-orb" style={{ animationDelay: '300ms' }} />
           <div className="w-2.5 h-2.5 animate-orb" style={{ animationDelay: '600ms' }} />
         </div>
-        <span className="text-sm dark:text-gray-400 text-gray-500 animate-pulse">Generating insights</span>
+        <span className="text-sm dark:text-gray-400 text-gray-500 animate-pulse">{statusMessage || 'Generating insights'}</span>
       </div>
     );
   }

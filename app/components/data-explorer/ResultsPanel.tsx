@@ -337,6 +337,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
             insights={exchange.insights || null}
             isLoading={exchange.insightsLoading}
             onGenerate={onRequestInsights}
+            statusMessage={exchange.statusMessage}
           />
         )}
       </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import type { ChartConfig } from './PlotlyChart';
 import ChartTypeSwitcher from './ChartTypeSwitcher';
@@ -36,10 +36,15 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
   const [pinFeedback, setPinFeedback] = useState<number | null>(null);
   const pinFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Cleanup pin feedback timer
+  // Chart transition state
+  const [chartVisible, setChartVisible] = useState(true);
+  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup timers
   useEffect(() => {
     return () => {
       if (pinFeedbackTimer.current) clearTimeout(pinFeedbackTimer.current);
+      if (transitionTimer.current) clearTimeout(transitionTimer.current);
     };
   }, []);
 
@@ -49,15 +54,22 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
   const config = chartConfigs[activeIndex];
   const hasMultiple = chartConfigs.length > 1;
 
-  // Helper to reset modes when switching charts
-  const switchChart = (newIndex: number) => {
-    setActiveIndex(newIndex);
-    setAnnotatingChart(null);
-    setPendingAnnotation(null);
-    setAnnotationText('');
-    setRefiningChart(null);
-    setRefineInstruction('');
-  };
+  // Helper to reset modes when switching charts with smooth fade
+  const switchChart = useCallback((newIndex: number) => {
+    if (newIndex === activeIndex) return;
+    setChartVisible(false);
+    if (transitionTimer.current) clearTimeout(transitionTimer.current);
+    transitionTimer.current = setTimeout(() => {
+      setActiveIndex(newIndex);
+      setAnnotatingChart(null);
+      setPendingAnnotation(null);
+      setAnnotationText('');
+      setRefiningChart(null);
+      setRefineInstruction('');
+      // Small delay to let React render the new chart before fading in
+      requestAnimationFrame(() => setChartVisible(true));
+    }, 150);
+  }, [activeIndex]);
 
   const handleChartClick = (x: number | string, y: number | string) => {
     if (annotatingChart !== activeIndex) return;
@@ -318,12 +330,12 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
       )}
 
       {/* Chart area with navigation arrows */}
-      <div className="flex-1 relative min-h-0">
+      <div className="flex-1 relative min-h-0 overflow-hidden">
         {/* Left arrow */}
         {hasMultiple && (
           <button
             onClick={goLeft}
-            className="absolute left-1 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full dark:bg-[#1e1f20]/90 bg-white/90 border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-md backdrop-blur-sm"
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full dark:bg-[#1e1f20]/95 bg-white/95 border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-lg backdrop-blur-sm"
             title="Previous chart"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
@@ -332,21 +344,26 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
           </button>
         )}
 
-        {/* Chart */}
-        <PlotlyChart
-          chartConfig={config}
-          rows={rows}
-          darkMode={darkMode}
-          annotationMode={annotatingChart === activeIndex}
-          onChartClick={handleChartClick}
-          hideTitle
-        />
+        {/* Chart with fade transition */}
+        <div
+          className="w-full h-full transition-opacity duration-150 ease-in-out"
+          style={{ opacity: chartVisible ? 1 : 0 }}
+        >
+          <PlotlyChart
+            chartConfig={config}
+            rows={rows}
+            darkMode={darkMode}
+            annotationMode={annotatingChart === activeIndex}
+            onChartClick={handleChartClick}
+            hideTitle
+          />
+        </div>
 
         {/* Right arrow */}
         {hasMultiple && (
           <button
             onClick={goRight}
-            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 p-1.5 rounded-full dark:bg-[#1e1f20]/90 bg-white/90 border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-md backdrop-blur-sm"
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 p-1.5 rounded-full dark:bg-[#1e1f20]/95 bg-white/95 border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-lg backdrop-blur-sm"
             title="Next chart"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">

@@ -63,6 +63,9 @@ export default function DataExplorer() {
   const [pinnedCharts, setPinnedCharts] = useState<PinnedChart[]>([]);
   const [viewMode, setViewMode] = useState<'query' | 'dashboard'>('query');
 
+  // Query mode: quick (single-shot) vs agent (agentic loop)
+  const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
+
   // Agent state
   const [installedAgents, setInstalledAgents] = useState<any[]>([]);
   const [activeAgent, setActiveAgent] = useState<any>(null);
@@ -422,6 +425,8 @@ export default function DataExplorer() {
           messageType: msg.message_type ?? 'query',
           parentMessageId: msg.parent_message_id ?? null,
           insights: msg.insights ?? null,
+          agentSteps: msg.agent_steps || undefined,
+          isAgentMode: !!msg.agent_steps,
         } satisfies Exchange;
       });
 
@@ -545,6 +550,128 @@ export default function DataExplorer() {
         prev.map(ex =>
           ex.id === exchangeId
             ? { ...ex, error: err.message || 'Request failed', isLoading: false }
+            : ex
+        )
+      );
+    } finally {
+      setIsQuerying(false);
+    }
+  };
+
+  const handleSubmitAgentQuestion = async (question: string) => {
+    if (!activeConnectionId) return;
+
+    const exchangeId = crypto.randomUUID();
+    const newExchange: Exchange = {
+      id: exchangeId,
+      question,
+      sql: null,
+      explanation: null,
+      results: null,
+      chartConfig: null,
+      chartConfigs: null,
+      error: null,
+      isLoading: true,
+      statusMessage: 'Agent is thinking...',
+      isAgentMode: true,
+      agentSteps: [],
+    };
+
+    setExchanges(prev => [...prev, newExchange]);
+    setSelectedExchangeIndex(exchanges.length);
+    setIsQuerying(true);
+
+    try {
+      const res = await fetch('/api/data-explorer/agent-query-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question,
+          connectionId: activeConnectionId,
+          sessionId,
+          agentId: activeAgent?.id || null,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error('Agent stream request failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { stage, data } = JSON.parse(line.slice(6));
+
+            setExchanges(prev =>
+              prev.map(ex => {
+                if (ex.id !== exchangeId) return ex;
+                switch (stage) {
+                  case 'status':
+                    return { ...ex, statusMessage: data.message };
+                  case 'agent_step':
+                    return { ...ex, agentSteps: [...(ex.agentSteps || []), data] };
+                  case 'sql':
+                    return { ...ex, sql: data.sql };
+                  case 'results':
+                    return { ...ex, results: data.results };
+                  case 'explanation':
+                    return { ...ex, explanation: data.explanation };
+                  case 'charts':
+                    return {
+                      ...ex,
+                      chartConfig: data.chartConfig,
+                      chartConfigs: data.chartConfigs,
+                      insightsLoading: true,
+                    };
+                  case 'insights':
+                    return {
+                      ...ex,
+                      insights: data.insights,
+                      insightsLoading: false,
+                    };
+                  case 'error':
+                    return {
+                      ...ex,
+                      error: data.message,
+                      errorSuggestion: data.suggestion || null,
+                      sql: data.sql || ex.sql,
+                      isLoading: false,
+                    };
+                  case 'complete':
+                    if (data.sessionId && !sessionId) {
+                      setSessionId(data.sessionId);
+                      fetchSessions();
+                    } else if (data.sessionId) {
+                      fetchSessions();
+                    }
+                    return { ...ex, isLoading: false, statusMessage: undefined, insightsLoading: false };
+                  default:
+                    return ex;
+                }
+              })
+            );
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+    } catch (err: any) {
+      setExchanges(prev =>
+        prev.map(ex =>
+          ex.id === exchangeId
+            ? { ...ex, error: err.message || 'Agent request failed', isLoading: false }
             : ex
         )
       );
@@ -760,42 +887,118 @@ export default function DataExplorer() {
       )
     );
 
-    try {
-      const res = await fetch('/api/data-explorer/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: exchange.question,
-          connectionId: activeConnectionId,
-          messageType: 'insight',
-          messageId: exchange.id,
-          exchangeData: {
-            results: {
+    if (exchange.isAgentMode) {
+      // Agent mode: use SSE insight agent stream
+      try {
+        const res = await fetch('/api/data-explorer/insights-agent-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: exchange.question,
+            connectionId: activeConnectionId,
+            messageId: exchange.id,
+            existingResults: {
               columns: exchange.results?.columns,
               rows: exchange.results?.rows?.slice(0, 20),
+              types: exchange.results?.types || {},
               rowCount: exchange.results?.rowCount,
             },
-          },
-        }),
-      });
+            existingExplanation: exchange.explanation,
+          }),
+        });
 
-      const data = await res.json();
+        if (!res.ok || !res.body) {
+          throw new Error('Insight agent stream request failed');
+        }
 
-      setExchanges(prev =>
-        prev.map((ex, i) =>
-          i === selectedExchangeIndex
-            ? { ...ex, insightsLoading: false, insights: data.insights || data.error || 'No insights available.' }
-            : ex
-        )
-      );
-    } catch {
-      setExchanges(prev =>
-        prev.map((ex, i) =>
-          i === selectedExchangeIndex
-            ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.' }
-            : ex
-        )
-      );
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const exchangeIdx = selectedExchangeIndex;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const { stage, data } = JSON.parse(line.slice(6));
+
+              setExchanges(prev =>
+                prev.map((ex, i) => {
+                  if (i !== exchangeIdx) return ex;
+                  switch (stage) {
+                    case 'status':
+                      return { ...ex, statusMessage: data.message };
+                    case 'insights':
+                      return { ...ex, insights: data.insights, insightsLoading: false, statusMessage: undefined };
+                    case 'complete':
+                      return { ...ex, insightsLoading: false, statusMessage: undefined };
+                    case 'error':
+                      return { ...ex, insightsLoading: false, insights: data.message || 'Failed to generate insights.', statusMessage: undefined };
+                    default:
+                      return ex;
+                  }
+                })
+              );
+            } catch {
+              // Skip malformed lines
+            }
+          }
+        }
+      } catch {
+        setExchanges(prev =>
+          prev.map((ex, i) =>
+            i === selectedExchangeIndex
+              ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.', statusMessage: undefined }
+              : ex
+          )
+        );
+      }
+    } else {
+      // Quick mode: use simple endpoint
+      try {
+        const res = await fetch('/api/data-explorer/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: exchange.question,
+            connectionId: activeConnectionId,
+            messageType: 'insight',
+            messageId: exchange.id,
+            exchangeData: {
+              results: {
+                columns: exchange.results?.columns,
+                rows: exchange.results?.rows?.slice(0, 20),
+                rowCount: exchange.results?.rowCount,
+              },
+            },
+          }),
+        });
+
+        const data = await res.json();
+
+        setExchanges(prev =>
+          prev.map((ex, i) =>
+            i === selectedExchangeIndex
+              ? { ...ex, insightsLoading: false, insights: data.insights || data.error || 'No insights available.' }
+              : ex
+          )
+        );
+      } catch {
+        setExchanges(prev =>
+          prev.map((ex, i) =>
+            i === selectedExchangeIndex
+              ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.' }
+              : ex
+          )
+        );
+      }
     }
   };
 
@@ -1082,6 +1285,23 @@ export default function DataExplorer() {
                   <span>{connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'SQLite' : 'MSSQL'}</span>
                 </div>
               )}
+              {/* Quick / Agent toggle */}
+              <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setQueryMode('quick')}
+                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${queryMode === 'quick' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="Quick mode — single-shot SQL generation"
+                >
+                  Quick
+                </button>
+                <button
+                  onClick={() => setQueryMode('agent')}
+                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${queryMode === 'agent' ? 'dark:bg-[#2a2b2d] bg-white dark:text-amber-400 text-amber-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="Agent mode — multi-step reasoning with self-correction"
+                >
+                  Agent
+                </button>
+              </div>
               {/* Query / Dashboard toggle */}
               <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
                 <button
@@ -1218,7 +1438,7 @@ export default function DataExplorer() {
               exchanges={exchanges}
               selectedIndex={selectedExchangeIndex}
               onSelectExchange={setSelectedExchangeIndex}
-              onSubmitQuestion={handleSubmitQuestion}
+              onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
               isQuerying={isQuerying}
               hasConnection={!!activeConnectionId}
               refineContext={refineContext}
