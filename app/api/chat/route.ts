@@ -96,27 +96,29 @@ export async function POST(req: Request) {
   }
 
   // 6. Resolve system prompt
-  const DEFAULT_SYSTEM_PROMPT = `You are a helpful, highly analytical AI assistant. You excel at breaking down complex topics into structured explanations. Respond conversationally to greetings and casual messages — do NOT generate charts or code unless the user specifically asks for them.
+  const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant. Respond naturally and conversationally to all questions. NEVER generate charts, code, or JSON unless the user explicitly asks you to plot, graph, or visualize something.
 
-When the user explicitly asks you to plot, graph, or visualize a mathematical function or data, generate an interactive chart using a plotly code fence. Only use plotly fences when the user asks for a chart/plot/graph — never for regular questions.
+CHART RULES — only when the user asks to plot/graph/chart:
+- You MUST use a \`\`\`plotly code fence (NOT \`\`\`json)
+- All values must be valid JSON (use numbers like -6.28, not Math.PI)
+- Use JavaScript Math expressions ONLY inside "function"/"expr" string values
 
-Format for math functions:
+Single function:
 \`\`\`plotly
-{"chartType":"line","title":"sin(x)","function":"Math.sin(x)","xMin":-10,"xMax":10,"points":200,"xLabel":"x","yLabel":"y"}
+{"chartType":"line","title":"sin(x)","function":"Math.sin(x)","xMin":-6.28,"xMax":6.28,"points":200,"xLabel":"x","yLabel":"y"}
 \`\`\`
 
-For multiple functions on one chart:
+Multiple functions:
 \`\`\`plotly
 {"chartType":"line","title":"Trig Functions","functions":[{"expr":"Math.sin(x)","label":"sin(x)"},{"expr":"Math.cos(x)","label":"cos(x)"}],"xMin":-6.28,"xMax":6.28,"points":200,"xLabel":"x","yLabel":"y"}
 \`\`\`
 
-For data-based charts:
+Data chart:
 \`\`\`plotly
 {"chartType":"bar","title":"Sales","data":{"x":["Q1","Q2","Q3","Q4"],"y":[100,200,150,300]},"xLabel":"Quarter","yLabel":"Revenue"}
 \`\`\`
 
-Supported chartType values: "line", "scatter", "bar", "pie".
-Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow, Math.PI, Math.E. For x^n use Math.pow(x,n).`;
+Supported chartType: "line", "scatter", "bar", "pie". Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow(x,n), Math.PI, Math.E.`;
 
   // Fetch custom system prompt from session, with agent fallback
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
@@ -145,6 +147,9 @@ Use JavaScript Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log,
   } catch {
     // system_prompt/agent_id columns may not exist yet — use default
   }
+
+  // Append model identity so the AI can answer "which model" questions
+  systemPrompt += `\n\nYou are currently running as "${modelId}" via the ${provider} provider.`;
 
   // Start Stream
   const result = streamText({

@@ -41,6 +41,7 @@ interface QueryChatProps {
   selectedIndex: number;
   onSelectExchange: (index: number) => void;
   onSubmitQuestion: (question: string) => void;
+  onEditQuestion?: (index: number, newQuestion: string) => void;
   isQuerying: boolean;
   hasConnection: boolean;
   refineContext?: RefineContext | null;
@@ -64,7 +65,7 @@ interface QueryChatProps {
 }
 
 export default function QueryChat({
-  exchanges, selectedIndex, onSelectExchange, onSubmitQuestion,
+  exchanges, selectedIndex, onSelectExchange, onSubmitQuestion, onEditQuestion,
   isQuerying, hasConnection, refineContext, onCancelRefine, onRefineSubmit,
   inputValue: controlledInput, onInputChange,
   fireEffect, onTriggerFire,
@@ -77,6 +78,10 @@ export default function QueryChat({
   const endRef = useRef<HTMLDivElement>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [copiedResponseIndex, setCopiedResponseIndex] = useState<number | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editText, setEditText] = useState('');
 
   // Close model dropdown on outside click
   useEffect(() => {
@@ -96,6 +101,55 @@ export default function QueryChat({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [exchanges]);
+
+  const copyQuestion = useCallback((index: number) => {
+    navigator.clipboard.writeText(exchanges[index].question);
+    setCopiedIndex(index);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  }, [exchanges]);
+
+  const copyResponse = useCallback((index: number) => {
+    const ex = exchanges[index];
+    const text = ex.explanation || ex.error || '';
+    navigator.clipboard.writeText(text);
+    setCopiedResponseIndex(index);
+    setTimeout(() => setCopiedResponseIndex(null), 2000);
+  }, [exchanges]);
+
+  const startEditing = useCallback((index: number) => {
+    setEditText(exchanges[index].question);
+    setEditingIndex(index);
+  }, [exchanges]);
+
+  const cancelEditing = useCallback(() => {
+    setEditingIndex(null);
+    setEditText('');
+  }, []);
+
+  const submitEdit = useCallback(() => {
+    if (editingIndex === null || !editText.trim()) return;
+    if (onEditQuestion) {
+      onEditQuestion(editingIndex, editText.trim());
+    }
+    setEditingIndex(null);
+    setEditText('');
+  }, [editingIndex, editText, onEditQuestion]);
+
+  const resendQuestion = useCallback((index: number) => {
+    if (onEditQuestion) {
+      onEditQuestion(index, exchanges[index].question);
+    }
+  }, [exchanges, onEditQuestion]);
+
+  const handleEditKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitEdit();
+    }
+    if (e.key === 'Escape') {
+      cancelEditing();
+    }
+  }, [submitEdit, cancelEditing]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,21 +233,91 @@ export default function QueryChat({
           {exchanges.map((ex, i) => (
             <div key={ex.id} className="space-y-2">
               {/* User question */}
-              <div className="flex justify-end">
-                <button
-                  onClick={() => onSelectExchange(i)}
-                  className={`px-4 py-2.5 max-w-[85%] text-sm text-left rounded-2xl rounded-br-sm transition-all cursor-pointer ${
-                    selectedIndex === i
-                      ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                      : 'bg-gradient-to-br from-indigo-500/80 to-indigo-600/80 text-white/90 hover:from-indigo-500 hover:to-indigo-600'
-                  }`}
-                >
-                  <span className="whitespace-pre-wrap">{ex.question}</span>
-                </button>
+              <div className="flex flex-col items-end group/q">
+                {editingIndex === i ? (
+                  <div className="max-w-[85%] w-full">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      onKeyDown={handleEditKeyDown}
+                      autoFocus
+                      rows={3}
+                      className="w-full px-4 py-3 text-sm dark:bg-[#1a1b1c] bg-white dark:text-gray-100 text-gray-800 border-2 border-indigo-500 rounded-2xl outline-none resize-none"
+                    />
+                    <div className="flex justify-end gap-2 mt-2">
+                      <button
+                        onClick={cancelEditing}
+                        className="text-sm px-3 py-1.5 rounded-lg dark:text-gray-400 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-200 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitEdit}
+                        disabled={!editText.trim()}
+                        className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
+                      >
+                        Send
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => onSelectExchange(i)}
+                      className={`px-4 py-2.5 max-w-[85%] text-sm text-left rounded-2xl rounded-br-sm transition-all cursor-pointer ${
+                        selectedIndex === i
+                          ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                          : 'bg-gradient-to-br from-indigo-500/80 to-indigo-600/80 text-white/90 hover:from-indigo-500 hover:to-indigo-600'
+                      }`}
+                    >
+                      <span className="whitespace-pre-wrap">{ex.question}</span>
+                    </button>
+                    {/* Action buttons — below bubble, visible on hover */}
+                    <div className="flex items-center gap-0.5 mt-1 mr-1 opacity-0 group-hover/q:opacity-100 transition-all duration-200">
+                      <button
+                        onClick={() => copyQuestion(i)}
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
+                        title="Copy"
+                      >
+                        {copiedIndex === i ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-400">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+                          </svg>
+                        )}
+                      </button>
+                      {!isQuerying && onEditQuestion && (
+                        <button
+                          onClick={() => startEditing(i)}
+                          className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
+                          title="Edit & resend"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                          </svg>
+                        </button>
+                      )}
+                      {!isQuerying && onEditQuestion && (
+                        <button
+                          onClick={() => resendQuestion(i)}
+                          className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
+                          title="Resend"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                            <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Assistant response */}
-              <div className="flex justify-start">
+              <div className="flex flex-col items-start group/a">
                 <div
                   onClick={() => onSelectExchange(i)}
                   className={`px-4 py-2.5 max-w-[85%] text-sm rounded-2xl rounded-bl-sm border transition-all cursor-pointer ${
@@ -262,6 +386,26 @@ export default function QueryChat({
                     </div>
                   )}
                 </div>
+                {/* Copy button for response */}
+                {!ex.isLoading && (ex.explanation || ex.error) && (
+                  <div className="flex items-center gap-0.5 mt-1 ml-1 opacity-0 group-hover/a:opacity-100 transition-all duration-200">
+                    <button
+                      onClick={() => copyResponse(i)}
+                      className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
+                      title="Copy"
+                    >
+                      {copiedResponseIndex === i ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 text-emerald-400">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}

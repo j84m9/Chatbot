@@ -589,6 +589,21 @@ export default function Chat() {
     }, 10);
   };
 
+  const resendMessage = (messageId: string) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    const text = msg.parts?.map(p => p.type === 'text' ? p.text : '').join('') || '';
+    if (!text.trim()) return;
+    const idx = messages.findIndex(m => m.id === messageId);
+    if (idx === -1) return;
+    const prior = messages.slice(0, idx);
+    setMessages(prior);
+    setTimeout(() => {
+      sendMessage({ text });
+      setTimeout(fetchSessions, 1000);
+    }, 10);
+  };
+
   const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1259,6 +1274,17 @@ export default function Chat() {
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                        </svg>
+                      </button>
+                    )}
+                    {m.role === 'user' && !isLoading && (
+                      <button
+                        onClick={() => resendMessage(m.id)}
+                        className="p-1.5 rounded-lg dark:hover:bg-white/[0.06] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-all cursor-pointer hover:scale-110 active:scale-95"
+                        title="Resend"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
                         </svg>
                       </button>
                     )}

@@ -4,18 +4,14 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 export const PROVIDER_NAMES: Record<string, string> = {
-  ollama: 'Ollama',
+  ollama: 'Local Model',
   anthropic: 'Anthropic',
   google: 'Google',
   openai: 'OpenAI',
 };
 
 export const MODEL_CATALOG: Record<string, { id: string; label: string; vision?: boolean }[]> = {
-  ollama: [
-    { id: 'llama3.2:1b', label: 'Llama 3.2 1B', vision: false },
-    { id: 'llama3.2:3b', label: 'Llama 3.2 3B', vision: false },
-    { id: 'llama3.1:8b', label: 'Llama 3.1 8B', vision: false },
-  ],
+  ollama: [],
   anthropic: [
     { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', vision: true },
     { id: 'claude-haiku-4-20250414', label: 'Claude Haiku 4', vision: true },

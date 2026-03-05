@@ -3,7 +3,7 @@ import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateText, stepCountIs } from 'ai';
 import { getModel } from '@/utils/ai/provider';
 import { schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
-import { fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
+import { fetchSchema as fetchSqliteSchema, executeQuery as executeSqlite } from '@/utils/sqlite/connection';
 import {
   buildMultiChartSuggestionSystemPrompt,
   buildChartSuggestionUserPrompt,
@@ -14,6 +14,9 @@ import {
 } from '@/utils/ai/data-explorer-prompts';
 import { createDataExplorerTools } from '@/utils/ai/data-explorer-tools';
 import { buildAgentSystemPrompt } from '@/utils/ai/data-explorer-agent-prompt';
+import { routeTables } from '@/utils/ai/table-router';
+import { buildCatalog, buildCatalogText, TableMetadataRow } from '@/utils/ai/catalog-builder';
+import { buildFKGraph } from '@/utils/ai/fk-graph';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -133,7 +136,7 @@ export async function POST(req: Request) {
 
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
 
-        const schemaText = schemaToPromptText(schema);
+        const schemaText = schemaToPromptText(schema, dialect);
 
         // 3b. Fetch agent domain context
         let domainContext: string | null = null;
@@ -173,24 +176,89 @@ export async function POST(req: Request) {
         // 5. Create tools and run agent loop
         sendEvent(controller, 'status', { step: 'agent_thinking', message: 'Agent is thinking...' });
 
+        const catalogMode = schema.length > 30;
+        let catalogText = schemaText;
+        let catalog;
+        let fkGraph;
+
+        if (catalogMode) {
+          // Fetch table metadata for catalog mode
+          const { data: metadataRows } = await dbAdmin
+            .from('table_metadata')
+            .select('*')
+            .eq('connection_id', connectionId)
+            .eq('user_id', user.id);
+
+          const metadata: TableMetadataRow[] = metadataRows || [];
+          catalog = buildCatalog(schema, metadata);
+          fkGraph = buildFKGraph(schema);
+          catalogText = buildCatalogText(schema, metadata);
+        }
+
         const tools = createDataExplorerTools({
           dialect,
           schema,
           mssqlConfig,
           filePath: isSqlite ? conn.file_path : undefined,
+          catalogMode,
+          catalog,
+          fkGraph,
         });
 
-        const systemPrompt = buildAgentSystemPrompt(dialect, schemaText, conversationContext, domainContext);
+        // Pre-filter: identify relevant tables upfront in catalog mode
+        let systemPrompt: string;
+        let maxSteps: number;
+        let agentPrompt = question;
+
+        if (catalogMode && catalog) {
+          sendEvent(controller, 'status', { step: 'agent_thinking', message: 'Identifying relevant tables...' });
+
+          const preFilterResult = await routeTables({
+            model,
+            question,
+            catalogText,
+            schema,
+            catalog,
+            dialect,
+            conversationContext: conversationContext || undefined,
+          });
+
+          // Always use discovery-first catalog prompt — DDL in tool results is
+          // far more reliable than DDL in the system prompt for smaller models.
+          systemPrompt = buildAgentSystemPrompt(dialect, catalogText, conversationContext, domainContext, catalogMode);
+
+          if (preFilterResult.didRoute && preFilterResult.tableNames) {
+            // Pre-filter succeeded — give the agent a routing hint so it can
+            // skip search_tables and jump straight to get_schema
+            sendEvent(controller, 'agent_step', {
+              stepNumber: -1,
+              type: 'tool_result' as const,
+              toolName: 'table_router',
+              toolResult: { tables: preFilterResult.tableNames, message: `Pre-selected tables: ${preFilterResult.tableNames.join(', ')}` },
+            });
+            const tableList = preFilterResult.tableNames.join(', ');
+            agentPrompt = `${question}\n\n[Routing hint: The tables most likely relevant to this question are: ${tableList}. Start by calling get_schema with these table names to load their full column details, then write your SQL.]`;
+            maxSteps = 10;
+          } else {
+            // Pre-filter failed — full discovery with 12 steps
+            maxSteps = 12;
+          }
+        } else {
+          systemPrompt = buildAgentSystemPrompt(dialect, schemaText, conversationContext, domainContext, false);
+          maxSteps = 5;
+        }
+
         const agentSteps: any[] = [];
         let lastSuccessfulResult: any = null;
         let lastSuccessfulSql: string | null = null;
+        const allSuccessfulSqls: string[] = [];
 
         const result = await generateText({
           model,
           system: systemPrompt,
-          prompt: question,
+          prompt: agentPrompt,
           tools,
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(maxSteps),
           onStepFinish: (event) => {
             const stepNumber = event.stepNumber;
 
@@ -218,7 +286,7 @@ export async function POST(req: Request) {
               agentSteps.push(stepEvent);
               sendEvent(controller, 'agent_step', stepEvent);
 
-              // Track last successful SQL execution
+              // Track successful SQL executions
               if (toolResult.toolName === 'execute_sql' && resultData?.success) {
                 lastSuccessfulResult = resultData;
                 // Find the corresponding tool call to get the SQL
@@ -227,6 +295,7 @@ export async function POST(req: Request) {
                 );
                 if (matchingCall?.toolInput?.sql) {
                   lastSuccessfulSql = matchingCall.toolInput.sql;
+                  allSuccessfulSqls.push(matchingCall.toolInput.sql);
                 }
               }
 
@@ -257,9 +326,49 @@ export async function POST(req: Request) {
           },
         });
 
+        // 5b. Fallback: if no SQL executed successfully, check if the model
+        // wrote a tool call as text (common with smaller models after errors).
+        // Extract the SQL and execute it directly.
+        if (!lastSuccessfulResult) {
+          const fallbackSql = extractSqlFromText(result.text);
+          if (fallbackSql) {
+            try {
+              let fallbackResult;
+              if (isSqlite) {
+                fallbackResult = executeSqlite(conn.file_path, fallbackSql);
+              } else if (mssqlConfig) {
+                const { executeQuery: execMssql } = await import('@/utils/mssql/connection');
+                fallbackResult = await execMssql(mssqlConfig, fallbackSql);
+              }
+              if (fallbackResult) {
+                lastSuccessfulResult = {
+                  success: true,
+                  rows: fallbackResult.rows.slice(0, 100),
+                  columns: fallbackResult.columns,
+                  types: fallbackResult.types,
+                  rowCount: fallbackResult.rowCount,
+                  executionTimeMs: fallbackResult.executionTimeMs,
+                };
+                lastSuccessfulSql = fallbackSql;
+                allSuccessfulSqls.push(fallbackSql);
+                sendEvent(controller, 'agent_step', {
+                  stepNumber: -1,
+                  type: 'tool_result' as const,
+                  toolName: 'execute_sql',
+                  toolResult: lastSuccessfulResult,
+                });
+              }
+            } catch {
+              // Fallback execution failed — continue without results
+            }
+          }
+        }
+
         // 6. Extract final answer and SQL result
         const finalText = result.text;
-        const sqlQuery = lastSuccessfulSql;
+        const sqlQuery = allSuccessfulSqls.length > 1
+          ? allSuccessfulSqls.map((s, i) => `-- Query ${i + 1}\n${s}`).join('\n\n')
+          : lastSuccessfulSql;
 
         if (sqlQuery) {
           sendEvent(controller, 'sql', { sql: sqlQuery });
@@ -399,6 +508,43 @@ export async function POST(req: Request) {
       'Connection': 'keep-alive',
     },
   });
+}
+
+/**
+ * Extract SQL from the model's text output when it writes a tool call as JSON text
+ * instead of making a proper structured tool call (common with smaller models).
+ */
+function extractSqlFromText(text: string): string | null {
+  // Try to find a JSON tool call blob: {"name": "execute_sql", "parameters": {"sql": "..."}}
+  const marker = '"execute_sql"';
+  const idx = text.lastIndexOf(marker);
+  if (idx === -1) return null;
+
+  let start = text.lastIndexOf('{', idx);
+  if (start === -1) return null;
+
+  // Find matching closing brace
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    if (text[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(text.substring(start, i + 1));
+          if (parsed.parameters?.sql) return parsed.parameters.sql;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+
+  // Fallback: try to extract SQL from a markdown code block
+  const codeBlock = text.match(/```sql\s*(SELECT[\s\S]*?)```/i);
+  if (codeBlock) return codeBlock[1].trim();
+
+  return null;
 }
 
 async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any) {

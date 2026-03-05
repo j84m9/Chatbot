@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { MODEL_CATALOG, PROVIDER_NAMES } from '@/utils/ai/provider';
 
 export async function GET() {
-  // Fetch actually installed Ollama models instead of using hardcoded list
-  let ollamaModels = MODEL_CATALOG.ollama;
+  // Ollama: single "Local Model" entry using the first installed model
+  let ollamaModels: { id: string; label: string; vision: boolean }[] = [];
   try {
     const res = await fetch('http://localhost:11434/api/tags', {
       signal: AbortSignal.timeout(3000),
@@ -11,15 +11,12 @@ export async function GET() {
     if (res.ok) {
       const data = await res.json();
       if (data.models && Array.isArray(data.models) && data.models.length > 0) {
-        ollamaModels = data.models.map((m: any) => ({
-          id: m.name,
-          label: m.name,
-          vision: false,
-        }));
+        // Use the first installed model — Ollama routes to whatever is available
+        ollamaModels = [{ id: data.models[0].name, label: 'Local Model', vision: false }];
       }
     }
   } catch {
-    // Ollama not running — fall back to hardcoded catalog
+    // Ollama not running
   }
 
   const models = { ...MODEL_CATALOG, ollama: ollamaModels };
