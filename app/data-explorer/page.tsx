@@ -447,6 +447,20 @@ export default function DataExplorer() {
     }
   };
 
+  const handleEditQuestion = (index: number, newQuestion: string) => {
+    // Remove the edited exchange and everything after it, then re-submit
+    setExchanges(prev => prev.slice(0, index));
+    setSelectedExchangeIndex(index > 0 ? index - 1 : -1);
+    // Re-submit with the edited question after state update
+    setTimeout(() => {
+      if (queryMode === 'agent') {
+        handleSubmitAgentQuestion(newQuestion);
+      } else {
+        handleSubmitQuestion(newQuestion);
+      }
+    }, 10);
+  };
+
   const handleSubmitQuestion = async (question: string) => {
     if (!activeConnectionId) return;
 
@@ -1439,6 +1453,7 @@ export default function DataExplorer() {
               selectedIndex={selectedExchangeIndex}
               onSelectExchange={setSelectedExchangeIndex}
               onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
+              onEditQuestion={handleEditQuestion}
               isQuerying={isQuerying}
               hasConnection={!!activeConnectionId}
               refineContext={refineContext}

@@ -55,9 +55,14 @@ All API routes use a two-client pattern:
 - **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings
 
 ## Data Explorer Agent Mode
-- **Agent query loop**: `agent-query-stream/route.ts` uses Vercel AI SDK `generateText()` with tools and `stopWhen: stepCountIs(5)` for multi-step SQL exploration
-- **Tools**: `createDataExplorerTools()` in `utils/ai/data-explorer-tools.ts` provides `execute_sql`, `get_schema`, `get_sample_data` — all read-only
-- **Agent prompt**: `buildAgentSystemPrompt()` in `utils/ai/data-explorer-agent-prompt.ts` — instructs the agent to explore schema, write SQL, self-correct, and synthesize findings
+- **Agent query loop**: `agent-query-stream/route.ts` uses Vercel AI SDK `generateText()` with tools and `stopWhen: stepCountIs(maxSteps)` for multi-step SQL exploration
+- **Tools**: `createDataExplorerTools()` in `utils/ai/data-explorer-tools.ts` provides `execute_sql`, `get_schema`, `get_sample_data` — all read-only. In catalog mode also: `search_tables`, `get_join_path`
+- **Catalog mode** (>30 tables): Agent sees lightweight table catalog instead of full DDL. Uses `search_tables` to discover tables, `get_join_path` to find FK paths, `get_schema` with `tableNames` for full column details. Step limit raised to 12 (vs 5 for small DBs)
+- **FK graph**: `buildFKGraph()` creates bidirectional adjacency list from schema FKs. `findJoinPath()` BFS finds shortest path. `findReachableTables()` finds all tables within N hops
+- **Catalog builder**: `buildCatalogText()` produces ~80 tokens/table summary (name, description, PKs, FK targets, row count). 500 tables ≈ 15-20K tokens
+- **Auto-catalog**: SSE endpoint (`catalog/generate/route.ts`) batches tables (10/batch), sends column info + 3 sample rows to LLM, gets 1-sentence descriptions + tags + categories. Row counts via `sys.partitions` (MSSQL) or `COUNT(*)` (SQLite)
+- **Table metadata**: `table_metadata` table stores auto/user descriptions, tags, category, row counts. User descriptions override auto descriptions
+- **Agent prompt**: `buildAgentSystemPrompt()` in `utils/ai/data-explorer-agent-prompt.ts` — standard mode or catalog mode with discovery-first approach and compound query patterns
 - **SSE streaming**: `onStepFinish` callback streams `agent_step` events (tool_call, tool_result, reasoning, error_recovery) in real-time
 - **Last successful result tracking**: Agent loop tracks `lastSuccessfulResult` and `lastSuccessfulSql` across steps — the final successful query result is used for charts/insights
 - **Auto-generated insights**: After agent loop completes, auto-generates enhanced insights and charts using `buildEnhancedInsightSystemPrompt()` (no manual button click needed)

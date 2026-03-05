@@ -11,8 +11,11 @@ export async function GET() {
     if (res.ok) {
       const data = await res.json();
       if (data.models && Array.isArray(data.models) && data.models.length > 0) {
-        // Use the first installed model — Ollama routes to whatever is available
-        ollamaModels = [{ id: data.models[0].name, label: 'Local Model', vision: false }];
+        ollamaModels = data.models.map((m: any) => ({
+          id: m.name,
+          label: m.name,
+          vision: false,
+        }));
       }
     }
   } catch {

@@ -133,7 +133,7 @@ export async function POST(req: Request) {
 
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
 
-        let schemaText = schemaToPromptText(schema);
+        let schemaText = schemaToPromptText(schema, dialect);
 
         // 3b. Fetch sample rows (capped at 15 tables)
         const tablesToSample = schema.slice(0, 15);

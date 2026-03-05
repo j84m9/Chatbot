@@ -66,6 +66,20 @@
 - `insights`: AI-generated data insights text, persisted when generated and reloaded with session
 - RLS enabled (messages gated via session ownership)
 
+## `table_metadata`
+- `id` UUID PK, `connection_id` UUID (FK to db_connections, CASCADE), `user_id` UUID (FK to auth.users, CASCADE)
+- `table_schema` TEXT (default 'dbo'), `table_name` TEXT
+- `auto_description` TEXT nullable — LLM-generated description
+- `user_description` TEXT nullable — user override (takes priority over auto)
+- `tags` TEXT[] (default `{}`), `category` TEXT nullable
+- `relationship_summary` TEXT nullable — FK summary string
+- `estimated_row_count` BIGINT nullable
+- `auto_cataloged_at` TIMESTAMPTZ nullable — when auto-catalog was last run
+- `UNIQUE(connection_id, table_schema, table_name)`
+- Full-text search GIN index on descriptions + table name
+- RLS enabled: all operations gated on `auth.uid() = user_id`
+- Used by catalog mode (>30 tables) to provide lightweight table catalog to agent
+
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:
 - `departments` (10) — budget, headcount

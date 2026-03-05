@@ -129,7 +129,7 @@ export async function POST(req: Request) {
 
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
 
-        const schemaText = schemaToPromptText(schema);
+        const schemaText = schemaToPromptText(schema, dialect);
 
         // 4. Create tools and run insight agent loop
         sendEvent(controller, 'status', { message: 'Analyzing data patterns...' });

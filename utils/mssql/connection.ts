@@ -174,7 +174,7 @@ export async function fetchSchema(config: ConnectionConfig): Promise<SchemaTable
   }
 }
 
-export function schemaToPromptText(schema: SchemaTable[]): string {
+export function schemaToPromptText(schema: SchemaTable[], dialect?: 'tsql' | 'sqlite'): string {
   return schema.map(table => {
     const safeTableName = sanitizeIdentifier(table.name);
     const safeSchema = sanitizeIdentifier(table.schema);
@@ -188,7 +188,11 @@ export function schemaToPromptText(schema: SchemaTable[]): string {
     const fks = (table.foreignKeys || []).map(fk =>
       `  FK: ${sanitizeIdentifier(fk.fromColumn)} -> ${sanitizeIdentifier(fk.toTable)}(${sanitizeIdentifier(fk.toColumn)})`
     ).join('\n');
-    const parts = [`[${safeSchema}].[${safeTableName}]`, cols];
+    // Use SQLite-friendly format (just table name) vs T-SQL format ([schema].[table])
+    const header = dialect === 'sqlite'
+      ? safeTableName
+      : `[${safeSchema}].[${safeTableName}]`;
+    const parts = [header, cols];
     if (fks) parts.push(fks);
     return parts.join('\n');
   }).join('\n\n');

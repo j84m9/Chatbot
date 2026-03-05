@@ -173,7 +173,7 @@ export async function POST(req: Request) {
   }
 
   // For sql_refinement, we generate new SQL then execute it (falls through to standard flow with modified prompt)
-  let schemaText = schemaToPromptText(schema);
+  let schemaText = schemaToPromptText(schema, dialect);
 
   // 3b. Fetch sample rows (capped at 15 tables)
   const tablesToSample = schema.slice(0, 15);

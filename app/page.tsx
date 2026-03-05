@@ -83,7 +83,7 @@ export default function Chat() {
   const agentDropdownRef = useRef<HTMLDivElement>(null);
 
   // --- VERCEL AI SDK V5 UPDATES ---
-  const { messages, setMessages, status, sendMessage } = useChat({
+  const { messages, setMessages, status, sendMessage, stop } = useChat({
     id: chatId,
     // V5 completely removed 'api' and 'body'. We use a Transport to send the request, 
     // and attach the chatId to the URL so the backend can grab it.
@@ -1490,15 +1490,27 @@ export default function Chat() {
                     onTranscript={(text) => setInputValue(prev => prev + (prev ? ' ' : '') + text)}
                     disabled={isLoading}
                   />
-                  <button
-                    type="submit"
-                    disabled={(!inputValue.trim() && pendingFiles.length === 0) || isLoading}
-                    className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() || pendingFiles.length > 0 ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 hover:shadow-md hover:shadow-indigo-500/20 send-glow' : 'text-gray-500'}`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                      <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
-                    </svg>
-                  </button>
+                  {isLoading ? (
+                    <button
+                      type="button"
+                      onClick={() => stop()}
+                      className="p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer text-red-500 hover:text-red-400 hover:bg-red-500/10 hover:shadow-md hover:shadow-red-500/20"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                        <rect x="6" y="6" width="12" height="12" rx="2" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!inputValue.trim() && pendingFiles.length === 0}
+                      className={`p-2 rounded-xl transition-all duration-200 active:scale-90 cursor-pointer ${inputValue.trim() || pendingFiles.length > 0 ? 'text-indigo-500 hover:text-indigo-400 hover:bg-indigo-500/10 hover:shadow-md hover:shadow-indigo-500/20 send-glow' : 'text-gray-500'}`}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                        <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

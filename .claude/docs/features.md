@@ -93,3 +93,12 @@
 - [x] Smooth chart transitions: fade animation when switching between charts in carousel (replaces hard-swap)
 - [x] Chart arrow visibility fix: overflow-hidden + z-20 ensures navigation arrows are always visible over Plotly content
 - [x] Agent steps persisted to database (`agent_steps` JSONB column on `data_explorer_messages`)
+- [x] Compound query support for large databases (30+ tables): catalog-then-detail approach
+- [x] Table metadata catalog: auto/user descriptions, tags, categories, row count estimates
+- [x] FK graph utility: bidirectional adjacency list, BFS join path discovery
+- [x] Catalog mode agent tools: `search_tables` (keyword search), `get_join_path` (FK path finder), enhanced `get_schema` (multi-table lookup)
+- [x] Discovery-first agent prompt: search catalog → find join paths → load schema → write SQL (12-step limit vs 5 for small DBs)
+- [x] Auto-catalog generation: SSE endpoint batches tables in groups of 10, LLM generates descriptions/tags/categories
+- [x] Catalog CRUD API: GET/PATCH/DELETE for table metadata per connection
+- [x] Schema browser enhancements: search filter, description display, inline user description editing, color-coded tag badges
+- [x] Catalog generation UI: banner for large databases, progress bar during generation
