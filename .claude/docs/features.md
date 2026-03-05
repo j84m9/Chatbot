@@ -86,3 +86,10 @@
 - [x] Data Explorer agent integration: domain-specific agents inject context into SQL generation prompts
 - [x] Agent dropdown in Data Explorer header with per-session persistence
 - [x] Morphing orb loading animation for SQL generation (consistent with chat/insights)
+- [x] Data Explorer agent query mode: full agentic loop with tools (execute_sql, get_schema, get_sample_data) via SSE streaming
+- [x] Agent steps timeline: visual timeline of tool calls, results, reasoning, and error recovery during agent queries
+- [x] Agent-powered insights: Generate/Regenerate button in agent mode runs a full agentic loop for deeper analysis with follow-up queries
+- [x] Insight agent synthesis: agent analysis fed into enhanced insight prompt for structured markdown output
+- [x] Smooth chart transitions: fade animation when switching between charts in carousel (replaces hard-swap)
+- [x] Chart arrow visibility fix: overflow-hidden + z-20 ensures navigation arrows are always visible over Plotly content
+- [x] Agent steps persisted to database (`agent_steps` JSONB column on `data_explorer_messages`)

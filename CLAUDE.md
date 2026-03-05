@@ -36,10 +36,13 @@ Detailed docs are split into focused files under `.claude/docs/`:
 
 ### Key Entry Points
 - `app/page.tsx` — Chat UI (all chat state lives here)
-- `app/data-explorer/page.tsx` — Data Explorer UI
+- `app/data-explorer/page.tsx` — Data Explorer UI (quick mode + agent mode)
 - `app/api/chat/route.ts` — Chat streaming endpoint
-- `app/api/data-explorer/query-stream/route.ts` — SSE streaming SQL generation
+- `app/api/data-explorer/query-stream/route.ts` — SSE streaming SQL generation (quick mode)
+- `app/api/data-explorer/agent-query-stream/route.ts` — SSE agent loop with tools (agent mode)
+- `app/api/data-explorer/insights-agent-stream/route.ts` — SSE agent insight generation
 - `utils/ai/provider.ts` — Model catalog and `getModel()` factory
+- `utils/ai/data-explorer-tools.ts` — Tool factory for agent loops (execute_sql, get_schema, get_sample_data)
 
 ### Auth Pattern
 All API routes use two Supabase clients: `createAuthClient()` for cookie verification, `createAdminClient()` (service role) for DB writes bypassing RLS.

@@ -26,6 +26,8 @@ app/
     data-explorer/
       query/route.ts    — POST: natural language → SQL → execute → multi-chart suggestion (+ chart/SQL refinement, insights)
       query-stream/route.ts — POST: SSE streaming version of query (progressive SQL → results → charts), agent domain context injection
+      agent-query-stream/route.ts — POST: SSE agent loop (generateText + tools) for multi-step SQL exploration, auto-generates charts + insights
+      insights-agent-stream/route.ts — POST: SSE agent loop for deep insight generation on existing results (follow-up queries + synthesis)
       pinned-charts/route.ts — GET/POST/PATCH/DELETE: pinned chart dashboard CRUD with layout persistence
       saved-queries/route.ts — GET/POST/DELETE: saved/pinned queries per connection
       connections/route.ts — CRUD for database connections (MSSQL + SQLite)
@@ -39,7 +41,8 @@ app/
       QueryChat.tsx     — Chat interface for natural language queries (floating input, refinement mode)
       ConnectionManager.tsx — Modal for adding/editing database connections
       PlotlyChart.tsx   — Plotly chart wrapper (13 chart types, color grouping, orientation, annotations, forwardRef for PDF)
-      ChartGallery.tsx  — Carousel gallery with prev/next navigation, dot indicators, pin/annotate/refine buttons
+      ChartGallery.tsx  — Carousel gallery with prev/next navigation, dot indicators, pin/annotate/refine buttons, smooth fade transitions
+      AgentStepsTimeline.tsx — Timeline visualization of agent tool calls, results, reasoning, and error recovery steps
       Dashboard.tsx     — Pinned chart dashboard with react-grid-layout drag-and-resize grid
       ChartTypeSwitcher.tsx — Horizontal strip of chart type icon buttons for local type switching
       KPICards.tsx       — Auto-detected summary metric cards with smart formatting and staggered entrance
@@ -64,7 +67,9 @@ utils/
   data-explorer-export.ts — Data Explorer PDF report export (jsPDF, landscape A4)
   token-costs.ts        — Token cost estimation per model (cost per 1M tokens)
   ai/provider.ts        — getModel() factory, MODEL_CATALOG (with vision flag), PROVIDER_NAMES
-  ai/data-explorer-prompts.ts — Prompt templates for SQL generation, chart suggestion, and agent domain context wrapping
+  ai/data-explorer-prompts.ts — Prompt templates for SQL generation, chart suggestion, insight agent, and agent domain context wrapping
+  ai/data-explorer-agent-prompt.ts — System prompt builder for the Data Explorer agent query loop
+  ai/data-explorer-tools.ts — Tool factory (execute_sql, get_schema, get_sample_data) for Data Explorer agent loops
   supabase/
     server.ts           — Server-side Supabase client (cookie-based)
     client.ts           — Browser-side Supabase client

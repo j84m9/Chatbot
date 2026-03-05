@@ -54,6 +54,30 @@ All API routes use a two-client pattern:
 - **Morphing orb loading**: SQL generation and insights loading use morphing orb animation (`animate-orb`) instead of spinner
 - **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings
 
+## Data Explorer Agent Mode
+- **Agent query loop**: `agent-query-stream/route.ts` uses Vercel AI SDK `generateText()` with tools and `stopWhen: stepCountIs(5)` for multi-step SQL exploration
+- **Tools**: `createDataExplorerTools()` in `utils/ai/data-explorer-tools.ts` provides `execute_sql`, `get_schema`, `get_sample_data` — all read-only
+- **Agent prompt**: `buildAgentSystemPrompt()` in `utils/ai/data-explorer-agent-prompt.ts` — instructs the agent to explore schema, write SQL, self-correct, and synthesize findings
+- **SSE streaming**: `onStepFinish` callback streams `agent_step` events (tool_call, tool_result, reasoning, error_recovery) in real-time
+- **Last successful result tracking**: Agent loop tracks `lastSuccessfulResult` and `lastSuccessfulSql` across steps — the final successful query result is used for charts/insights
+- **Auto-generated insights**: After agent loop completes, auto-generates enhanced insights and charts using `buildEnhancedInsightSystemPrompt()` (no manual button click needed)
+- **Agent steps timeline**: `AgentStepsTimeline.tsx` renders a vertical timeline of agent steps with icons per type, collapsible SQL/result details
+- **Exchange model extended**: `Exchange` type includes `isAgentMode`, `agentSteps`, `statusMessage` for agent-specific state
+- **Quick vs Agent mode**: `queryMode` state in `page.tsx` controls which submit handler runs (`handleSubmitQuestion` vs `handleSubmitAgentQuestion`)
+
+## Agent-Powered Insights
+- **Insight agent endpoint**: `insights-agent-stream/route.ts` — SSE endpoint for deep insight generation on existing results
+- **Branched handler**: `handleRequestInsights` in `page.tsx` checks `exchange.isAgentMode` — agent mode calls SSE insight stream, quick mode calls simple `/api/data-explorer/query`
+- **Insight agent prompt**: `buildInsightAgentSystemPrompt()` provides existing results summary + tools for follow-up queries
+- **Synthesis step**: After agent loop, combines original explanation + agent analysis, feeds into `buildEnhancedInsightSystemPrompt()` for structured markdown output
+- **Status messages**: InsightsPanel accepts `statusMessage` prop for real-time agent progress ("Analyzing data patterns...", "Agent analysis step 2...", "Synthesizing insights...")
+- **Persistence**: Insights saved to `data_explorer_messages.insights` via `messageId` PATCH
+
+## Chart Gallery UX
+- **Smooth transitions**: Chart switching uses CSS opacity transition (150ms fade out, swap, fade in) instead of hard-swap
+- **Arrow visibility**: Chart container has `overflow-hidden` and arrows use `z-20` to layer above Plotly's own elements (modebar, SVG)
+- **Carousel navigation**: Left/right arrows + dot indicators, single chart visible at a time
+
 ## Chat Search
 - `SearchModal.tsx` opens via `Cmd+K` or search icon in sidebar
 - Debounced search (300ms) hits `/api/search?q=keyword`
