@@ -3,6 +3,7 @@ import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { getModel } from '@/utils/ai/provider';
 import { createWeatherTool } from '@/utils/ai/weather-tool';
+import { createWebSearchTool } from '@/utils/ai/web-search-tool';
 
 export async function POST(req: Request) {
   // Grab the session ID and optional agent ID from the URL
@@ -125,7 +126,13 @@ WEATHER RULES — when the user asks about weather, temperature, or forecasts:
 - Call the get_weather tool with the location
 - After receiving the tool result, write a brief conversational sentence, then emit the FULL tool result JSON inside a \`\`\`weather code fence
 - Example: "Here's the current weather in Tokyo:" followed by \`\`\`weather {…tool result JSON…} \`\`\`
-- If the tool returns an error, respond with plain text explaining the issue — do NOT emit a weather code fence`;
+- If the tool returns an error, respond with plain text explaining the issue — do NOT emit a weather code fence
+
+SEARCH RULES — when the user asks you to search the web, look up current/recent information, or when you need up-to-date facts:
+- Call the web_search tool with a concise search query
+- After receiving the tool result, write a brief conversational summary of the findings, then emit the FULL tool result JSON inside a \`\`\`search code fence
+- Example: "Here's what I found:" followed by \`\`\`search {…tool result JSON…} \`\`\`
+- If the tool returns an error, respond with plain text explaining the issue — do NOT emit a search code fence`;
 
   // Fetch custom system prompt from session, with agent fallback
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
@@ -163,7 +170,7 @@ WEATHER RULES — when the user asks about weather, temperature, or forecasts:
     model,
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
-    tools: { get_weather: createWeatherTool() },
+    tools: { get_weather: createWeatherTool(), web_search: createWebSearchTool() },
     stopWhen: stepCountIs(2),
   });
 

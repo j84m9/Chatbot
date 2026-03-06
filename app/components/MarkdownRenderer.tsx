@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 import ChatPlot from './ChatPlot';
 import WeatherCard from './WeatherCard';
+import SearchResultsCard from './SearchResultsCard';
 import './markdown.css';
 
 interface MarkdownRendererProps {
@@ -73,6 +74,9 @@ export default function MarkdownRenderer({ content, darkMode }: MarkdownRenderer
 
               if (match?.[1] === 'weather') {
                 return <WeatherCard jsonString={codeString} />;
+              }
+              if (match?.[1] === 'search') {
+                return <SearchResultsCard jsonString={codeString} />;
               }
               if (match?.[1] === 'plotly') {
                 return <ChatPlot jsonString={codeString} darkMode={isDark} />;
