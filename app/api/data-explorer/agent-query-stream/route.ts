@@ -365,7 +365,9 @@ export async function POST(req: Request) {
         }
 
         // 6. Extract final answer and SQL result
-        const finalText = result.text;
+        // Strip hallucinated content: fake tool calls, fake markdown tables,
+        // fake code blocks, and fake result tables that small models fabricate
+        const finalText = stripHallucinatedContent(result.text);
         const sqlQuery = allSuccessfulSqls.length > 1
           ? allSuccessfulSqls.map((s, i) => `-- Query ${i + 1}\n${s}`).join('\n\n')
           : lastSuccessfulSql;
@@ -518,33 +520,60 @@ function extractSqlFromText(text: string): string | null {
   // Try to find a JSON tool call blob: {"name": "execute_sql", "parameters": {"sql": "..."}}
   const marker = '"execute_sql"';
   const idx = text.lastIndexOf(marker);
-  if (idx === -1) return null;
-
-  let start = text.lastIndexOf('{', idx);
-  if (start === -1) return null;
-
-  // Find matching closing brace
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === '{') depth++;
-    if (text[i] === '}') {
-      depth--;
-      if (depth === 0) {
-        try {
-          const parsed = JSON.parse(text.substring(start, i + 1));
-          if (parsed.parameters?.sql) return parsed.parameters.sql;
-        } catch {
-          break;
+  if (idx !== -1) {
+    const start = text.lastIndexOf('{', idx);
+    if (start !== -1) {
+      let depth = 0;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        if (text[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            try {
+              const parsed = JSON.parse(text.substring(start, i + 1));
+              if (parsed.parameters?.sql) return parsed.parameters.sql;
+            } catch {
+              break;
+            }
+          }
         }
       }
     }
   }
 
-  // Fallback: try to extract SQL from a markdown code block
-  const codeBlock = text.match(/```sql\s*(SELECT[\s\S]*?)```/i);
+  // Fallback: extract SQL from a markdown code block
+  const codeBlock = text.match(/```sql\s*([\s\S]*?)```/i);
   if (codeBlock) return codeBlock[1].trim();
 
   return null;
+}
+
+/**
+ * Strip hallucinated content that small models fabricate in their text output:
+ * fake tool call JSON blobs, fake markdown result tables, and SQL code blocks
+ * (since real results come from actual tool execution, not model text).
+ */
+function stripHallucinatedContent(text: string): string {
+  let cleaned = text;
+
+  // Remove fake JSON tool call blobs: {"name": "...", "parameters": {...}}
+  cleaned = cleaned.replace(/```(?:python|json)?\s*\{[\s\S]*?"(?:name|tool_name)"[\s\S]*?\}\s*;?\s*```/gi, '');
+  cleaned = cleaned.replace(/\{[\s]*"(?:name|tool_name)"[\s]*:[\s]*"[^"]*"[\s\S]*?"parameters"[\s\S]*?\}\s*;?/g, '');
+
+  // Remove SQL code blocks (the real SQL is shown separately in the UI)
+  cleaned = cleaned.replace(/```sql\s*[\s\S]*?```/gi, '');
+
+  // Remove fake markdown tables (rows of | col | col | patterns)
+  // Match a header row + separator row + data rows
+  cleaned = cleaned.replace(/\n*\|[^\n]+\|\s*\n\|[\s\-:|]+\|\s*\n(?:\|[^\n]+\|\s*\n?)*/g, '');
+
+  // Remove lines like "Here are the results:" that precede fake tables
+  cleaned = cleaned.replace(/(?:Here are the results|I'll execute this query|I'll examine the output)[^\n]*\n?/gi, '');
+
+  // Collapse excessive whitespace
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  return cleaned || 'Analysis complete.';
 }
 
 async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any) {

@@ -3,6 +3,7 @@
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/utils/supabase/client';
 import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
@@ -138,6 +139,7 @@ export default function Chat() {
     if (!modelDropdownOpen) return;
     const handleModelDropdownClickOutside = (e: MouseEvent) => {
       if (modelDropdownRef.current?.contains(e.target as Node)) return;
+      if ((modelDropdownRef as any)._portalEl?.contains(e.target as Node)) return;
       setModelDropdownOpen(false);
     };
     document.addEventListener('mousedown', handleModelDropdownClickOutside);
@@ -1430,7 +1432,7 @@ export default function Chat() {
                 <div className="flex items-center gap-0.5">
                   <FileUploadButton onFilesSelected={handleFilesSelected} disabled={isLoading} />
                   {/* Model selector */}
-                  <div ref={modelDropdownRef} className="relative">
+                  <div ref={modelDropdownRef}>
                     <button
                       type="button"
                       onClick={() => setModelDropdownOpen(prev => !prev)}
@@ -1444,8 +1446,25 @@ export default function Chat() {
                         <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                       </svg>
                     </button>
-                    {modelDropdownOpen && (
-                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-50 animate-slide-up">
+                    {modelDropdownOpen && createPortal(
+                      <div
+                        className="fixed w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-[9999] animate-slide-up"
+                        style={{
+                          top: (() => {
+                            const rect = modelDropdownRef.current?.getBoundingClientRect();
+                            return rect ? `${rect.top - 6}px` : '0px';
+                          })(),
+                          left: (() => {
+                            const rect = modelDropdownRef.current?.getBoundingClientRect();
+                            return rect ? `${rect.left}px` : '0px';
+                          })(),
+                          transform: 'translateY(-100%)',
+                        }}
+                        ref={(el) => {
+                          // Keep ref for click-outside detection
+                          if (el) (modelDropdownRef as any)._portalEl = el;
+                        }}
+                      >
                         <div className="max-h-64 overflow-y-auto py-1">
                           {Object.entries(modelCatalog).map(([provider, models]) => {
                             const hasKey = provider === 'ollama' || !!savedApiKeys[provider];
@@ -1481,7 +1500,8 @@ export default function Chat() {
                             );
                           })}
                         </div>
-                      </div>
+                      </div>,
+                      document.body
                     )}
                   </div>
                 </div>
