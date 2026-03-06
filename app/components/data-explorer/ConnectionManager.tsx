@@ -244,15 +244,14 @@ function ConnectionForm({
     ? { dbType, name: name || filePath || 'SQLite DB', filePath }
     : {
         dbType, name: name || server || 'Connection', server, database,
-        authType, username, password,
-        ...(authType === 'windows' ? { domain } : {}),
-        encrypt, trustServerCertificate: trustCert,
+        authType, encrypt, trustServerCertificate: trustCert,
+        ...(authType === 'sql' ? { username, password } : {}),
       };
 
-  const hasCreds = !!server && !!username && (isEdit || !!password)
-    && (authType !== 'windows' || !!domain);
-  const canTest = dbType === 'sqlite' ? !!filePath : hasCreds;
-  const canSave = dbType === 'sqlite' ? !!filePath : (hasCreds && testResult?.success);
+  const canTest = dbType === 'sqlite'
+    ? !!filePath
+    : (!!server && (authType === 'windows' || (!!username && (isEdit || !!password))));
+  const canSave = dbType === 'sqlite' ? !!filePath : (canTest && testResult?.success);
 
   const handleTest = async () => {
     setTesting(true);
@@ -357,41 +356,29 @@ function ConnectionForm({
               <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication Type</label>
               <select value={authType} onChange={e => { setAuthType(e.target.value as 'sql' | 'windows'); setTestResult(null); }} className={inputClass + ' cursor-pointer'}>
                 <option value="sql">SQL Login</option>
-                <option value="windows">Windows Authentication (NTLM)</option>
+                <option value="windows">Windows Authentication</option>
               </select>
               {authType === 'windows' && (
                 <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
-                  Uses NTLM authentication — domain, username, and password are all required.
+                  Uses your current Windows login — no credentials needed.
                 </p>
               )}
             </div>
 
-            {authType === 'windows' && (
-              <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
-                  Domain
-                </label>
-                <input value={domain} onChange={e => { setDomain(e.target.value); setTestResult(null); }} placeholder="MYDOMAIN" className={inputClass} />
-                <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
-                  Required — your Active Directory domain (e.g. CORP). This enables NTLM authentication.
-                </p>
+            {authType === 'sql' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">User Name</label>
+                  <input value={username} onChange={e => { setUsername(e.target.value); setTestResult(null); }} placeholder="sa" className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+                    Password {isEdit && <span className="opacity-60 font-normal">(leave blank to keep)</span>}
+                  </label>
+                  <input type="password" value={password} onChange={e => { setPassword(e.target.value); setTestResult(null); }} placeholder={isEdit ? '••••••••' : '********'} className={inputClass} />
+                </div>
               </div>
             )}
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
-                  {authType === 'windows' ? 'Windows User Name' : 'User Name'}
-                </label>
-                <input value={username} onChange={e => { setUsername(e.target.value); setTestResult(null); }} placeholder={authType === 'windows' ? 'jsmith' : 'sa'} className={inputClass} />
-              </div>
-              <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
-                  Password {isEdit && <span className="opacity-60 font-normal">(leave blank to keep)</span>}
-                </label>
-                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setTestResult(null); }} placeholder={isEdit ? '••••••••' : '********'} className={inputClass} />
-              </div>
-            </div>
 
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">

@@ -12,6 +12,30 @@ export interface ConnectionConfig {
   trustServerCertificate?: boolean;
 }
 
+/**
+ * Get the mssql module — uses msnodesqlv8 native driver for Windows integrated
+ * auth when available (Windows only), otherwise falls back to tedious.
+ */
+function getNativeDriver(): typeof sql | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('mssql/msnodesqlv8');
+  } catch {
+    return null;
+  }
+}
+
+/** Open a connection pool using the best available driver for the auth type. */
+async function openPool(config: sql.config, authType: 'sql' | 'windows'): Promise<sql.ConnectionPool> {
+  if (authType === 'windows') {
+    const native = getNativeDriver();
+    if (native) {
+      return native.connect(config);
+    }
+  }
+  return sql.connect(config);
+}
+
 export interface SchemaColumn {
   table_schema: string;
   table_name: string;
@@ -102,10 +126,16 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
   };
 
   if (config.authType === 'windows') {
-    // NTLM auth — domain is optional, user/password required
-    if (config.domain) poolConfig.domain = config.domain;
-    poolConfig.user = config.username;
-    poolConfig.password = config.password;
+    const native = getNativeDriver();
+    if (native) {
+      // True Windows integrated auth via msnodesqlv8 — no credentials needed
+      poolConfig.options = { ...poolConfig.options, trustedConnection: true };
+    } else {
+      // Fallback: NTLM via tedious — requires explicit credentials
+      if (config.domain) poolConfig.domain = config.domain;
+      poolConfig.user = config.username;
+      poolConfig.password = config.password;
+    }
   } else {
     poolConfig.user = config.username;
     poolConfig.password = config.password;
@@ -117,7 +147,7 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
 export async function testConnection(config: ConnectionConfig): Promise<{ success: boolean; version?: string; error?: string }> {
   let pool: sql.ConnectionPool | null = null;
   try {
-    pool = await sql.connect(buildPoolConfig(config));
+    pool = await openPool(buildPoolConfig(config), config.authType);
     const result = await pool.request().query('SELECT @@VERSION AS version');
     const version = result.recordset[0]?.version?.split('\n')[0] || 'Connected';
     return { success: true, version };
@@ -131,7 +161,7 @@ export async function testConnection(config: ConnectionConfig): Promise<{ succes
 export async function fetchSchema(config: ConnectionConfig): Promise<SchemaTable[]> {
   let pool: sql.ConnectionPool | null = null;
   try {
-    pool = await sql.connect(buildPoolConfig(config));
+    pool = await openPool(buildPoolConfig(config), config.authType);
 
     const result = await pool.request().query(`
       SELECT
@@ -252,7 +282,7 @@ function validateSqlReadOnly(sqlText: string): { valid: boolean; reason?: string
 export async function fetchSampleRows(config: ConnectionConfig, schema: string, tableName: string, limit: number = 3): Promise<Record<string, any>[]> {
   let pool: sql.ConnectionPool | null = null;
   try {
-    pool = await sql.connect(buildPoolConfig(config));
+    pool = await openPool(buildPoolConfig(config), config.authType);
     const safeName = sanitizeIdentifier(tableName);
     const safeSchema = sanitizeIdentifier(schema);
     const result = await pool.request().query(`SELECT TOP ${limit} * FROM [${safeSchema}].[${safeName}]`);
@@ -288,7 +318,7 @@ export async function executeQuery(
   try {
     const poolConfig = buildPoolConfig(config);
     poolConfig.options = { ...poolConfig.options, readOnlyIntent: true };
-    pool = await sql.connect(poolConfig);
+    pool = await openPool(poolConfig, config.authType);
 
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
