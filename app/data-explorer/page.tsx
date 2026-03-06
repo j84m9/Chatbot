@@ -355,8 +355,14 @@ export default function DataExplorer() {
 
   const handleConnectionSave = (conn: any) => {
     setConnections(prev => [conn, ...prev]);
-    if (!activeConnectionId) setActiveConnectionId(conn.id);
-    setShowConnectionModal(false);
+    setActiveConnectionId(conn.id);
+  };
+
+  const handleConnectionDelete = (id: string) => {
+    setConnections(prev => prev.filter(c => c.id !== id));
+    if (activeConnectionId === id) {
+      setActiveConnectionId(connections.find(c => c.id !== id)?.id || null);
+    }
   };
 
   const handleNewQuery = () => {
@@ -1580,6 +1586,10 @@ export default function DataExplorer() {
       {/* Connection modal */}
       {showConnectionModal && (
         <ConnectionManager
+          connections={connections}
+          activeConnectionId={activeConnectionId}
+          onSelect={(id) => { setActiveConnectionId(id); }}
+          onDelete={handleConnectionDelete}
           onSave={handleConnectionSave}
           onClose={() => setShowConnectionModal(false)}
         />
