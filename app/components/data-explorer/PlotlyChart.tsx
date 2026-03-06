@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useMemo, forwardRef, useImperativeHandle, useRef, useCallback } from 'react';
+import { useMemo, forwardRef, useImperativeHandle, useRef, useCallback, useState, useEffect } from 'react';
 
 const Plot = dynamic(
   () =>
@@ -59,6 +59,12 @@ const DATE_PATTERNS = /date|time|created|updated|timestamp|month|year|day|week|q
 
 const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode, annotationMode, onChartClick, hideTitle }, ref) {
   const plotRef = useRef<any>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   const onInitialized = useCallback((_figure: any, graphDiv: HTMLElement) => {
     plotRef.current = graphDiv;
@@ -413,6 +419,8 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       onChartClick(point.x, point.y);
     }
   }, [annotationMode, onChartClick]);
+
+  if (!mounted) return <div className="w-full h-full min-h-[300px]" />;
 
   return (
     <div className={`w-full h-full min-h-[300px] ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : ''}`}>
