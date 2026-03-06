@@ -25,15 +25,17 @@ function getNativeDriver(): typeof sql | null {
   }
 }
 
-/** Open a connection pool using the best available driver for the auth type. */
+/** Open an independent connection pool using the best available driver. */
 async function openPool(config: sql.config, authType: 'sql' | 'windows'): Promise<sql.ConnectionPool> {
   if (authType === 'windows') {
     const native = getNativeDriver();
     if (native) {
-      return native.connect(config);
+      const pool = new native.ConnectionPool(config);
+      return pool.connect();
     }
   }
-  return sql.connect(config);
+  const pool = new sql.ConnectionPool(config);
+  return pool.connect();
 }
 
 export interface SchemaColumn {
