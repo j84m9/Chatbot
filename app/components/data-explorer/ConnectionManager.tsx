@@ -249,12 +249,10 @@ function ConnectionForm({
         encrypt, trustServerCertificate: trustCert,
       };
 
-  const canTest = dbType === 'sqlite'
-    ? !!filePath
-    : (!!server && !!username && (isEdit || !!password));
-  const canSave = dbType === 'sqlite'
-    ? !!filePath
-    : (!!server && !!username && (isEdit || !!password));
+  const hasCreds = !!server && !!username && (isEdit || !!password)
+    && (authType !== 'windows' || !!domain);
+  const canTest = dbType === 'sqlite' ? !!filePath : hasCreds;
+  const canSave = dbType === 'sqlite' ? !!filePath : (hasCreds && testResult?.success);
 
   const handleTest = async () => {
     setTesting(true);
@@ -342,7 +340,7 @@ function ConnectionForm({
           <>
             <div>
               <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Server</label>
-              <input value={server} onChange={e => setServer(e.target.value)} placeholder="localhost" className={inputClass} />
+              <input value={server} onChange={e => { setServer(e.target.value); setTestResult(null); }} placeholder="localhost" className={inputClass} />
               <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
                 e.g. localhost, server\instance, or server,port
               </p>
@@ -352,25 +350,30 @@ function ConnectionForm({
               <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
                 Database <span className="opacity-60 font-normal">(optional)</span>
               </label>
-              <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="Default" className={inputClass} />
+              <input value={database} onChange={e => { setDatabase(e.target.value); setTestResult(null); }} placeholder="Default" className={inputClass} />
             </div>
 
             <div>
               <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication Type</label>
-              <select value={authType} onChange={e => setAuthType(e.target.value as 'sql' | 'windows')} className={inputClass + ' cursor-pointer'}>
+              <select value={authType} onChange={e => { setAuthType(e.target.value as 'sql' | 'windows'); setTestResult(null); }} className={inputClass + ' cursor-pointer'}>
                 <option value="sql">SQL Login</option>
-                <option value="windows">Windows Authentication</option>
+                <option value="windows">Windows Authentication (NTLM)</option>
               </select>
+              {authType === 'windows' && (
+                <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
+                  Uses NTLM authentication — domain, username, and password are all required.
+                </p>
+              )}
             </div>
 
             {authType === 'windows' && (
               <div>
                 <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
-                  Domain <span className="opacity-60 font-normal">(optional)</span>
+                  Domain
                 </label>
-                <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
+                <input value={domain} onChange={e => { setDomain(e.target.value); setTestResult(null); }} placeholder="MYDOMAIN" className={inputClass} />
                 <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
-                  Your Active Directory domain, e.g. CORP
+                  Required — your Active Directory domain (e.g. CORP). This enables NTLM authentication.
                 </p>
               </div>
             )}
@@ -380,23 +383,23 @@ function ConnectionForm({
                 <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
                   {authType === 'windows' ? 'Windows User Name' : 'User Name'}
                 </label>
-                <input value={username} onChange={e => setUsername(e.target.value)} placeholder={authType === 'windows' ? 'jsmith' : 'sa'} className={inputClass} />
+                <input value={username} onChange={e => { setUsername(e.target.value); setTestResult(null); }} placeholder={authType === 'windows' ? 'jsmith' : 'sa'} className={inputClass} />
               </div>
               <div>
                 <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
                   Password {isEdit && <span className="opacity-60 font-normal">(leave blank to keep)</span>}
                 </label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit ? '••••••••' : '********'} className={inputClass} />
+                <input type="password" value={password} onChange={e => { setPassword(e.target.value); setTestResult(null); }} placeholder={isEdit ? '••••••••' : '********'} className={inputClass} />
               </div>
             </div>
 
             <div className="flex gap-6">
               <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="rounded" />
+                <input type="checkbox" checked={encrypt} onChange={e => { setEncrypt(e.target.checked); setTestResult(null); }} className="rounded" />
                 Encrypt
               </label>
               <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
-                <input type="checkbox" checked={trustCert} onChange={e => setTrustCert(e.target.checked)} className="rounded" />
+                <input type="checkbox" checked={trustCert} onChange={e => { setTrustCert(e.target.checked); setTestResult(null); }} className="rounded" />
                 Trust Server Certificate
               </label>
             </div>
@@ -405,15 +408,31 @@ function ConnectionForm({
 
         {/* Test result */}
         {testResult && (
-          <div className={`text-sm px-4 py-3 rounded-lg border ${
+          <div className={`flex items-start gap-3 text-sm px-4 py-3 rounded-lg border ${
             testResult.success
               ? 'bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400 text-emerald-600'
               : 'bg-red-500/10 border-red-500/20 dark:text-red-400 text-red-600'
           }`}>
-            {testResult.success
-              ? `Connected successfully. ${testResult.version || ''}`
-              : `Connection failed: ${testResult.error}`
-            }
+            {testResult.success ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
+                <path fillRule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 flex-shrink-0 mt-0.5">
+                <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+              </svg>
+            )}
+            <div>
+              <p className="font-medium">
+                {testResult.success ? 'Connection Successful' : 'Connection Failed'}
+              </p>
+              <p className="text-xs mt-0.5 opacity-80">
+                {testResult.success
+                  ? (testResult.version || 'Server is reachable and authenticated.')
+                  : testResult.error
+                }
+              </p>
+            </div>
           </div>
         )}
       </div>
