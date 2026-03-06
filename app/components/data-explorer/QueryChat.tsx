@@ -78,6 +78,7 @@ export default function QueryChat({
   const setInput = onInputChange || setInternalInput;
   const endRef = useRef<HTMLDivElement>(null);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [openProviderDropdown, setOpenProviderDropdown] = useState<string | null>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copiedResponseIndex, setCopiedResponseIndex] = useState<number | null>(null);
@@ -490,38 +491,83 @@ export default function QueryChat({
                       </svg>
                     </button>
                     {modelDropdownOpen && (
-                      <div className="absolute bottom-full left-0 mb-1.5 w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-50 animate-slide-up">
-                        <div className="max-h-64 overflow-y-auto py-1">
+                      <div className="absolute bottom-full left-0 mb-1.5 w-64 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-50 animate-slide-up">
+                        <div className="py-1 max-h-80 overflow-y-auto">
                           {Object.entries(modelCatalog).map(([provider, models]) => {
                             const hasKey = provider === 'ollama' || !!savedApiKeys?.[provider];
+                            const isActiveProvider = selectedProvider === provider;
+                            const isOpen = openProviderDropdown === provider;
+                            const activeModel = isActiveProvider ? models.find(m => m.id === selectedModel) : null;
                             return (
                               <div key={provider}>
-                                <div className="px-3 pt-2 pb-1">
-                                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${hasKey ? 'dark:text-gray-400 text-gray-500' : 'dark:text-gray-600 text-gray-400'}`}>
-                                    {providerNames[provider] || provider}
-                                    {!hasKey && <span className="ml-1 normal-case tracking-normal font-normal">· no key</span>}
-                                  </span>
-                                </div>
-                                {models.map((m) => {
-                                  const isActive = selectedProvider === provider && selectedModel === m.id;
-                                  return (
-                                    <button
-                                      key={`${provider}-${m.id}`}
-                                      type="button"
-                                      disabled={!hasKey}
-                                      onClick={() => { onQuickModelSwitch(provider, m.id); setModelDropdownOpen(false); }}
-                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                                        isActive
-                                          ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium cursor-pointer'
-                                          : hasKey
-                                            ? 'dark:text-gray-300 text-gray-700 dark:hover:bg-white/[0.06] hover:bg-gray-50 cursor-pointer'
-                                            : 'dark:text-gray-600 text-gray-350 opacity-40 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      {m.label}
-                                    </button>
-                                  );
-                                })}
+                                <button
+                                  type="button"
+                                  disabled={!hasKey}
+                                  onClick={() => setOpenProviderDropdown(prev => prev === provider ? null : provider)}
+                                  className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors ${
+                                    hasKey ? 'cursor-pointer' : 'cursor-not-allowed'
+                                  } ${
+                                    isActiveProvider
+                                      ? 'dark:bg-indigo-500/8 bg-indigo-50/50'
+                                      : hasKey
+                                        ? 'dark:hover:bg-white/[0.04] hover:bg-gray-50'
+                                        : ''
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`font-medium ${
+                                      hasKey
+                                        ? isActiveProvider
+                                          ? 'dark:text-indigo-300 text-indigo-600'
+                                          : 'dark:text-gray-300 text-gray-700'
+                                        : 'dark:text-gray-600 text-gray-400'
+                                    }`}>
+                                      {providerNames?.[provider] || provider}
+                                    </span>
+                                    {!hasKey && (
+                                      <span className="text-[9px] dark:text-gray-600 text-gray-400 dark:bg-white/[0.06] bg-gray-100 px-1 py-0.5 rounded">no key</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[11px] ${
+                                      isActiveProvider
+                                        ? 'dark:text-indigo-300/70 text-indigo-500'
+                                        : 'dark:text-gray-500 text-gray-400'
+                                    }`}>
+                                      {activeModel ? activeModel.label : hasKey ? 'Select...' : ''}
+                                    </span>
+                                    {hasKey && (
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 dark:text-gray-500 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
+                                        <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                </button>
+                                {isOpen && hasKey && (
+                                  <div className="dark:bg-white/[0.02] bg-gray-50/50">
+                                    {models.map((m) => {
+                                      const isActive = isActiveProvider && selectedModel === m.id;
+                                      return (
+                                        <button
+                                          key={`${provider}-${m.id}`}
+                                          type="button"
+                                          onClick={() => {
+                                            onQuickModelSwitch!(provider, m.id);
+                                            setModelDropdownOpen(false);
+                                            setOpenProviderDropdown(null);
+                                          }}
+                                          className={`w-full text-left pl-6 pr-3 py-1.5 text-xs transition-colors cursor-pointer ${
+                                            isActive
+                                              ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium'
+                                              : 'dark:text-gray-300 text-gray-700 dark:hover:bg-white/[0.06] hover:bg-gray-100'
+                                          }`}
+                                        >
+                                          {m.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
