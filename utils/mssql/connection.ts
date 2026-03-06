@@ -332,7 +332,6 @@ export async function executeQuery(
 
   try {
     const poolConfig = buildPoolConfig(config);
-    poolConfig.options = { ...poolConfig.options, readOnlyIntent: true };
     pool = await openPool(poolConfig, config.authType);
 
     const transaction = new sql.Transaction(pool);
