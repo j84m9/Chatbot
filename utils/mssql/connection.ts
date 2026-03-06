@@ -128,9 +128,21 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
   if (config.authType === 'windows') {
     const native = getNativeDriver();
     if (native) {
-      // True Windows integrated auth via msnodesqlv8 — no credentials needed
-      poolConfig.driver = 'ODBC Driver 17 for SQL Server';
-      poolConfig.options = { ...poolConfig.options, trustedConnection: true };
+      // True Windows integrated auth via msnodesqlv8 — build ODBC connection string
+      const serverPart = parsed.instanceName
+        ? `${parsed.server}\\${parsed.instanceName}`
+        : usePort != null
+          ? `${parsed.server},${usePort}`
+          : parsed.server;
+      const parts = [
+        'Driver={ODBC Driver 17 for SQL Server}',
+        `Server=${serverPart}`,
+        'Trusted_Connection=Yes',
+      ];
+      if (hasDatabase) parts.push(`Database=${config.database}`);
+      if (config.encrypt ?? true) parts.push('Encrypt=Yes');
+      if (config.trustServerCertificate) parts.push('TrustServerCertificate=Yes');
+      (poolConfig as any).connectionString = parts.join(';');
     } else {
       // Fallback: NTLM via tedious — requires explicit credentials
       if (config.domain) poolConfig.domain = config.domain;
