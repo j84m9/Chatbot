@@ -80,9 +80,12 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
 
   const hasDatabase = config.database && config.database !== 'default';
 
+  // When using a named instance, omit port so SQL Browser resolves it dynamically
+  const usePort = parsed.port ?? (parsed.instanceName ? undefined : config.port);
+
   const poolConfig: sql.config = {
     server: parsed.server,
-    port: parsed.port ?? config.port,
+    ...(usePort != null ? { port: usePort } : {}),
     ...(hasDatabase ? { database: config.database } : {}),
     options: {
       encrypt: config.encrypt ?? true,

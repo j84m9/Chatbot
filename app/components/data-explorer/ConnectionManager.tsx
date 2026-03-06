@@ -197,7 +197,7 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
   const [password, setPassword] = useState('');
   const [domain, setDomain] = useState('');
   const [encrypt, setEncrypt] = useState(true);
-  const [trustCert, setTrustCert] = useState(false);
+  const [trustCert, setTrustCert] = useState(true);
   const [filePath, setFilePath] = useState('');
 
   const [testing, setTesting] = useState(false);
