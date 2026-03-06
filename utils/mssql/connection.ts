@@ -99,10 +99,10 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
   };
 
   if (config.authType === 'windows') {
-    // Windows integrated auth — user/password/domain are optional
+    // NTLM auth — domain is optional, user/password required
     if (config.domain) poolConfig.domain = config.domain;
-    if (config.username) poolConfig.user = config.username;
-    if (config.password) poolConfig.password = config.password;
+    poolConfig.user = config.username;
+    poolConfig.password = config.password;
   } else {
     poolConfig.user = config.username;
     poolConfig.password = config.password;

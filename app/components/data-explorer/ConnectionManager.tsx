@@ -15,6 +15,7 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
   const [authType, setAuthType] = useState<'sql' | 'windows'>('sql');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [domain, setDomain] = useState('');
   const [encrypt, setEncrypt] = useState(true);
   const [trustCert, setTrustCert] = useState(false);
   const [filePath, setFilePath] = useState('');
@@ -27,17 +28,17 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
     ? { dbType, name: name || filePath || 'SQLite DB', filePath }
     : {
         dbType, name: name || server || 'Connection', server, database,
-        authType,
-        ...(authType === 'sql' ? { username, password } : {}),
+        authType, username, password,
+        ...(authType === 'windows' ? { domain } : {}),
         encrypt, trustServerCertificate: trustCert,
       };
 
   const canTest = dbType === 'sqlite'
     ? !!filePath
-    : (!!server && (authType === 'windows' || (!!username && !!password)));
+    : (!!server && !!username && !!password);
   const canSave = dbType === 'sqlite'
     ? !!filePath
-    : (!!server && (authType === 'windows' || (!!username && !!password)));
+    : (!!server && !!username && !!password);
 
   const handleTest = async () => {
     setTesting(true);
@@ -141,18 +142,27 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
                 </select>
               </div>
 
-              {authType === 'sql' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">User Name</label>
-                    <input value={username} onChange={e => setUsername(e.target.value)} placeholder="sa" className={inputClass} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
-                  </div>
+              {authType === 'windows' && (
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+                    Domain <span className="opacity-60 font-normal">(optional)</span>
+                  </label>
+                  <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
                 </div>
               )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+                    {authType === 'windows' ? 'Windows User Name' : 'User Name'}
+                  </label>
+                  <input value={username} onChange={e => setUsername(e.target.value)} placeholder={authType === 'windows' ? 'jsmith' : 'sa'} className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
+                </div>
+              </div>
 
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
