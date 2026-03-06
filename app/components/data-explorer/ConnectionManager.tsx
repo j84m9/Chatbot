@@ -8,13 +8,20 @@ interface ConnectionManagerProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onSave: (connection: any) => void;
+  onUpdate: (connection: any) => void;
   onClose: () => void;
 }
 
 export default function ConnectionManager({
-  connections, activeConnectionId, onSelect, onDelete, onSave, onClose,
+  connections, activeConnectionId, onSelect, onDelete, onSave, onUpdate, onClose,
 }: ConnectionManagerProps) {
-  const [mode, setMode] = useState<'list' | 'add'>(connections.length === 0 ? 'add' : 'list');
+  const [mode, setMode] = useState<'list' | 'add' | 'edit'>(connections.length === 0 ? 'add' : 'list');
+  const [editingConnection, setEditingConnection] = useState<any>(null);
+
+  const handleEdit = (conn: any) => {
+    setEditingConnection(conn);
+    setMode('edit');
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-backdrop-in">
@@ -22,12 +29,12 @@ export default function ConnectionManager({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b dark:border-[#2a2b2d] border-gray-200">
           <h2 className="text-lg font-semibold dark:text-gray-100 text-gray-800">
-            {mode === 'list' ? 'Connections' : 'Add Connection'}
+            {mode === 'list' ? 'Connections' : mode === 'edit' ? 'Edit Connection' : 'Add Connection'}
           </h2>
           <div className="flex items-center gap-2">
-            {mode === 'add' && connections.length > 0 && (
+            {(mode === 'add' || mode === 'edit') && connections.length > 0 && (
               <button
-                onClick={() => setMode('list')}
+                onClick={() => { setMode('list'); setEditingConnection(null); }}
                 className="text-xs px-3 py-1.5 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
               >
                 Back
@@ -47,11 +54,14 @@ export default function ConnectionManager({
             activeConnectionId={activeConnectionId}
             onSelect={(id) => { onSelect(id); onClose(); }}
             onDelete={onDelete}
+            onEdit={handleEdit}
             onAdd={() => setMode('add')}
           />
         ) : (
-          <AddConnectionForm
+          <ConnectionForm
+            editingConnection={mode === 'edit' ? editingConnection : null}
             onSave={(conn) => { onSave(conn); setMode('list'); }}
+            onUpdate={(conn) => { onUpdate(conn); setMode('list'); setEditingConnection(null); }}
           />
         )}
       </div>
@@ -62,12 +72,13 @@ export default function ConnectionManager({
 // ─── Connection List ─────────────────────────────────────────────────
 
 function ConnectionList({
-  connections, activeConnectionId, onSelect, onDelete, onAdd,
+  connections, activeConnectionId, onSelect, onDelete, onEdit, onAdd,
 }: {
   connections: any[];
   activeConnectionId: string | null;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (conn: any) => void;
   onAdd: () => void;
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -123,7 +134,7 @@ function ConnectionList({
                       }`}>
                         {c.name}
                       </span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${
                         isSqlite
                           ? 'dark:bg-amber-500/10 bg-amber-50 dark:text-amber-400 text-amber-600'
                           : 'dark:bg-blue-500/10 bg-blue-50 dark:text-blue-400 text-blue-600'
@@ -134,7 +145,7 @@ function ConnectionList({
                     <p className="text-xs dark:text-gray-500 text-gray-400 truncate mt-0.5">{subtitle}</p>
                   </button>
 
-                  {/* Delete */}
+                  {/* Edit + Delete */}
                   {confirmDeleteId === c.id ? (
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
@@ -152,15 +163,27 @@ function ConnectionList({
                       </button>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => setConfirmDeleteId(c.id)}
-                      className="p-1 rounded-md opacity-0 group-hover:opacity-100 dark:text-gray-500 text-gray-400 dark:hover:text-red-400 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer flex-shrink-0"
-                      title="Delete connection"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
-                      </svg>
-                    </button>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button
+                        onClick={() => onEdit(c)}
+                        className="p-1 rounded-md opacity-0 group-hover:opacity-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-200 transition-all cursor-pointer"
+                        title="Edit connection"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
+                          <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(c.id)}
+                        className="p-1 rounded-md opacity-0 group-hover:opacity-100 dark:text-gray-500 text-gray-400 dark:hover:text-red-400 hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
+                        title="Delete connection"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -185,20 +208,33 @@ function ConnectionList({
   );
 }
 
-// ─── Add Connection Form ─────────────────────────────────────────────
+// ─── Connection Form (Add + Edit) ────────────────────────────────────
 
-function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
-  const [dbType, setDbType] = useState<'mssql' | 'sqlite'>('mssql');
-  const [name, setName] = useState('');
-  const [server, setServer] = useState('');
-  const [database, setDatabase] = useState('');
-  const [authType, setAuthType] = useState<'sql' | 'windows'>('sql');
-  const [username, setUsername] = useState('');
+function ConnectionForm({
+  editingConnection,
+  onSave,
+  onUpdate,
+}: {
+  editingConnection: any | null;
+  onSave: (conn: any) => void;
+  onUpdate: (conn: any) => void;
+}) {
+  const isEdit = !!editingConnection;
+  const ec = editingConnection;
+
+  const [dbType, setDbType] = useState<'mssql' | 'sqlite'>(ec?.db_type || 'mssql');
+  const [name, setName] = useState(ec?.name || '');
+  const [server, setServer] = useState(ec?.server || '');
+  const [database, setDatabase] = useState(
+    ec?.database_name && ec.database_name !== 'default' ? ec.database_name : ''
+  );
+  const [authType, setAuthType] = useState<'sql' | 'windows'>(ec?.auth_type || 'sql');
+  const [username, setUsername] = useState(ec?.username || '');
   const [password, setPassword] = useState('');
-  const [domain, setDomain] = useState('');
-  const [encrypt, setEncrypt] = useState(true);
-  const [trustCert, setTrustCert] = useState(true);
-  const [filePath, setFilePath] = useState('');
+  const [domain, setDomain] = useState(ec?.domain || '');
+  const [encrypt, setEncrypt] = useState(ec?.encrypt ?? true);
+  const [trustCert, setTrustCert] = useState(ec?.trust_server_certificate ?? true);
+  const [filePath, setFilePath] = useState(ec?.file_path || '');
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; version?: string; error?: string } | null>(null);
@@ -215,10 +251,10 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
 
   const canTest = dbType === 'sqlite'
     ? !!filePath
-    : (!!server && !!username && !!password);
+    : (!!server && !!username && (isEdit || !!password));
   const canSave = dbType === 'sqlite'
     ? !!filePath
-    : (!!server && !!username && !!password);
+    : (!!server && !!username && (isEdit || !!password));
 
   const handleTest = async () => {
     setTesting(true);
@@ -245,14 +281,26 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/data-explorer/connections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(connectionPayload),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        onSave(data);
+      if (isEdit) {
+        const res = await fetch(`/api/data-explorer/connections?id=${ec.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(connectionPayload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          onUpdate(data);
+        }
+      } else {
+        const res = await fetch('/api/data-explorer/connections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(connectionPayload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          onSave(data);
+        }
       }
     } finally {
       setSaving(false);
@@ -270,6 +318,7 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
             value={dbType}
             onChange={e => { setDbType(e.target.value as 'mssql' | 'sqlite'); setTestResult(null); }}
             className={inputClass + ' cursor-pointer'}
+            disabled={isEdit}
           >
             <option value="mssql">SQL Server (MSSQL)</option>
             <option value="sqlite">SQLite</option>
@@ -320,6 +369,9 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
                   Domain <span className="opacity-60 font-normal">(optional)</span>
                 </label>
                 <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
+                <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
+                  Your Active Directory domain, e.g. CORP
+                </p>
               </div>
             )}
 
@@ -331,8 +383,10 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
                 <input value={username} onChange={e => setUsername(e.target.value)} placeholder={authType === 'windows' ? 'jsmith' : 'sa'} className={inputClass} />
               </div>
               <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+                  Password {isEdit && <span className="opacity-60 font-normal">(leave blank to keep)</span>}
+                </label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isEdit ? '••••••••' : '********'} className={inputClass} />
               </div>
             </div>
 
@@ -378,7 +432,7 @@ function AddConnectionForm({ onSave }: { onSave: (conn: any) => void }) {
           disabled={!canSave || saving}
           className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg disabled:opacity-40 transition-colors cursor-pointer"
         >
-          {saving ? 'Saving...' : 'Save Connection'}
+          {saving ? 'Saving...' : isEdit ? 'Update Connection' : 'Save Connection'}
         </button>
       </div>
     </>

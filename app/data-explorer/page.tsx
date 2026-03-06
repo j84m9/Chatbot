@@ -358,6 +358,10 @@ export default function DataExplorer() {
     setActiveConnectionId(conn.id);
   };
 
+  const handleConnectionUpdate = (conn: any) => {
+    setConnections(prev => prev.map(c => c.id === conn.id ? conn : c));
+  };
+
   const handleConnectionDelete = (id: string) => {
     setConnections(prev => prev.filter(c => c.id !== id));
     if (activeConnectionId === id) {
@@ -1591,6 +1595,7 @@ export default function DataExplorer() {
           onSelect={(id) => { setActiveConnectionId(id); }}
           onDelete={handleConnectionDelete}
           onSave={handleConnectionSave}
+          onUpdate={handleConnectionUpdate}
           onClose={() => setShowConnectionModal(false)}
         />
       )}
