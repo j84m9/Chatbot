@@ -75,6 +75,9 @@ export default function DataExplorer() {
   // Fire explosion easter egg
   const [fireEffect, setFireEffect] = useState(false);
 
+  // Abort controller for cancelling in-flight queries
+  const queryAbortRef = useRef<AbortController | null>(null);
+
   // Draggable split pane
   const [splitPosition, setSplitPosition] = useState(45); // percentage
   const isDragging = useRef(false);
@@ -482,6 +485,9 @@ export default function DataExplorer() {
     setSelectedExchangeIndex(exchanges.length);
     setIsQuerying(true);
 
+    const abortController = new AbortController();
+    queryAbortRef.current = abortController;
+
     try {
       const res = await fetch('/api/data-explorer/query-stream', {
         method: 'POST',
@@ -492,6 +498,7 @@ export default function DataExplorer() {
           sessionId,
           agentId: activeAgent?.id || null,
         }),
+        signal: abortController.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -560,14 +567,23 @@ export default function DataExplorer() {
         }
       }
     } catch (err: any) {
-      setExchanges(prev =>
-        prev.map(ex =>
-          ex.id === exchangeId
-            ? { ...ex, error: err.message || 'Request failed', isLoading: false }
-            : ex
-        )
-      );
+      if (err.name === 'AbortError') {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId ? { ...ex, isLoading: false, statusMessage: undefined } : ex
+          )
+        );
+      } else {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId
+              ? { ...ex, error: err.message || 'Request failed', isLoading: false }
+              : ex
+          )
+        );
+      }
     } finally {
+      queryAbortRef.current = null;
       setIsQuerying(false);
     }
   };
@@ -595,6 +611,9 @@ export default function DataExplorer() {
     setSelectedExchangeIndex(exchanges.length);
     setIsQuerying(true);
 
+    const abortController = new AbortController();
+    queryAbortRef.current = abortController;
+
     try {
       const res = await fetch('/api/data-explorer/agent-query-stream', {
         method: 'POST',
@@ -605,6 +624,7 @@ export default function DataExplorer() {
           sessionId,
           agentId: activeAgent?.id || null,
         }),
+        signal: abortController.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -682,17 +702,30 @@ export default function DataExplorer() {
         }
       }
     } catch (err: any) {
-      setExchanges(prev =>
-        prev.map(ex =>
-          ex.id === exchangeId
-            ? { ...ex, error: err.message || 'Agent request failed', isLoading: false }
-            : ex
-        )
-      );
+      if (err.name === 'AbortError') {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId ? { ...ex, isLoading: false, statusMessage: undefined, insightsLoading: false } : ex
+          )
+        );
+      } else {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId
+              ? { ...ex, error: err.message || 'Agent request failed', isLoading: false }
+              : ex
+          )
+        );
+      }
     } finally {
+      queryAbortRef.current = null;
       setIsQuerying(false);
     }
   };
+
+  const handleStopQuery = useCallback(() => {
+    queryAbortRef.current?.abort();
+  }, []);
 
   // Chart type change handler (local switch, no API call)
   const handleChangeChartType = (chartIndex: number, newType: string) => {
@@ -1455,6 +1488,7 @@ export default function DataExplorer() {
               onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
               onEditQuestion={handleEditQuestion}
               isQuerying={isQuerying}
+              onStop={handleStopQuery}
               hasConnection={!!activeConnectionId}
               refineContext={refineContext}
               onCancelRefine={handleCancelRefine}

@@ -24,6 +24,7 @@ export const MODEL_CATALOG: Record<string, { id: string; label: string; vision?:
   openai: [
     { id: 'gpt-5.4', label: 'GPT-5.4', vision: true },
     { id: 'gpt-5.4-pro', label: 'GPT-5.4 Pro', vision: true },
+    { id: 'gpt-5.3-chat-latest', label: 'GPT-5.3 Instant', vision: true },
     { id: 'gpt-5-mini', label: 'GPT-5 Mini', vision: true },
     { id: 'o4-mini', label: 'o4-mini', vision: false },
     { id: 'gpt-4o', label: 'GPT-4o', vision: true },
