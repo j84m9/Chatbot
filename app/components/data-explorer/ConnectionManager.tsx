@@ -11,12 +11,10 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
   const [dbType, setDbType] = useState<'mssql' | 'sqlite'>('mssql');
   const [name, setName] = useState('');
   const [server, setServer] = useState('');
-  const [port, setPort] = useState('1433');
   const [database, setDatabase] = useState('');
   const [authType, setAuthType] = useState<'sql' | 'windows'>('sql');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [domain, setDomain] = useState('');
   const [encrypt, setEncrypt] = useState(true);
   const [trustCert, setTrustCert] = useState(false);
   const [filePath, setFilePath] = useState('');
@@ -28,13 +26,18 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
   const connectionPayload = dbType === 'sqlite'
     ? { dbType, name, filePath }
     : {
-        dbType, name, server, port: parseInt(port) || 1433, database,
-        authType, username, password, domain,
+        dbType, name, server, database,
+        authType,
+        ...(authType === 'sql' ? { username, password } : {}),
         encrypt, trustServerCertificate: trustCert,
       };
 
-  const canTest = dbType === 'sqlite' ? !!filePath : (!!server && !!database);
-  const canSave = dbType === 'sqlite' ? (!!name && !!filePath) : (!!name && !!server && !!database);
+  const canTest = dbType === 'sqlite'
+    ? !!filePath
+    : (!!server && !!database && (authType === 'windows' || (!!username && !!password)));
+  const canSave = dbType === 'sqlite'
+    ? (!!name && !!filePath)
+    : (!!name && !!server && !!database && (authType === 'windows' || (!!username && !!password)));
 
   const handleTest = async () => {
     setTesting(true);
@@ -113,15 +116,12 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Server Host</label>
-                  <input value={server} onChange={e => setServer(e.target.value)} placeholder="localhost" className={inputClass} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Port</label>
-                  <input value={port} onChange={e => setPort(e.target.value)} placeholder="1433" className={inputClass} />
-                </div>
+              <div>
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Server</label>
+                <input value={server} onChange={e => setServer(e.target.value)} placeholder="localhost" className={inputClass} />
+                <p className="text-xs dark:text-gray-500 text-gray-400 mt-1">
+                  e.g. localhost, server\instance, or server,port
+                </p>
               </div>
 
               <div>
@@ -130,35 +130,30 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
               </div>
 
               <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication</label>
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Authentication Type</label>
                 <select value={authType} onChange={e => setAuthType(e.target.value as 'sql' | 'windows')} className={inputClass + ' cursor-pointer'}>
-                  <option value="sql">SQL Server Authentication</option>
+                  <option value="sql">SQL Login</option>
                   <option value="windows">Windows Authentication</option>
                 </select>
               </div>
 
-              {authType === 'windows' && (
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Domain</label>
-                  <input value={domain} onChange={e => setDomain(e.target.value)} placeholder="MYDOMAIN" className={inputClass} />
+              {authType === 'sql' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">User Name</label>
+                    <input value={username} onChange={e => setUsername(e.target.value)} placeholder="sa" className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
+                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
+                  </div>
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Username</label>
-                  <input value={username} onChange={e => setUsername(e.target.value)} placeholder="sa" className={inputClass} />
-                </div>
-                <div>
-                  <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Password</label>
-                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="********" className={inputClass} />
-                </div>
-              </div>
 
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
                   <input type="checkbox" checked={encrypt} onChange={e => setEncrypt(e.target.checked)} className="rounded" />
-                  Encrypt Connection
+                  Encrypt
                 </label>
                 <label className="flex items-center gap-2 text-sm dark:text-gray-300 text-gray-600 cursor-pointer">
                   <input type="checkbox" checked={trustCert} onChange={e => setTrustCert(e.target.checked)} className="rounded" />

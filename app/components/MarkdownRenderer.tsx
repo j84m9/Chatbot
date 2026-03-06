@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import CodeBlock from './CodeBlock';
 import ChatPlot from './ChatPlot';
+import WeatherCard from './WeatherCard';
 import './markdown.css';
 
 interface MarkdownRendererProps {
@@ -70,6 +71,9 @@ export default function MarkdownRenderer({ content, darkMode }: MarkdownRenderer
               const match = /language-(\w+)/.exec(className || '');
               const codeString = String(codeChildren).replace(/\n$/, '');
 
+              if (match?.[1] === 'weather') {
+                return <WeatherCard jsonString={codeString} />;
+              }
               if (match?.[1] === 'plotly') {
                 return <ChatPlot jsonString={codeString} darkMode={isDark} />;
               }

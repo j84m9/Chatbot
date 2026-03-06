@@ -1,6 +1,6 @@
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { generateText, stepCountIs } from 'ai';
+import { generateText, streamText, stepCountIs } from 'ai';
 import { getModel } from '@/utils/ai/provider';
 import { schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
 import { fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
@@ -17,6 +17,13 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 function sendEvent(controller: ReadableStreamDefaultController, stage: string, data: any) {
   const chunk = `data: ${JSON.stringify({ stage, data })}\n\n`;
   controller.enqueue(new TextEncoder().encode(chunk));
+}
+
+function startHeartbeat(controller: ReadableStreamDefaultController, intervalMs = 5000) {
+  const id = setInterval(() => {
+    try { controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')); } catch { clearInterval(id); }
+  }, intervalMs);
+  return () => clearInterval(id);
 }
 
 export async function POST(req: Request) {
@@ -149,6 +156,7 @@ export async function POST(req: Request) {
 
         let stepCount = 0;
 
+        const stopAgentHeartbeat = startHeartbeat(controller);
         const result = await generateText({
           model,
           system: systemPrompt,
@@ -181,6 +189,8 @@ export async function POST(req: Request) {
           },
         });
 
+        stopAgentHeartbeat();
+
         // 5. Synthesize final insights using enhanced insight prompts
         sendEvent(controller, 'status', { message: 'Synthesizing insights...' });
 
@@ -191,7 +201,8 @@ export async function POST(req: Request) {
 
         let insights: string | null = null;
         try {
-          const insightResult = await generateText({
+          const stopInsightHeartbeat = startHeartbeat(controller);
+          const insightText = await streamText({
             model,
             system: buildEnhancedInsightSystemPrompt(),
             prompt: buildEnhancedInsightUserPrompt(
@@ -202,8 +213,9 @@ export async function POST(req: Request) {
               existingResults.rowCount,
               combinedExplanation,
             ),
-          });
-          insights = insightResult.text.trim() || null;
+          }).text;
+          stopInsightHeartbeat();
+          insights = insightText.trim() || null;
         } catch {
           // Fall back to agent's raw analysis if synthesis fails
           insights = agentAnalysis || null;

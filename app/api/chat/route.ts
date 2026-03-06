@@ -1,7 +1,8 @@
-import { streamText, convertToModelMessages } from 'ai';
+import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { getModel } from '@/utils/ai/provider';
+import { createWeatherTool } from '@/utils/ai/weather-tool';
 
 export async function POST(req: Request) {
   // Grab the session ID and optional agent ID from the URL
@@ -118,7 +119,13 @@ Data chart:
 {"chartType":"bar","title":"Sales","data":{"x":["Q1","Q2","Q3","Q4"],"y":[100,200,150,300]},"xLabel":"Quarter","yLabel":"Revenue"}
 \`\`\`
 
-Supported chartType: "line", "scatter", "bar", "pie". Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow(x,n), Math.PI, Math.E.`;
+Supported chartType: "line", "scatter", "bar", "pie". Math functions: Math.sin, Math.cos, Math.tan, Math.exp, Math.log, Math.sqrt, Math.abs, Math.pow(x,n), Math.PI, Math.E.
+
+WEATHER RULES — when the user asks about weather, temperature, or forecasts:
+- Call the get_weather tool with the location
+- After receiving the tool result, write a brief conversational sentence, then emit the FULL tool result JSON inside a \`\`\`weather code fence
+- Example: "Here's the current weather in Tokyo:" followed by \`\`\`weather {…tool result JSON…} \`\`\`
+- If the tool returns an error, respond with plain text explaining the issue — do NOT emit a weather code fence`;
 
   // Fetch custom system prompt from session, with agent fallback
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
@@ -156,6 +163,8 @@ Supported chartType: "line", "scatter", "bar", "pie". Math functions: Math.sin, 
     model,
     system: systemPrompt,
     messages: await convertToModelMessages(messages),
+    tools: { get_weather: createWeatherTool() },
+    stopWhen: stepCountIs(2),
   });
 
   return result.toUIMessageStreamResponse({

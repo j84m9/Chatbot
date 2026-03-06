@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     insertData.server = body.server;
     insertData.port = body.port || 1433;
     insertData.database_name = body.database;
-    insertData.username = body.username;
+    insertData.username = body.username || null;
     insertData.password_encrypted = passwordEncrypted;
     insertData.domain = body.domain || null;
     insertData.auth_type = body.authType || 'sql';

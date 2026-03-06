@@ -444,7 +444,8 @@ export async function POST(req: Request) {
         if (lastSuccessfulResult && lastSuccessfulResult.rows.length > 0) {
           try {
             sendEvent(controller, 'status', { step: 'insights', message: 'Generating data insights...' });
-            const insightResult = await generateText({
+            const stopInsightHeartbeat = startHeartbeat(controller);
+            const insightText = await streamText({
               model,
               system: buildEnhancedInsightSystemPrompt(),
               prompt: buildEnhancedInsightUserPrompt(
@@ -455,8 +456,9 @@ export async function POST(req: Request) {
                 lastSuccessfulResult.rowCount,
                 finalText || '',
               ),
-            });
-            insights = insightResult.text.trim() || null;
+            }).text;
+            stopInsightHeartbeat();
+            insights = insightText.trim() || null;
           } catch {
             // Insight generation failed — not critical
           }
@@ -600,12 +602,12 @@ async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any)
   if (!messages || messages.length === 0) return;
   const questions = messages.map((m: any) => m.question);
 
-  const titleResult = await generateText({
+  const titleText = await streamText({
     model,
     prompt: buildSessionTitlePrompt(questions),
-  });
+  }).text;
 
-  const title = titleResult.text.trim().replace(/^["']|["']$/g, '');
+  const title = titleText.trim().replace(/^["']|["']$/g, '');
   if (title && title.length > 0 && title.length <= 100) {
     await dbAdmin
       .from('data_explorer_sessions')

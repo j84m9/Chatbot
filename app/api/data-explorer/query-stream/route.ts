@@ -287,14 +287,14 @@ export async function POST(req: Request) {
         sendEvent(controller, 'status', { step: 'analyzing', message: 'Analyzing results...' });
 
         const stopAnalysisHeartbeat = startHeartbeat(controller);
-        const explPromise = streamText({
+        const explPromise = Promise.resolve(streamText({
           model,
           prompt: `In one sentence, explain what this SQL query does:\n${sqlQuery}`,
-        }).text.then(t => t.trim()).catch(() => 'Query executed.');
+        }).text).then(t => t.trim()).catch(() => 'Query executed.');
 
         let chartPromise: Promise<{ chartConfig: any; chartConfigs: any[] | null }> = Promise.resolve({ chartConfig: null, chartConfigs: null });
         if (results.rows.length > 0) {
-          chartPromise = streamText({
+          chartPromise = Promise.resolve(streamText({
             model,
             system: buildMultiChartSuggestionSystemPrompt(),
             prompt: buildChartSuggestionUserPrompt(
@@ -304,7 +304,7 @@ export async function POST(req: Request) {
               results.rows,
               results.rowCount,
             ),
-          }).text.then(text => {
+          }).text).then(text => {
             let chartText = text.trim();
             chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
             const parsed = JSON.parse(chartText);

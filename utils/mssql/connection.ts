@@ -51,14 +51,41 @@ export function sanitizeIdentifier(name: string): string {
   return name.replace(/[^\w\s._-]/g, '');
 }
 
+/**
+ * Parse a server string that may contain an instance name or port.
+ * Formats: "server", "server\\instance", "server,port"
+ */
+function parseServerString(input: string): { server: string; port?: number; instanceName?: string } {
+  // server,port format
+  const commaIdx = input.indexOf(',');
+  if (commaIdx !== -1) {
+    const server = input.slice(0, commaIdx).trim();
+    const port = parseInt(input.slice(commaIdx + 1).trim(), 10);
+    return { server, ...(Number.isFinite(port) ? { port } : {}) };
+  }
+
+  // server\instance format
+  const slashIdx = input.indexOf('\\');
+  if (slashIdx !== -1) {
+    const server = input.slice(0, slashIdx).trim();
+    const instanceName = input.slice(slashIdx + 1).trim();
+    return { server, instanceName };
+  }
+
+  return { server: input.trim() };
+}
+
 export function buildPoolConfig(config: ConnectionConfig): sql.config {
+  const parsed = parseServerString(config.server);
+
   const poolConfig: sql.config = {
-    server: config.server,
-    port: config.port,
+    server: parsed.server,
+    port: parsed.port ?? config.port,
     database: config.database,
     options: {
       encrypt: config.encrypt ?? true,
       trustServerCertificate: config.trustServerCertificate ?? false,
+      ...(parsed.instanceName ? { instanceName: parsed.instanceName } : {}),
     },
     connectionTimeout: 15000,
     requestTimeout: 30000,
@@ -70,9 +97,10 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
   };
 
   if (config.authType === 'windows') {
-    poolConfig.domain = config.domain;
-    poolConfig.user = config.username;
-    poolConfig.password = config.password;
+    // Windows integrated auth — user/password/domain are optional
+    if (config.domain) poolConfig.domain = config.domain;
+    if (config.username) poolConfig.user = config.username;
+    if (config.password) poolConfig.password = config.password;
   } else {
     poolConfig.user = config.username;
     poolConfig.password = config.password;
