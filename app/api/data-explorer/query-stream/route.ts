@@ -1,6 +1,6 @@
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { getModel } from '@/utils/ai/provider';
 import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, SchemaTable, fetchSampleRows as fetchMssqlSampleRows } from '@/utils/mssql/connection';
 import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema, fetchSampleRows as fetchSqliteSampleRows } from '@/utils/sqlite/connection';
@@ -21,6 +21,28 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 function sendEvent(controller: ReadableStreamDefaultController, stage: string, data: any) {
   const chunk = `data: ${JSON.stringify({ stage, data })}\n\n`;
   controller.enqueue(new TextEncoder().encode(chunk));
+}
+
+/** Send SSE comment heartbeats to keep the connection alive during long AI calls. */
+function startHeartbeat(controller: ReadableStreamDefaultController, intervalMs = 5000) {
+  const id = setInterval(() => {
+    try { controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')); } catch { clearInterval(id); }
+  }, intervalMs);
+  return () => clearInterval(id);
+}
+
+/** Run streamText and return the full text, keeping the SSE connection alive via heartbeat. */
+async function streamTextWithHeartbeat(
+  controller: ReadableStreamDefaultController,
+  opts: Parameters<typeof streamText>[0],
+) {
+  const stopHeartbeat = startHeartbeat(controller);
+  try {
+    const result = streamText(opts);
+    return await result.text;
+  } finally {
+    stopHeartbeat();
+  }
 }
 
 export async function POST(req: Request) {
@@ -197,13 +219,13 @@ export async function POST(req: Request) {
         sendEvent(controller, 'status', { step: 'generating_sql', message: 'Generating SQL...' });
 
         const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
-        const sqlResult = await generateText({
+        const sqlText = await streamTextWithHeartbeat(controller, {
           model,
           system: wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext),
           prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
         });
 
-        let sqlQuery = sqlResult.text.trim();
+        let sqlQuery = sqlText.trim();
         sqlQuery = sqlQuery.replace(/^```(?:sql)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
         sendEvent(controller, 'sql', { sql: sqlQuery });
@@ -264,14 +286,15 @@ export async function POST(req: Request) {
         // 7. Generate explanation + charts in parallel
         sendEvent(controller, 'status', { step: 'analyzing', message: 'Analyzing results...' });
 
-        const explPromise = generateText({
+        const stopAnalysisHeartbeat = startHeartbeat(controller);
+        const explPromise = streamText({
           model,
           prompt: `In one sentence, explain what this SQL query does:\n${sqlQuery}`,
-        }).then(r => r.text.trim()).catch(() => 'Query executed.');
+        }).text.then(t => t.trim()).catch(() => 'Query executed.');
 
         let chartPromise: Promise<{ chartConfig: any; chartConfigs: any[] | null }> = Promise.resolve({ chartConfig: null, chartConfigs: null });
         if (results.rows.length > 0) {
-          chartPromise = generateText({
+          chartPromise = streamText({
             model,
             system: buildMultiChartSuggestionSystemPrompt(),
             prompt: buildChartSuggestionUserPrompt(
@@ -281,8 +304,8 @@ export async function POST(req: Request) {
               results.rows,
               results.rowCount,
             ),
-          }).then(r => {
-            let chartText = r.text.trim();
+          }).text.then(text => {
+            let chartText = text.trim();
             chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
             const parsed = JSON.parse(chartText);
             if (Array.isArray(parsed)) {
@@ -293,6 +316,7 @@ export async function POST(req: Request) {
         }
 
         const [explanation, charts] = await Promise.all([explPromise, chartPromise]);
+        stopAnalysisHeartbeat();
 
         sendEvent(controller, 'explanation', { explanation });
         sendEvent(controller, 'charts', { chartConfig: charts.chartConfig, chartConfigs: charts.chartConfigs });
@@ -365,12 +389,12 @@ async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any)
   if (!messages || messages.length === 0) return;
   const questions = messages.map((m: any) => m.question);
 
-  const result = await generateText({
+  const titleText = await streamText({
     model,
     prompt: buildSessionTitlePrompt(questions),
-  });
+  }).text;
 
-  const title = result.text.trim().replace(/^["']|["']$/g, '');
+  const title = titleText.trim().replace(/^["']|["']$/g, '');
   if (title && title.length > 0 && title.length <= 100) {
     await dbAdmin
       .from('data_explorer_sessions')

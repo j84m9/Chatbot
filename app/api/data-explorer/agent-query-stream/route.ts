@@ -1,6 +1,6 @@
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { generateText, stepCountIs } from 'ai';
+import { generateText, streamText, stepCountIs } from 'ai';
 import { getModel } from '@/utils/ai/provider';
 import { schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
 import { fetchSchema as fetchSqliteSchema, executeQuery as executeSqlite } from '@/utils/sqlite/connection';
@@ -24,6 +24,14 @@ const CACHE_TTL_MS = 60 * 60 * 1000;
 function sendEvent(controller: ReadableStreamDefaultController, stage: string, data: any) {
   const chunk = `data: ${JSON.stringify({ stage, data })}\n\n`;
   controller.enqueue(new TextEncoder().encode(chunk));
+}
+
+/** Send SSE comment heartbeats to keep the connection alive during long AI calls. */
+function startHeartbeat(controller: ReadableStreamDefaultController, intervalMs = 5000) {
+  const id = setInterval(() => {
+    try { controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')); } catch { clearInterval(id); }
+  }, intervalMs);
+  return () => clearInterval(id);
 }
 
 export async function POST(req: Request) {
@@ -253,6 +261,7 @@ export async function POST(req: Request) {
         let lastSuccessfulSql: string | null = null;
         const allSuccessfulSqls: string[] = [];
 
+        const stopAgentHeartbeat = startHeartbeat(controller);
         const result = await generateText({
           model,
           system: systemPrompt,
@@ -326,6 +335,8 @@ export async function POST(req: Request) {
           },
         });
 
+        stopAgentHeartbeat();
+
         // 5b. Fallback: if no SQL executed successfully, check if the model
         // wrote a tool call as text (common with smaller models after errors).
         // Extract the SQL and execute it directly.
@@ -398,7 +409,8 @@ export async function POST(req: Request) {
 
         if (lastSuccessfulResult && lastSuccessfulResult.rows.length > 0) {
           try {
-            const chartResult = await generateText({
+            const stopChartHeartbeat = startHeartbeat(controller);
+            const chartText_ = await streamText({
               model,
               system: buildMultiChartSuggestionSystemPrompt(),
               prompt: buildChartSuggestionUserPrompt(
@@ -408,8 +420,9 @@ export async function POST(req: Request) {
                 lastSuccessfulResult.rows,
                 lastSuccessfulResult.rowCount,
               ),
-            });
-            let chartText = chartResult.text.trim();
+            }).text;
+            stopChartHeartbeat();
+            let chartText = chartText_.trim();
             chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
             const parsed = JSON.parse(chartText);
             if (Array.isArray(parsed)) {
