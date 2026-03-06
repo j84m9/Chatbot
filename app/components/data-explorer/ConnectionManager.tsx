@@ -24,9 +24,9 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
   const [saving, setSaving] = useState(false);
 
   const connectionPayload = dbType === 'sqlite'
-    ? { dbType, name, filePath }
+    ? { dbType, name: name || filePath || 'SQLite DB', filePath }
     : {
-        dbType, name, server, database,
+        dbType, name: name || server || 'Connection', server, database,
         authType,
         ...(authType === 'sql' ? { username, password } : {}),
         encrypt, trustServerCertificate: trustCert,
@@ -34,10 +34,10 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
 
   const canTest = dbType === 'sqlite'
     ? !!filePath
-    : (!!server && !!database && (authType === 'windows' || (!!username && !!password)));
+    : (!!server && (authType === 'windows' || (!!username && !!password)));
   const canSave = dbType === 'sqlite'
-    ? (!!name && !!filePath)
-    : (!!name && !!server && !!database && (authType === 'windows' || (!!username && !!password)));
+    ? !!filePath
+    : (!!server && (authType === 'windows' || (!!username && !!password)));
 
   const handleTest = async () => {
     setTesting(true);
@@ -104,8 +104,10 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
           </div>
 
           <div>
-            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Connection Name</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder={dbType === 'sqlite' ? 'Demo DB' : 'My Database'} className={inputClass} />
+            <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+              Connection Name <span className="opacity-60 font-normal">(optional)</span>
+            </label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={dbType === 'sqlite' ? 'Demo DB' : server || 'My Database'} className={inputClass} />
           </div>
 
           {dbType === 'sqlite' ? (
@@ -125,8 +127,10 @@ export default function ConnectionManager({ onSave, onClose }: ConnectionManager
               </div>
 
               <div>
-                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">Database</label>
-                <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="MyDatabase" className={inputClass} />
+                <label className="text-xs font-medium dark:text-gray-400 text-gray-500 mb-1 block">
+                  Database <span className="opacity-60 font-normal">(optional)</span>
+                </label>
+                <input value={database} onChange={e => setDatabase(e.target.value)} placeholder="Default" className={inputClass} />
               </div>
 
               <div>

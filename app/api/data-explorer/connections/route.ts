@@ -64,7 +64,7 @@ export async function POST(req: Request) {
 
   const insertData: Record<string, any> = {
     user_id: user.id,
-    name: body.name,
+    name: body.name || body.server || body.filePath || 'Connection',
     db_type: dbType,
   };
 
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
   } else {
     insertData.server = body.server;
     insertData.port = body.port || 1433;
-    insertData.database_name = body.database;
+    insertData.database_name = body.database || 'default';
     insertData.username = body.username || null;
     insertData.password_encrypted = passwordEncrypted;
     insertData.domain = body.domain || null;

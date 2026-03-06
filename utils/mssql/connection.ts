@@ -78,10 +78,12 @@ function parseServerString(input: string): { server: string; port?: number; inst
 export function buildPoolConfig(config: ConnectionConfig): sql.config {
   const parsed = parseServerString(config.server);
 
+  const hasDatabase = config.database && config.database !== 'default';
+
   const poolConfig: sql.config = {
     server: parsed.server,
     port: parsed.port ?? config.port,
-    database: config.database,
+    ...(hasDatabase ? { database: config.database } : {}),
     options: {
       encrypt: config.encrypt ?? true,
       trustServerCertificate: config.trustServerCertificate ?? false,
