@@ -28,6 +28,7 @@ export default function Chat() {
   const [darkMode, setDarkMode] = useState(true);
   const [lightningStrike, setLightningStrike] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
 
   // Edit & copy message state
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -1435,7 +1436,12 @@ export default function Chat() {
                   <div ref={modelDropdownRef}>
                     <button
                       type="button"
-                      onClick={() => setModelDropdownOpen(prev => !prev)}
+                      onClick={() => {
+                        setModelDropdownOpen(prev => {
+                          if (!prev) setExpandedProviders(new Set([selectedProvider]));
+                          return !prev;
+                        });
+                      }}
                       className="flex items-center gap-1.5 text-[11px] dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer rounded-lg px-2 py-1.5 dark:hover:bg-white/[0.06] hover:bg-gray-100"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -1448,7 +1454,7 @@ export default function Chat() {
                     </button>
                     {modelDropdownOpen && createPortal(
                       <div
-                        className="fixed w-56 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-[9999] animate-slide-up"
+                        className="fixed w-64 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl shadow-black/8 dark:shadow-black/40 ring-1 ring-black/[0.03] dark:ring-white/[0.03] overflow-hidden z-[9999] animate-slide-up"
                         style={{
                           top: (() => {
                             const rect = modelDropdownRef.current?.getBoundingClientRect();
@@ -1461,22 +1467,44 @@ export default function Chat() {
                           transform: 'translateY(-100%)',
                         }}
                         ref={(el) => {
-                          // Keep ref for click-outside detection
                           if (el) (modelDropdownRef as any)._portalEl = el;
                         }}
                       >
-                        <div className="max-h-64 overflow-y-auto py-1">
+                        <div className="max-h-72 overflow-y-auto py-1">
                           {Object.entries(modelCatalog).map(([provider, models]) => {
                             const hasKey = provider === 'ollama' || !!savedApiKeys[provider];
+                            const isExpanded = expandedProviders.has(provider);
+                            const hasActiveModel = selectedProvider === provider;
                             return (
                               <div key={provider}>
-                                <div className="px-3 pt-2 pb-1">
-                                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${hasKey ? 'dark:text-gray-400 text-gray-500' : 'dark:text-gray-600 text-gray-400'}`}>
-                                    {providerNames[provider] || provider}
-                                    {!hasKey && <span className="ml-1 normal-case tracking-normal font-normal">· no key</span>}
-                                  </span>
-                                </div>
-                                {models.map((m) => {
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedProviders(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(provider)) next.delete(provider);
+                                    else next.add(provider);
+                                    return next;
+                                  })}
+                                  className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors cursor-pointer ${
+                                    isExpanded
+                                      ? 'dark:bg-white/[0.04] bg-gray-50'
+                                      : 'dark:hover:bg-white/[0.04] hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-semibold ${hasKey ? (hasActiveModel ? 'dark:text-indigo-300 text-indigo-600' : 'dark:text-gray-300 text-gray-700') : 'dark:text-gray-600 text-gray-400'}`}>
+                                      {providerNames[provider] || provider}
+                                    </span>
+                                    {!hasKey && (
+                                      <span className="text-[10px] dark:text-gray-600 text-gray-400 dark:bg-white/[0.04] bg-gray-100 px-1.5 py-0.5 rounded">no key</span>
+                                    )}
+                                    <span className="text-[10px] dark:text-gray-600 text-gray-400">{models.length}</span>
+                                  </div>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className={`w-3 h-3 dark:text-gray-500 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}>
+                                    <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                                {isExpanded && models.map((m) => {
                                   const isActive = selectedProvider === provider && selectedModel === m.id;
                                   return (
                                     <button
@@ -1484,7 +1512,7 @@ export default function Chat() {
                                       type="button"
                                       disabled={!hasKey}
                                       onClick={() => handleQuickModelSwitch(provider, m.id)}
-                                      className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                                      className={`w-full text-left pl-6 pr-3 py-1.5 text-xs transition-colors ${
                                         isActive
                                           ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium cursor-pointer'
                                           : hasKey
