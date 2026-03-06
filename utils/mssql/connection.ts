@@ -334,29 +334,22 @@ export async function executeQuery(
     const poolConfig = buildPoolConfig(config);
     pool = await openPool(poolConfig, config.authType);
 
-    const transaction = new sql.Transaction(pool);
-    await transaction.begin();
-
     const startTime = Date.now();
-    try {
-      const request = new sql.Request(transaction);
-      const result = await request.query(safeSql);
-      const executionTimeMs = Date.now() - startTime;
+    const request = pool.request();
+    const result = await request.query(safeSql);
+    const executionTimeMs = Date.now() - startTime;
 
-      const rows = result.recordset || [];
-      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+    const rows = result.recordset || [];
+    const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
 
-      const types: Record<string, string> = {};
-      if (result.recordset?.columns) {
-        for (const [colName, colInfo] of Object.entries(result.recordset.columns as Record<string, any>)) {
-          types[colName] = colInfo.type?.declaration || 'unknown';
-        }
+    const types: Record<string, string> = {};
+    if (result.recordset?.columns) {
+      for (const [colName, colInfo] of Object.entries(result.recordset.columns as Record<string, any>)) {
+        types[colName] = colInfo.type?.declaration || 'unknown';
       }
-
-      return { rows, columns, types, rowCount: rows.length, executionTimeMs };
-    } finally {
-      await transaction.rollback();
     }
+
+    return { rows, columns, types, rowCount: rows.length, executionTimeMs };
   } finally {
     if (pool) await pool.close();
   }
