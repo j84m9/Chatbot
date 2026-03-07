@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useRef, useState, useMemo } from 'react';
+import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { ChartConfig } from './PlotlyChart';
 import type { CrossFilter, GlobalFilter, SlicerConfig, DashboardTab } from '@/types/dashboard';
 import DashboardChartCard from './DashboardChartCard';
 import DashboardSlicerCard from './DashboardSlicerCard';
 import FullscreenChartModal from './FullscreenChartModal';
+import DashboardInsightsCard from './DashboardInsightsCard';
 import { applyClientFilters, detectFilterableColumns } from '@/utils/dashboard-filters';
 // CSS imported in globals.css
 type Layout = { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number };
@@ -79,6 +80,16 @@ interface DashboardProps {
   onDeleteTab?: (id: string) => void;
   onRenameTab?: (id: string, title: string) => void;
   onAutoOrganize?: () => void;
+  // New feature props
+  onBuildDashboard?: (request: string) => void;
+  isBuildingDashboard?: boolean;
+  buildProgress?: string;
+  onDetectAnomalies?: () => void;
+  onExportPdf?: () => void;
+  isExportingPdf?: boolean;
+  onAddInsightsCard?: () => void;
+  onRefreshInsights?: (id: string) => void;
+  insightsData?: Map<string, { text: string | null; loading: boolean }>;
 }
 
 export default function Dashboard({
@@ -87,10 +98,24 @@ export default function Dashboard({
   onRefreshChart, onRefreshAll, refreshingCharts, onAutoRefreshChange, onChartTitleChange,
   globalFilters, onGlobalFiltersChange, onApplyAndRefresh,
   onAddSlicer, dashboards, activeDashboardId, onSwitchTab, onCreateTab, onDeleteTab, onRenameTab, onAutoOrganize,
+  onBuildDashboard, isBuildingDashboard, buildProgress,
+  onDetectAnomalies, onExportPdf, isExportingPdf,
+  onAddInsightsCard, onRefreshInsights, insightsData,
 }: DashboardProps) {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+
+  // Animated intro: staggered fade+scale on first render
+  const hasAnimated = useRef(false);
+  useEffect(() => {
+    if (pinnedCharts.length > 0 && !hasAnimated.current) {
+      const timer = setTimeout(() => {
+        hasAnimated.current = true;
+      }, pinnedCharts.length * 80 + 400);
+      return () => clearTimeout(timer);
+    }
+  }, [pinnedCharts.length]);
 
   // Cross-filter state
   const [crossFilter, setCrossFilter] = useState<CrossFilter | null>(null);
@@ -107,6 +132,10 @@ export default function Dashboard({
 
   // Tab "+" menu
   const [showTabMenu, setShowTabMenu] = useState(false);
+
+  // Build Dashboard input
+  const [showBuildInput, setShowBuildInput] = useState(false);
+  const [buildInputValue, setBuildInputValue] = useState('');
 
   // Separate charts and slicers
   const chartItems = useMemo(() => pinnedCharts.filter(p => p.item_type !== 'slicer'), [pinnedCharts]);
@@ -307,6 +336,111 @@ export default function Dashboard({
               </button>
             )}
 
+            {/* Build Dashboard */}
+            {onBuildDashboard && (
+              showBuildInput ? (
+                <div className="flex items-center gap-1">
+                  <input
+                    autoFocus
+                    value={buildInputValue}
+                    onChange={e => setBuildInputValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && buildInputValue.trim()) {
+                        onBuildDashboard(buildInputValue.trim());
+                        setShowBuildInput(false);
+                        setBuildInputValue('');
+                      }
+                      if (e.key === 'Escape') { setShowBuildInput(false); setBuildInputValue(''); }
+                    }}
+                    placeholder="e.g. Build me a sales dashboard..."
+                    className="text-xs dark:bg-[#1e1f20] bg-gray-100 border dark:border-[#2a2b2d] border-gray-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-purple-500 dark:text-gray-200 text-gray-700 w-64 transition-colors"
+                  />
+                  <button
+                    onClick={() => { if (buildInputValue.trim()) { onBuildDashboard(buildInputValue.trim()); setShowBuildInput(false); setBuildInputValue(''); } }}
+                    disabled={!buildInputValue.trim()}
+                    className="px-2.5 py-1.5 text-xs rounded-lg bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-30 cursor-pointer transition-colors"
+                  >
+                    Build
+                  </button>
+                  <button
+                    onClick={() => { setShowBuildInput(false); setBuildInputValue(''); }}
+                    className="px-2 py-1.5 text-xs rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setShowBuildInput(true)}
+                  disabled={isBuildingDashboard}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-purple-500/10 bg-purple-50 border dark:border-purple-500/20 border-purple-200 dark:text-purple-300 text-purple-600 dark:hover:bg-purple-500/20 hover:bg-purple-100 transition-colors cursor-pointer shadow-sm flex-shrink-0 disabled:opacity-50"
+                  title="Build a dashboard using AI"
+                >
+                  {isBuildingDashboard ? (
+                    <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                    </svg>
+                  )}
+                  {isBuildingDashboard ? buildProgress || 'Building...' : 'Build Dashboard'}
+                </button>
+              )
+            )}
+
+            {/* Detect Anomalies */}
+            {onDetectAnomalies && chartItems.length > 0 && (
+              <button
+                onClick={onDetectAnomalies}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                title="Detect statistical anomalies"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+                Anomalies
+              </button>
+            )}
+
+            {/* Export PDF */}
+            {onExportPdf && chartItems.length > 0 && (
+              <button
+                onClick={onExportPdf}
+                disabled={isExportingPdf}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0 disabled:opacity-50"
+                title="Export dashboard as PDF"
+              >
+                {isExportingPdf ? (
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                  </svg>
+                )}
+                {isExportingPdf ? 'Exporting...' : 'Export PDF'}
+              </button>
+            )}
+
+            {/* Add Insights */}
+            {onAddInsightsCard && chartItems.length > 0 && (
+              <button
+                onClick={onAddInsightsCard}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                title="Add AI insights card"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+                </svg>
+                Insights
+              </button>
+            )}
+
             {/* Add Slicer */}
             {onAddSlicer && allFilterableColumns.length > 0 && (
               <div className="relative">
@@ -416,8 +550,8 @@ export default function Dashboard({
         compactType="vertical"
         margin={[16, 16]}
       >
-        {pinnedCharts.map(pin => (
-          <div key={pin.id}>
+        {pinnedCharts.map((pin, i) => (
+          <div key={pin.id} className={!hasAnimated.current ? 'animate-chart-enter' : ''} style={!hasAnimated.current ? { animationDelay: `${i * 80}ms` } : undefined}>
             {pin.item_type === 'slicer' && pin.slicer_config ? (
               <DashboardSlicerCard
                 pin={pin}
@@ -427,6 +561,14 @@ export default function Dashboard({
                 allCharts={chartItems}
                 onFilterChange={handleSlicerFilterChange}
                 onUnpin={onUnpin}
+              />
+            ) : pin.item_type === 'insights' ? (
+              <DashboardInsightsCard
+                insightText={insightsData?.get(pin.id)?.text ?? null}
+                isLoading={insightsData?.get(pin.id)?.loading ?? false}
+                darkMode={darkMode}
+                onRefresh={() => onRefreshInsights?.(pin.id)}
+                onUnpin={() => onUnpin(pin.id)}
               />
             ) : (
               <DashboardChartCard

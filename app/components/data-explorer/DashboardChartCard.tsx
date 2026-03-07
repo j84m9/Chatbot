@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { PinnedChart } from './Dashboard';
 import type { CrossFilter } from '@/types/dashboard';
@@ -70,6 +70,18 @@ export default function DashboardChartCard({
   const [showRefreshMenu, setShowRefreshMenu] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const [justRefreshed, setJustRefreshed] = useState(false);
+  const wasRefreshing = useRef(false);
+
+  // Glow on refresh completion
+  useEffect(() => {
+    if (wasRefreshing.current && !isRefreshing) {
+      setJustRefreshed(true);
+      const timer = setTimeout(() => setJustRefreshed(false), 1500);
+      return () => clearTimeout(timer);
+    }
+    wasRefreshing.current = isRefreshing;
+  }, [isRefreshing]);
 
   const columns = filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (pin.results_snapshot.columns || []);
   const hasAnnotations = pin.chart_config.annotations && pin.chart_config.annotations.length > 0;
@@ -110,7 +122,7 @@ export default function DashboardChartCard({
   return (
     <div className={`group h-full border rounded-xl overflow-hidden flex flex-col ${
       isSourceChart ? 'ring-2 ring-purple-500 dark:border-purple-500/50 border-purple-300' : 'dark:border-[#2a2b2d] border-gray-200'
-    } dark:bg-[#111213] bg-white`}>
+    } dark:bg-[#111213] bg-white ${justRefreshed ? 'animate-refresh-glow' : ''}`}>
       {/* Loading overlay */}
       {isRefreshing && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px] rounded-xl">
@@ -129,6 +141,14 @@ export default function DashboardChartCard({
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-600 text-gray-300 flex-shrink-0">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" />
         </svg>
+
+        {/* Green pulse dot for auto-refresh */}
+        {pin.auto_refresh_interval && pin.auto_refresh_interval > 0 && (
+          <span className="relative flex h-2 w-2 flex-shrink-0" title={`Auto-refreshing every ${pin.auto_refresh_interval}s`}>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+          </span>
+        )}
 
         {/* Editable title */}
         {editingTitle ? (

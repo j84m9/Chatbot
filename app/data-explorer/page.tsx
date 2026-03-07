@@ -10,6 +10,7 @@ import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard
 import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
 import type { GlobalFilter, DashboardTab } from '@/types/dashboard';
 import { applyFiltersToSql } from '@/utils/dashboard-filters';
+import { detectAnomalies, anomaliesToAnnotations } from '@/utils/anomaly-detection';
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 import SqlEditor, { type SqlEditorHandle } from '@/app/components/data-explorer/SqlEditor';
@@ -87,6 +88,12 @@ export default function DataExplorer() {
   const autoRefreshTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const [dashboards, setDashboards] = useState<DashboardTab[]>([]);
   const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null);
+
+  // New feature states
+  const [isBuildingDashboard, setIsBuildingDashboard] = useState(false);
+  const [buildProgress, setBuildProgress] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [insightsData, setInsightsData] = useState<Map<string, { text: string | null; loading: boolean }>>(new Map());
 
   // Query mode: quick (single-shot) vs agent (agentic loop)
   const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
@@ -1754,6 +1761,274 @@ export default function DataExplorer() {
     await fetchDashboards();
   };
 
+  // ═══════════════════════════════════════════════
+  // NEW FEATURE HANDLERS
+  // ═══════════════════════════════════════════════
+
+  // Build Dashboard handler
+  const handleBuildDashboard = async (request: string) => {
+    if (!activeConnectionId) return;
+    setIsBuildingDashboard(true);
+    setBuildProgress('Planning...');
+    setViewMode('dashboard');
+
+    try {
+      const res = await fetch('/api/data-explorer/dashboard-builder-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          request,
+          connectionId: activeConnectionId,
+          dashboardId: activeDashboardId,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error('Dashboard build stream failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { stage, data } = JSON.parse(line.slice(6));
+            switch (stage) {
+              case 'status':
+                setBuildProgress(data.message);
+                break;
+              case 'plan':
+                setBuildProgress(`Building ${data.queries} charts...`);
+                break;
+              case 'chart_added':
+                setBuildProgress(`Chart ${data.index}/${data.total}: ${data.title}`);
+                fetchPinnedCharts();
+                break;
+              case 'slicer_added':
+                fetchPinnedCharts();
+                break;
+              case 'complete':
+                fetchPinnedCharts();
+                break;
+              case 'error':
+                console.error('Dashboard build error:', data.message);
+                break;
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Dashboard build failed:', err);
+    } finally {
+      setIsBuildingDashboard(false);
+      setBuildProgress('');
+    }
+  };
+
+  // Detect Anomalies handler
+  const handleDetectAnomalies = () => {
+    const chartItems = pinnedCharts.filter(p => p.item_type !== 'slicer' && p.item_type !== 'insights');
+
+    for (const pin of chartItems) {
+      const rows = pin.results_snapshot.rows;
+      if (rows.length < 5) continue;
+
+      const xCol = pin.chart_config.xColumn;
+      const yCol = pin.chart_config.yColumn;
+      if (!xCol || !yCol) continue;
+
+      // Check yColumn has numeric data
+      const hasNumeric = rows.some(r => typeof r[yCol] === 'number');
+      if (!hasNumeric) continue;
+
+      const anomalies = detectAnomalies(rows, xCol, yCol, pin.chart_config.chartType);
+      if (anomalies.length === 0) continue;
+
+      const anomalyAnnotations = anomaliesToAnnotations(anomalies);
+      // Remove existing anomaly annotations, keep manual ones
+      const existingAnnotations = (pin.chart_config.annotations || []).filter(
+        (a: any) => !a.isAnomaly
+      );
+      const updatedConfig = {
+        ...pin.chart_config,
+        annotations: [...existingAnnotations, ...anomalyAnnotations],
+        showAnnotations: true,
+      };
+
+      // Optimistic update
+      setPinnedCharts(prev => prev.map(p =>
+        p.id === pin.id ? { ...p, chart_config: updatedConfig } : p
+      ));
+
+      // Persist
+      fetch('/api/data-explorer/pinned-charts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pin.id, chart_config: updatedConfig }),
+      }).catch(err => console.error('Failed to save anomalies:', err));
+    }
+  };
+
+  // Export Dashboard PDF handler
+  const handleExportDashboardPdf = async () => {
+    setIsExportingPdf(true);
+    try {
+      const Plotly = (await import('plotly.js-dist-min')).default;
+      const { exportDashboardPdf } = await import('@/utils/dashboard-export');
+
+      const plotDivs = document.querySelectorAll('.js-plotly-plot');
+      const chartItems = pinnedCharts.filter(p => p.item_type !== 'slicer' && p.item_type !== 'insights');
+      const charts: { title: string; chartImage: string; rowCount?: number; sql?: string | null }[] = [];
+
+      for (let i = 0; i < plotDivs.length && i < chartItems.length; i++) {
+        try {
+          const img = await (Plotly as any).toImage(plotDivs[i], {
+            format: 'png',
+            width: 1000,
+            height: 500,
+            scale: 2,
+          });
+          charts.push({
+            title: chartItems[i].title,
+            chartImage: img,
+            rowCount: chartItems[i].results_snapshot.rows.length,
+            sql: chartItems[i].source_sql,
+          });
+        } catch {
+          // Skip charts that fail to render
+        }
+      }
+
+      if (charts.length > 0) {
+        await exportDashboardPdf({
+          title: dashboardTitle || 'Dashboard',
+          connectionName: connections.find(c => c.id === activeConnectionId)?.name || 'Unknown',
+          charts,
+          date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+        });
+      }
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  // Add Insights Card handler
+  const handleAddInsightsCard = async () => {
+    if (!activeConnectionId) return;
+    try {
+      const res = await fetch('/api/data-explorer/pinned-charts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: activeConnectionId,
+          title: 'AI Insights',
+          item_type: 'insights',
+          chart_config: {},
+          results_snapshot: { rows: [], columns: [] },
+          dashboard_id: activeDashboardId || undefined,
+        }),
+      });
+      if (res.ok) {
+        const card = await res.json();
+        fetchPinnedCharts();
+        // Auto-generate insights on creation
+        handleRefreshInsights(card.id);
+      }
+    } catch (err) {
+      console.error('Failed to add insights card:', err);
+    }
+  };
+
+  // Refresh Insights handler
+  const handleRefreshInsights = async (id: string) => {
+    setInsightsData(prev => new Map(prev).set(id, { text: null, loading: true }));
+
+    const chartItems = pinnedCharts.filter(p => p.item_type !== 'slicer' && p.item_type !== 'insights');
+    if (chartItems.length === 0) {
+      setInsightsData(prev => new Map(prev).set(id, { text: 'No charts to analyze.', loading: false }));
+      return;
+    }
+
+    // Collect summaries from all charts
+    const summaries = chartItems.map(pin => ({
+      title: pin.title,
+      columns: pin.results_snapshot.columns,
+      rowCount: pin.results_snapshot.rows.length,
+      sampleRows: pin.results_snapshot.rows.slice(0, 5),
+    }));
+
+    try {
+      const res = await fetch('/api/data-explorer/insights-agent-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: `Analyze this dashboard with ${chartItems.length} charts and provide cross-chart insights: ${summaries.map(s => s.title).join(', ')}`,
+          connectionId: activeConnectionId,
+          messageId: id,
+          existingResults: {
+            columns: summaries.flatMap(s => s.columns),
+            rows: summaries.flatMap(s => s.sampleRows),
+            types: {},
+            rowCount: summaries.reduce((a, s) => a + s.rowCount, 0),
+          },
+          existingExplanation: `Dashboard contains ${chartItems.length} charts: ${summaries.map(s => `"${s.title}" (${s.rowCount} rows, columns: ${s.columns.join(', ')})`).join('; ')}`,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error('Insights stream failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { stage, data } = JSON.parse(line.slice(6));
+            if (stage === 'insights') {
+              setInsightsData(prev => new Map(prev).set(id, { text: data.insights, loading: false }));
+            } else if (stage === 'complete') {
+              setInsightsData(prev => {
+                const current = prev.get(id);
+                return new Map(prev).set(id, { text: current?.text ?? 'No insights generated.', loading: false });
+              });
+            } else if (stage === 'error') {
+              setInsightsData(prev => new Map(prev).set(id, { text: data.message || 'Failed to generate insights.', loading: false }));
+            }
+          } catch {
+            // Skip malformed
+          }
+        }
+      }
+    } catch {
+      setInsightsData(prev => new Map(prev).set(id, { text: 'Failed to generate insights.', loading: false }));
+    }
+  };
+
   // Fetch dashboard tabs on connection change
   const fetchDashboards = useCallback(async () => {
     if (!activeConnectionId) return;
@@ -2052,6 +2327,15 @@ export default function DataExplorer() {
               onDeleteTab={handleDeleteTab}
               onRenameTab={handleRenameTab}
               onAutoOrganize={handleAutoOrganize}
+              onBuildDashboard={handleBuildDashboard}
+              isBuildingDashboard={isBuildingDashboard}
+              buildProgress={buildProgress}
+              onDetectAnomalies={handleDetectAnomalies}
+              onExportPdf={handleExportDashboardPdf}
+              isExportingPdf={isExportingPdf}
+              onAddInsightsCard={handleAddInsightsCard}
+              onRefreshInsights={handleRefreshInsights}
+              insightsData={insightsData}
             />
           ) : editorMode === 'sql' ? (
           /* SQL mode: vertical split (editor top, results bottom) */

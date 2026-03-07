@@ -506,3 +506,36 @@ ${agentExplanation}
 
 Provide a structured data analysis.`;
 }
+
+export function buildDashboardPlannerPrompt(schemaText: string, dialect: 'tsql' | 'sqlite' = 'tsql'): string {
+  const limitSyntax = dialect === 'sqlite' ? 'LIMIT 1000' : 'TOP 1000';
+  return `You are a dashboard planning expert. Given a database schema and a user request, generate 4-6 diverse analytics queries that together form a comprehensive dashboard.
+
+Output ONLY a valid JSON array (no markdown fences, no explanation). Each element:
+{
+  "title": "Descriptive chart title",
+  "sql": "SELECT query",
+  "chartHint": "bar" | "line" | "pie" | "scatter" | "area" | "gauge" | "grouped_bar" | "stacked_bar"
+}
+
+## Rules
+- Generate diverse query types: at least 1 trend/time-series, 1 breakdown/composition, 1 ranking/top-N, and 1 KPI/aggregate
+- Use ${dialect === 'sqlite' ? 'SQLite' : 'T-SQL'} syntax
+- Only SELECT statements
+- Limit results appropriately (use ${limitSyntax})
+- Use meaningful aliases for computed columns
+- Queries should be self-contained and produce meaningful data for charting
+- If the user asks for a specific domain (e.g. "sales dashboard"), focus all queries on that domain
+- If the request is generic (e.g. "build me a dashboard"), pick the most interesting tables/metrics
+
+## Chart Hint Guidelines
+- Time series data → "line" or "area"
+- Category breakdowns → "bar" or "pie" (pie only if ≤6 categories)
+- Top-N rankings → "bar"
+- Single aggregate values → "gauge"
+- Two numeric columns → "scatter"
+- Category + sub-category → "grouped_bar" or "stacked_bar"
+
+Database Schema:
+${schemaText}`;
+}

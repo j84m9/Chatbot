@@ -16,6 +16,8 @@ export interface ChartAnnotation {
   x: number | string;
   y: number | string;
   text: string;
+  isAnomaly?: boolean;
+  severity?: 'warning' | 'critical';
 }
 
 export interface ChartConfig {
@@ -559,23 +561,27 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
 
     // User annotations
     if (chartConfig.annotations && chartConfig.annotations.length > 0 && chartConfig.showAnnotations !== false) {
-      plotLayout.annotations = chartConfig.annotations.map(a => ({
-        x: a.x,
-        y: a.y,
-        text: a.text,
-        showarrow: true,
-        arrowhead: 2,
-        arrowsize: 1,
-        arrowwidth: 1.5,
-        arrowcolor: '#6366f1',
-        ax: 0,
-        ay: -40,
-        bgcolor: darkMode ? '#1e1f20' : '#ffffff',
-        bordercolor: darkMode ? '#2a2b2d' : '#e5e7eb',
-        borderwidth: 1,
-        borderpad: 4,
-        font: { color: darkMode ? '#d1d5db' : '#374151', size: 11 },
-      }));
+      plotLayout.annotations = chartConfig.annotations.map(a => {
+        const isAnomaly = (a as any).isAnomaly;
+        const severity = (a as any).severity;
+        return {
+          x: a.x,
+          y: a.y,
+          text: a.text,
+          showarrow: true,
+          arrowhead: 2,
+          arrowsize: 1,
+          arrowwidth: isAnomaly ? 2 : 1.5,
+          arrowcolor: isAnomaly ? '#ef4444' : '#6366f1',
+          ax: 0,
+          ay: -40,
+          bgcolor: isAnomaly ? (darkMode ? '#2a1215' : '#fef2f2') : (darkMode ? '#1e1f20' : '#ffffff'),
+          bordercolor: isAnomaly ? '#ef4444' : (darkMode ? '#2a2b2d' : '#e5e7eb'),
+          borderwidth: isAnomaly && severity === 'critical' ? 2 : 1,
+          borderpad: 4,
+          font: { color: isAnomaly ? '#ef4444' : (darkMode ? '#d1d5db' : '#374151'), size: 11 },
+        };
+      });
     }
 
     // Reference line
