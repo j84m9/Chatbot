@@ -236,16 +236,18 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
       </div>
 
       {/* Catalog generation banner */}
-      {isLargeDb && !hasMetadata && !catalogGenerating && (
+      {!hasMetadata && !catalogGenerating && (
         <div className="mx-2 px-2 py-1.5 rounded-md dark:bg-indigo-500/10 bg-indigo-50 border dark:border-indigo-500/20 border-indigo-200">
           <p className="text-[10px] dark:text-indigo-300 text-indigo-600 mb-1">
-            Large database ({tables.length} tables). Generate descriptions for better AI accuracy.
+            {isLargeDb
+              ? `Large database (${tables.length} tables). Generate descriptions for better AI accuracy.`
+              : 'Generate table descriptions for better AI accuracy.'}
           </p>
           <button
             onClick={handleGenerateCatalog}
             className="text-[10px] px-2 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
           >
-            Generate Catalog
+            Generate Descriptions
           </button>
         </div>
       )}

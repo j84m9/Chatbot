@@ -120,6 +120,21 @@ export function searchCatalog(
   });
 }
 
+/**
+ * Build SQL-comment-style description text for injection into full-DDL prompts (small databases).
+ * Returns empty string if no descriptions exist.
+ */
+export function buildDescriptionComments(metadataRows: TableMetadataRow[]): string {
+  const lines: string[] = [];
+  for (const row of metadataRows) {
+    const desc = row.user_description || row.auto_description;
+    if (!desc) continue;
+    lines.push(`-- [${row.table_schema}].[${row.table_name}]: ${desc}`);
+  }
+  if (lines.length === 0) return '';
+  return `## Table Descriptions\n${lines.join('\n')}`;
+}
+
 function formatRowCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;

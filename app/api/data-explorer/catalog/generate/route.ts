@@ -230,8 +230,12 @@ export async function POST(req: Request) {
 
             // Upsert into table_metadata
             for (const desc of descriptions) {
+              // Match by name+schema first, fall back to name-only (LLMs often return
+              // wrong schema values for SQLite where the real schema is "main")
               const table = batch.find(
-                (t) => t.name.toLowerCase() === desc.name.toLowerCase() && t.schema.toLowerCase() === desc.schema.toLowerCase()
+                (t) => t.name.toLowerCase() === desc.name.toLowerCase() && t.schema.toLowerCase() === (desc.schema || '').toLowerCase()
+              ) || batch.find(
+                (t) => t.name.toLowerCase() === desc.name.toLowerCase()
               );
               if (!table) continue;
 

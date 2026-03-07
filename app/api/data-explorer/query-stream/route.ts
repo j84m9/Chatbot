@@ -12,6 +12,7 @@ import {
   wrapWithDomainContext,
 } from '@/utils/ai/data-explorer-prompts';
 import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
+import { buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
 
 // Reuse the schema cache
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
@@ -155,6 +156,20 @@ export async function POST(req: Request) {
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
 
         let schemaText = schemaToPromptText(schema, dialect);
+
+        // 3a-bis. Fetch table descriptions
+        const { data: metadataRows } = await dbAdmin
+          .from('table_metadata')
+          .select('table_schema, table_name, auto_description, user_description')
+          .eq('connection_id', connectionId)
+          .eq('user_id', user.id);
+
+        if (metadataRows && metadataRows.length > 0) {
+          const descBlock = buildDescriptionComments(metadataRows as TableMetadataRow[]);
+          if (descBlock) {
+            schemaText = descBlock + '\n\n' + schemaText;
+          }
+        }
 
         // 3a. Load semantic context for SQLite connections
         let semanticContext: string | null = null;

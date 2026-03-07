@@ -15,7 +15,7 @@ import {
 import { createDataExplorerTools } from '@/utils/ai/data-explorer-tools';
 import { buildAgentSystemPrompt } from '@/utils/ai/data-explorer-agent-prompt';
 import { routeTables } from '@/utils/ai/table-router';
-import { buildCatalog, buildCatalogText, TableMetadataRow } from '@/utils/ai/catalog-builder';
+import { buildCatalog, buildCatalogText, buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
 import { buildFKGraph } from '@/utils/ai/fk-graph';
 import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
 
@@ -194,23 +194,30 @@ export async function POST(req: Request) {
         // 5. Create tools and run agent loop
         sendEvent(controller, 'status', { step: 'agent_thinking', message: 'Agent is thinking...' });
 
+        // Always fetch metadata (descriptions are useful at any DB size)
+        const { data: metadataRows } = await dbAdmin
+          .from('table_metadata')
+          .select('*')
+          .eq('connection_id', connectionId)
+          .eq('user_id', user.id);
+        const metadata: TableMetadataRow[] = metadataRows || [];
+
         const catalogMode = schema.length > 30;
         let catalogText = schemaText;
         let catalog;
         let fkGraph;
 
         if (catalogMode) {
-          // Fetch table metadata for catalog mode
-          const { data: metadataRows } = await dbAdmin
-            .from('table_metadata')
-            .select('*')
-            .eq('connection_id', connectionId)
-            .eq('user_id', user.id);
-
-          const metadata: TableMetadataRow[] = metadataRows || [];
+          // Large DB: use compact catalog + table router + on-demand schema
           catalog = buildCatalog(schema, metadata);
           fkGraph = buildFKGraph(schema);
           catalogText = buildCatalogText(schema, metadata);
+        } else if (metadata.length > 0) {
+          // Small DB with descriptions: prepend description comments to full DDL
+          const descBlock = buildDescriptionComments(metadata);
+          if (descBlock) {
+            catalogText = descBlock + '\n\n' + catalogText;
+          }
         }
 
         const tools = createDataExplorerTools({
