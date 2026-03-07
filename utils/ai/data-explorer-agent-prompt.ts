@@ -89,6 +89,14 @@ After gathering your data, provide a clear answer that includes:
 - Key observations or notable patterns
 - Any caveats (e.g., missing data, assumptions made)
 
+After your answer, ALWAYS suggest 2-4 natural follow-up analyses as a bullet list inside a \`[SUGGESTIONS]\` block. These should be concrete, actionable queries the user might want next. Format:
+
+[SUGGESTIONS]
+- Break down sales by product category
+- Compare this month vs last month
+- Show the top 10 customers by revenue
+[/SUGGESTIONS]
+
 ${schemaSection}`;
 
   if (conversationContext) {
@@ -192,6 +200,14 @@ After gathering your data, provide a clear answer that includes:
 - A direct answer to the question
 - Key observations or notable patterns
 - Any caveats (e.g., missing data, assumptions made)
+
+After your answer, ALWAYS suggest 2-4 natural follow-up analyses as a bullet list inside a \`[SUGGESTIONS]\` block. These should be concrete, actionable queries the user might want next. Format:
+
+[SUGGESTIONS]
+- Break down sales by product category
+- Compare this month vs last month
+- Show the top 10 customers by revenue
+[/SUGGESTIONS]
 
 ## Pre-Selected Table Schema
 ${selectedDDL}

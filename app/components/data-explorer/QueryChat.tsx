@@ -1,9 +1,21 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { ChartConfig } from './PlotlyChart';
 import AgentStepsTimeline, { AgentStepEvent } from './AgentStepsTimeline';
 import MarkdownRenderer from '@/app/components/MarkdownRenderer';
+
+/** Parse [SUGGESTIONS] block from agent explanation text */
+function parseSuggestions(text: string): { cleanText: string; suggestions: string[] } {
+  const match = text.match(/\[SUGGESTIONS\]\s*\n([\s\S]*?)\n?\[\/SUGGESTIONS\]/);
+  if (!match) return { cleanText: text, suggestions: [] };
+  const suggestions = match[1]
+    .split('\n')
+    .map(line => line.replace(/^[-*]\s*/, '').trim())
+    .filter(Boolean);
+  const cleanText = text.replace(/\[SUGGESTIONS\]\s*\n[\s\S]*?\n?\[\/SUGGESTIONS\]/, '').trim();
+  return { cleanText, suggestions };
+}
 
 export interface Exchange {
   id: string;
@@ -101,6 +113,8 @@ export default function QueryChat({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [modelDropdownOpen]);
+
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Record<string, Set<number>>>({});
 
   const currentModelLabel = modelCatalog && selectedProvider && selectedModel
     ? modelCatalog[selectedProvider]?.find(m => m.id === selectedModel)?.label || selectedModel
@@ -368,54 +382,123 @@ export default function QueryChat({
                       {ex.isAgentMode && ex.agentSteps && ex.agentSteps.length > 0 && (
                         <AgentStepsTimeline steps={ex.agentSteps} />
                       )}
-                      <div className="dark:text-gray-300 text-gray-700 leading-relaxed text-sm">
-                        <MarkdownRenderer content={ex.explanation || 'Query executed.'} />
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {ex.isAgentMode && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Agent</span>
-                        )}
-                        {ex.sql && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-medium">SQL</span>
-                        )}
-                        {ex.results && (
+                      {(() => {
+                        const { cleanText, suggestions } = parseSuggestions(ex.explanation || 'Query executed.');
+                        const selected = selectedSuggestions[ex.id] || new Set<number>();
+                        return (
                           <>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">
-                              {ex.results.rowCount.toLocaleString()} rows
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 font-medium">
-                              {ex.results.executionTimeMs}ms
-                            </span>
+                            <div className="dark:text-gray-300 text-gray-700 leading-relaxed text-sm">
+                              <MarkdownRenderer content={cleanText} />
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {ex.isAgentMode && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Agent</span>
+                              )}
+                              {ex.sql && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-medium">SQL</span>
+                              )}
+                              {ex.results && (
+                                <>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">
+                                    {ex.results.rowCount.toLocaleString()} rows
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 font-medium">
+                                    {ex.results.executionTimeMs}ms
+                                  </span>
+                                </>
+                              )}
+                              {(ex.chartConfigs && ex.chartConfigs.length > 0) ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">
+                                  {ex.chartConfigs.length === 1 ? 'Chart' : `${ex.chartConfigs.length} Charts`}
+                                </span>
+                              ) : ex.chartConfig ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Chart</span>
+                              ) : null}
+                              {ex.error && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Error</span>
+                              )}
+                            </div>
+                            {/* Agent follow-up suggestions */}
+                            {suggestions.length > 0 && !ex.isLoading && (
+                              <div className="mt-3 space-y-2">
+                                <p className="text-[11px] font-medium dark:text-gray-500 text-gray-400 uppercase tracking-wider">Follow-up analyses</p>
+                                <div className="flex flex-col gap-1.5">
+                                  {suggestions.map((suggestion, si) => (
+                                    <button
+                                      key={si}
+                                      onClick={() => {
+                                        setSelectedSuggestions(prev => {
+                                          const curr = new Set(prev[ex.id] || []);
+                                          if (curr.has(si)) curr.delete(si); else curr.add(si);
+                                          return { ...prev, [ex.id]: curr };
+                                        });
+                                      }}
+                                      className={`flex items-center gap-2 text-left px-3 py-2 rounded-lg text-xs transition-all cursor-pointer ${
+                                        selected.has(si)
+                                          ? 'dark:bg-indigo-500/15 bg-indigo-50 dark:text-indigo-300 text-indigo-600 dark:border-indigo-500/30 border-indigo-300 border'
+                                          : 'dark:bg-white/[0.03] bg-gray-50 dark:text-gray-400 text-gray-500 dark:border-white/[0.06] border-gray-200 border dark:hover:bg-white/[0.06] hover:bg-gray-100'
+                                      }`}
+                                    >
+                                      <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+                                        selected.has(si)
+                                          ? 'bg-indigo-500 border-indigo-500'
+                                          : 'dark:border-gray-600 border-gray-300'
+                                      }`}>
+                                        {selected.has(si) && (
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-2.5 h-2.5 text-white">
+                                            <path fillRule="evenodd" d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" clipRule="evenodd" />
+                                          </svg>
+                                        )}
+                                      </div>
+                                      {suggestion}
+                                    </button>
+                                  ))}
+                                </div>
+                                {selected.size > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      const items = suggestions.filter((_, si) => selected.has(si));
+                                      const prompt = items.length === 1
+                                        ? items[0]
+                                        : 'Please analyze the following:\n' + items.map(s => `- ${s}`).join('\n');
+                                      onSubmitQuestion(prompt);
+                                      setSelectedSuggestions(prev => {
+                                        const next = { ...prev };
+                                        delete next[ex.id];
+                                        return next;
+                                      });
+                                    }}
+                                    disabled={isQuerying}
+                                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" />
+                                    </svg>
+                                    Run {selected.size} selected
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {ex.isAgentMode && ex.results && !ex.insights && !ex.insightsLoading && onRequestInsights && (
+                              <button
+                                onClick={() => onRequestInsights(i)}
+                                className="mt-1 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium dark:text-indigo-400 text-indigo-600 dark:bg-indigo-500/10 bg-indigo-50 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                                </svg>
+                                Generate deeper insights?
+                              </button>
+                            )}
+                            {ex.insightsLoading && (
+                              <div className="flex items-center gap-2 mt-1 text-xs dark:text-gray-400 text-gray-500">
+                                <div className="w-3 h-3 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                                Generating insights...
+                              </div>
+                            )}
                           </>
-                        )}
-                        {(ex.chartConfigs && ex.chartConfigs.length > 0) ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">
-                            {ex.chartConfigs.length === 1 ? 'Chart' : `${ex.chartConfigs.length} Charts`}
-                          </span>
-                        ) : ex.chartConfig ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Chart</span>
-                        ) : null}
-                        {ex.error && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Error</span>
-                        )}
-                      </div>
-                      {ex.isAgentMode && ex.results && !ex.insights && !ex.insightsLoading && onRequestInsights && (
-                        <button
-                          onClick={() => onRequestInsights(i)}
-                          className="mt-1 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium dark:text-indigo-400 text-indigo-600 dark:bg-indigo-500/10 bg-indigo-50 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                          </svg>
-                          Generate deeper insights?
-                        </button>
-                      )}
-                      {ex.insightsLoading && (
-                        <div className="flex items-center gap-2 mt-1 text-xs dark:text-gray-400 text-gray-500">
-                          <div className="w-3 h-3 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-                          Generating insights...
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
