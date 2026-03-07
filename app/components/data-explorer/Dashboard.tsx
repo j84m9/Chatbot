@@ -270,7 +270,59 @@ export default function Dashboard({
             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
           </svg>
           <p className="text-sm mb-1">No pinned charts yet</p>
-          <p className="text-xs dark:text-gray-600 text-gray-400">Pin charts from query results to build your dashboard</p>
+          <p className="text-xs dark:text-gray-600 text-gray-400 mb-4">Pin charts from query results or let AI build a dashboard for you</p>
+          {onBuildDashboard && (
+            showBuildInput ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={buildInputValue}
+                  onChange={e => setBuildInputValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && buildInputValue.trim()) {
+                      onBuildDashboard(buildInputValue.trim());
+                      setShowBuildInput(false);
+                      setBuildInputValue('');
+                    }
+                    if (e.key === 'Escape') { setShowBuildInput(false); setBuildInputValue(''); }
+                  }}
+                  placeholder="e.g. Build me a sales dashboard..."
+                  className="text-sm dark:bg-[#1e1f20] bg-gray-100 border dark:border-[#2a2b2d] border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-purple-500 dark:text-gray-200 text-gray-700 w-72 transition-colors"
+                />
+                <button
+                  onClick={() => { if (buildInputValue.trim()) { onBuildDashboard(buildInputValue.trim()); setShowBuildInput(false); setBuildInputValue(''); } }}
+                  disabled={!buildInputValue.trim()}
+                  className="px-4 py-2 text-sm rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 disabled:opacity-30 cursor-pointer transition-all shadow-md"
+                >
+                  Build
+                </button>
+                <button
+                  onClick={() => { setShowBuildInput(false); setBuildInputValue(''); }}
+                  className="px-3 py-2 text-sm rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowBuildInput(true)}
+                disabled={isBuildingDashboard}
+                className="flex items-center gap-2 px-5 py-2.5 text-sm rounded-xl bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 transition-all cursor-pointer shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50"
+              >
+                {isBuildingDashboard ? (
+                  <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                  </svg>
+                )}
+                {isBuildingDashboard ? buildProgress || 'Building...' : 'Build Dashboard with AI'}
+              </button>
+            )
+          )}
         </div>
       </div>
     );
@@ -373,7 +425,7 @@ export default function Dashboard({
                 <button
                   onClick={() => setShowBuildInput(true)}
                   disabled={isBuildingDashboard}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-purple-500/10 bg-purple-50 border dark:border-purple-500/20 border-purple-200 dark:text-purple-300 text-purple-600 dark:hover:bg-purple-500/20 hover:bg-purple-100 transition-colors cursor-pointer shadow-sm flex-shrink-0 disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 transition-all cursor-pointer shadow-sm shadow-purple-500/20 hover:shadow-purple-500/30 flex-shrink-0 disabled:opacity-50"
                   title="Build a dashboard using AI"
                 >
                   {isBuildingDashboard ? (
@@ -395,7 +447,7 @@ export default function Dashboard({
             {onDetectAnomalies && chartItems.length > 0 && (
               <button
                 onClick={onDetectAnomalies}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-amber-500/10 bg-amber-50 border dark:border-amber-500/20 border-amber-200 dark:text-amber-300 text-amber-600 dark:hover:bg-amber-500/20 hover:bg-amber-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
                 title="Detect statistical anomalies"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -410,7 +462,7 @@ export default function Dashboard({
               <button
                 onClick={onExportPdf}
                 disabled={isExportingPdf}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-blue-500/10 bg-blue-50 border dark:border-blue-500/20 border-blue-200 dark:text-blue-300 text-blue-600 dark:hover:bg-blue-500/20 hover:bg-blue-100 transition-colors cursor-pointer shadow-sm flex-shrink-0 disabled:opacity-50"
                 title="Export dashboard as PDF"
               >
                 {isExportingPdf ? (
@@ -431,7 +483,7 @@ export default function Dashboard({
             {onAddInsightsCard && chartItems.length > 0 && (
               <button
                 onClick={onAddInsightsCard}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-emerald-500/10 bg-emerald-50 border dark:border-emerald-500/20 border-emerald-200 dark:text-emerald-300 text-emerald-600 dark:hover:bg-emerald-500/20 hover:bg-emerald-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
                 title="Add AI insights card"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -446,7 +498,7 @@ export default function Dashboard({
               <div className="relative">
                 <button
                   onClick={() => setShowSlicerMenu(!showSlicerMenu)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-cyan-500/10 bg-cyan-50 border dark:border-cyan-500/20 border-cyan-200 dark:text-cyan-300 text-cyan-600 dark:hover:bg-cyan-500/20 hover:bg-cyan-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
                   title="Add a slicer filter widget"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
@@ -480,7 +532,7 @@ export default function Dashboard({
             {onRefreshAll && (
               <button
                 onClick={onRefreshAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-teal-500/10 bg-teal-50 border dark:border-teal-500/20 border-teal-200 dark:text-teal-300 text-teal-600 dark:hover:bg-teal-500/20 hover:bg-teal-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
                 title="Refresh all charts"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
