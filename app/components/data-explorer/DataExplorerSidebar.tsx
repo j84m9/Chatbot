@@ -47,6 +47,8 @@ interface DataExplorerSidebarProps {
   onInsertColumn?: (text: string) => void;
   onQueryTable?: (tableName: string) => void;
   dbType?: 'sqlite' | 'mssql';
+  // Add database from server
+  onAddDatabase?: (sourceConnectionId: string, databaseName: string) => void;
 }
 
 export default function DataExplorerSidebar({
@@ -59,11 +61,20 @@ export default function DataExplorerSidebar({
   savedQueries, onRunSavedQuery, onDeleteSavedQuery,
   onInsertColumn,
   onQueryTable, dbType,
+  onAddDatabase,
 }: DataExplorerSidebarProps) {
   const activeConn = connections.find(c => c.id === activeConnectionId);
   const [sessionSearch, setSessionSearch] = useState('');
   const [savedQueriesExpanded, setSavedQueriesExpanded] = useState(true);
   const [schemaExpanded, setSchemaExpanded] = useState(false);
+
+  // Add database popover state
+  const [dbPopoverOpen, setDbPopoverOpen] = useState(false);
+  const [availableDatabases, setAvailableDatabases] = useState<string[]>([]);
+  const [existingDatabases, setExistingDatabases] = useState<string[]>([]);
+  const [loadingDatabases, setLoadingDatabases] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const dbPopoverRef = useRef<HTMLDivElement>(null);
 
   // Group connections by server for two-tier selection
   const serverGroups = useMemo(() => {
@@ -84,6 +95,42 @@ export default function DataExplorerSidebar({
     ? (activeConn.db_type === 'sqlite' ? 'local' : activeConn.server)
     : servers[0] || '';
   const serverConnections = serverGroups[activeServer]?.connections || [];
+
+  // Close popover on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dbPopoverRef.current && !dbPopoverRef.current.contains(e.target as Node)) {
+        setDbPopoverOpen(false);
+      }
+    };
+    if (dbPopoverOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dbPopoverOpen]);
+
+  const handleOpenDbPopover = async () => {
+    if (!activeConnectionId) return;
+    setDbPopoverOpen(true);
+    setLoadingDatabases(true);
+    setDbError(null);
+    setAvailableDatabases([]);
+    setExistingDatabases([]);
+    try {
+      const res = await fetch(`/api/data-explorer/connections/databases?connectionId=${activeConnectionId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDbError(data.error || 'Failed to list databases');
+      } else {
+        setAvailableDatabases(data.databases);
+        setExistingDatabases(data.existingDatabases);
+      }
+    } catch {
+      setDbError('Failed to list databases');
+    } finally {
+      setLoadingDatabases(false);
+    }
+  };
+
+  const isMssqlServer = activeConn?.db_type === 'mssql';
 
   const filteredSessions = sessionSearch.trim()
     ? sessions.filter(s =>
@@ -177,25 +224,89 @@ export default function DataExplorerSidebar({
           {/* Database selector */}
           {serverConnections.length > 0 && (
             <div className="relative">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-              </svg>
-              <select
-                value={activeConnectionId || ''}
-                onChange={(e) => onSelectConnection(e.target.value)}
-                className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-[#2a2b2d] border-gray-200 rounded-lg pl-8 pr-3 py-2 outline-none focus:border-indigo-500/40 transition-colors cursor-pointer appearance-none"
-              >
-                {serverConnections.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.db_type === 'sqlite'
-                      ? c.file_path?.split('/').pop() || c.name
-                      : c.database_name || c.name}
-                  </option>
-                ))}
-              </select>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
-              </svg>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                  </svg>
+                  <select
+                    value={activeConnectionId || ''}
+                    onChange={(e) => onSelectConnection(e.target.value)}
+                    className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-[#2a2b2d] border-gray-200 rounded-lg pl-8 pr-3 py-2 outline-none focus:border-indigo-500/40 transition-colors cursor-pointer appearance-none"
+                  >
+                    {serverConnections.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.db_type === 'sqlite'
+                          ? c.file_path?.split('/').pop() || c.name
+                          : c.database_name || c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+                  </svg>
+                </div>
+                {isMssqlServer && onAddDatabase && (
+                  <button
+                    onClick={handleOpenDbPopover}
+                    className="p-2 rounded-lg dark:hover:bg-[#1e1f20] hover:bg-gray-100 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer flex-shrink-0"
+                    title="Add database from server"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              {/* Add database popover */}
+              {dbPopoverOpen && (
+                <div ref={dbPopoverRef} className="absolute left-0 right-0 top-full mt-1 dark:bg-[#1a1b1c] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <div className="px-3 py-2 border-b dark:border-[#2a2b2d] border-gray-100">
+                    <span className="text-xs font-semibold dark:text-gray-300 text-gray-700">Add Database</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {loadingDatabases && (
+                      <div className="flex items-center justify-center py-4">
+                        <svg className="animate-spin w-4 h-4 dark:text-gray-400 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        <span className="text-xs dark:text-gray-400 text-gray-500 ml-2">Loading databases...</span>
+                      </div>
+                    )}
+                    {dbError && (
+                      <div className="px-3 py-3 text-xs text-red-400">{dbError}</div>
+                    )}
+                    {!loadingDatabases && !dbError && availableDatabases.length === 0 && (
+                      <div className="px-3 py-3 text-xs dark:text-gray-500 text-gray-400 italic">No databases found</div>
+                    )}
+                    {!loadingDatabases && !dbError && availableDatabases.map(db => {
+                      const isExisting = existingDatabases.includes(db);
+                      return (
+                        <button
+                          key={db}
+                          disabled={isExisting}
+                          onClick={() => {
+                            if (activeConnectionId && onAddDatabase) {
+                              onAddDatabase(activeConnectionId, db);
+                              setDbPopoverOpen(false);
+                            }
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors flex items-center justify-between ${
+                            isExisting
+                              ? 'dark:text-gray-600 text-gray-400 cursor-default'
+                              : 'dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer'
+                          }`}
+                        >
+                          <span className="truncate">{db}</span>
+                          {isExisting && <span className="text-xs dark:text-gray-600 text-gray-400 flex-shrink-0 ml-2">Added</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

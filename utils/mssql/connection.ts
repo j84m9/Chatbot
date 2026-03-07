@@ -159,6 +159,22 @@ export function buildPoolConfig(config: ConnectionConfig): sql.config {
   return poolConfig;
 }
 
+export async function listDatabases(config: ConnectionConfig): Promise<{ databases: string[]; error?: string }> {
+  let pool: sql.ConnectionPool | null = null;
+  try {
+    const masterConfig = { ...config, database: 'master' };
+    pool = await openPool(buildPoolConfig(masterConfig), config.authType);
+    const result = await pool.request().query(
+      'SELECT name FROM sys.databases WHERE database_id > 4 ORDER BY name'
+    );
+    return { databases: result.recordset.map((r: any) => r.name) };
+  } catch (err: any) {
+    return { databases: [], error: err.message || 'Failed to list databases' };
+  } finally {
+    if (pool) await pool.close();
+  }
+}
+
 export async function testConnection(config: ConnectionConfig): Promise<{ success: boolean; version?: string; error?: string }> {
   let pool: sql.ConnectionPool | null = null;
   try {

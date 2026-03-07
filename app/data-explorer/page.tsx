@@ -734,6 +734,37 @@ export default function DataExplorer() {
     setEditorMode('sql');
   };
 
+  const handleAddDatabase = async (sourceConnectionId: string, databaseName: string) => {
+    const source = connections.find(c => c.id === sourceConnectionId);
+    if (!source) return;
+    try {
+      const res = await fetch('/api/data-explorer/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceConnectionId,
+          database: databaseName,
+          name: `${source.server} / ${databaseName}`,
+          server: source.server,
+          port: source.port,
+          authType: source.auth_type,
+          username: source.username,
+          domain: source.domain,
+          encrypt: source.encrypt,
+          trustServerCertificate: source.trust_server_certificate,
+          dbType: 'mssql',
+        }),
+      });
+      if (res.ok) {
+        const newConn = await res.json();
+        setConnections(prev => [newConn, ...prev]);
+        setActiveConnectionId(newConn.id);
+      }
+    } catch {
+      // silently fail — user will see the popover didn't close
+    }
+  };
+
   const handleSubmitAgentQuestion = async (question: string) => {
     if (!activeConnectionId) return;
 
@@ -1455,6 +1486,7 @@ export default function DataExplorer() {
         onInsertColumn={handleInsertColumn}
         onQueryTable={handleQueryTable}
         dbType={connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'sqlite' : 'mssql'}
+        onAddDatabase={handleAddDatabase}
       />
 
       {/* Main content: split pane */}

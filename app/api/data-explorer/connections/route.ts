@@ -49,9 +49,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Encryption key not configured' }, { status: 500 });
   }
 
-  // Encrypt password if provided
+  // Encrypt password: copy from source connection or encrypt new one
   let passwordEncrypted: string | null = null;
-  if (body.password && encryptionKey) {
+  if (body.sourceConnectionId) {
+    const { data: source, error: srcError } = await dbAdmin
+      .from('db_connections')
+      .select('password_encrypted')
+      .eq('id', body.sourceConnectionId)
+      .eq('user_id', user.id)
+      .single();
+    if (srcError || !source) {
+      return NextResponse.json({ error: 'Source connection not found' }, { status: 404 });
+    }
+    passwordEncrypted = source.password_encrypted;
+  } else if (body.password && encryptionKey) {
     const { data: encResult, error: encError } = await dbAdmin.rpc('encrypt_text', {
       plain_text: body.password,
       encryption_key: encryptionKey,
