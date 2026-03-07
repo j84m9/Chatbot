@@ -214,7 +214,7 @@ export default function QueryChat({
   return (
     <div className="relative flex flex-col h-full">
       {/* Chat messages */}
-      <div className="flex-1 overflow-y-auto w-full scroll-smooth px-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden w-full scroll-smooth px-4">
         <div className="max-w-3xl mx-auto py-8 pb-44 space-y-6">
           {exchanges.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center mt-28">
