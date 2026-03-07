@@ -2183,9 +2183,10 @@ export default function DataExplorer() {
                 </div>
               )}
               {/* Chat / SQL / Agent toggle */}
-              <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
+              <div className={`flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5 ${viewMode === 'dashboard' ? 'opacity-50 pointer-events-none' : ''}`}>
                 <button
                   onClick={() => { setEditorMode('chat'); setQueryMode('quick'); }}
+                  disabled={viewMode === 'dashboard'}
                   className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'chat' && queryMode === 'quick' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Chat mode — natural language SQL generation"
                 >
@@ -2193,6 +2194,7 @@ export default function DataExplorer() {
                 </button>
                 <button
                   onClick={() => setEditorMode('sql')}
+                  disabled={viewMode === 'dashboard'}
                   className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'sql' ? 'dark:bg-[#2a2b2d] bg-white dark:text-emerald-400 text-emerald-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="SQL mode — write and run raw SQL"
                 >
@@ -2200,6 +2202,7 @@ export default function DataExplorer() {
                 </button>
                 <button
                   onClick={() => { setEditorMode('chat'); setQueryMode('agent'); }}
+                  disabled={viewMode === 'dashboard'}
                   className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'chat' && queryMode === 'agent' ? 'dark:bg-[#2a2b2d] bg-white dark:text-amber-400 text-amber-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Agent mode — multi-step reasoning with self-correction"
                 >
