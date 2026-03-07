@@ -933,14 +933,20 @@ export default function DataExplorer() {
   };
 
   // Insight generation handler
-  const handleRequestInsights = async () => {
-    const exchange = exchanges[selectedExchangeIndex];
+  const handleRequestInsights = async (exchangeIdx?: number) => {
+    const targetIdx = exchangeIdx ?? selectedExchangeIndex;
+    const exchange = exchanges[targetIdx];
     if (!exchange || !activeConnectionId) return;
+
+    // Select the exchange so results panel shows it
+    if (exchangeIdx !== undefined) {
+      setSelectedExchangeIndex(exchangeIdx);
+    }
 
     // Set loading state
     setExchanges(prev =>
       prev.map((ex, i) =>
-        i === selectedExchangeIndex ? { ...ex, insightsLoading: true, insights: null } : ex
+        i === targetIdx ? { ...ex, insightsLoading: true, insights: null } : ex
       )
     );
 
@@ -971,7 +977,7 @@ export default function DataExplorer() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        const exchangeIdx = selectedExchangeIndex;
+        const exchangeIdx = targetIdx;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -1011,7 +1017,7 @@ export default function DataExplorer() {
       } catch {
         setExchanges(prev =>
           prev.map((ex, i) =>
-            i === selectedExchangeIndex
+            i === targetIdx
               ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.', statusMessage: undefined }
               : ex
           )
@@ -1042,7 +1048,7 @@ export default function DataExplorer() {
 
         setExchanges(prev =>
           prev.map((ex, i) =>
-            i === selectedExchangeIndex
+            i === targetIdx
               ? { ...ex, insightsLoading: false, insights: data.insights || data.error || 'No insights available.' }
               : ex
           )
@@ -1050,7 +1056,7 @@ export default function DataExplorer() {
       } catch {
         setExchanges(prev =>
           prev.map((ex, i) =>
-            i === selectedExchangeIndex
+            i === targetIdx
               ? { ...ex, insightsLoading: false, insights: 'Failed to generate insights.' }
               : ex
           )
@@ -1508,6 +1514,7 @@ export default function DataExplorer() {
               fireEffect={fireEffect}
               onTriggerFire={() => { setFireEffect(true); setTimeout(() => setFireEffect(false), 1700); }}
               darkMode={darkMode}
+              onRequestInsights={handleRequestInsights}
               selectedProvider={selectedProvider}
               selectedModel={selectedModel}
               modelCatalog={modelCatalog}

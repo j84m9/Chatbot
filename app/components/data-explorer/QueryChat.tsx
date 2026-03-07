@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type { ChartConfig } from './PlotlyChart';
 import AgentStepsTimeline, { AgentStepEvent } from './AgentStepsTimeline';
+import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 
 export interface Exchange {
   id: string;
@@ -56,6 +57,8 @@ interface QueryChatProps {
   onTriggerFire?: () => void;
   // Dark mode (needed for gradient overlay)
   darkMode?: boolean;
+  // Insights
+  onRequestInsights?: (exchangeIndex: number) => void;
   // Model selector
   selectedProvider?: string;
   selectedModel?: string;
@@ -71,6 +74,7 @@ export default function QueryChat({
   inputValue: controlledInput, onInputChange,
   fireEffect, onTriggerFire,
   darkMode,
+  onRequestInsights,
   selectedProvider, selectedModel, modelCatalog, providerNames, savedApiKeys, onQuickModelSwitch,
 }: QueryChatProps) {
   const [internalInput, setInternalInput] = useState('');
@@ -356,7 +360,9 @@ export default function QueryChat({
                       {ex.isAgentMode && ex.agentSteps && ex.agentSteps.length > 0 && (
                         <AgentStepsTimeline steps={ex.agentSteps} />
                       )}
-                      <p className="dark:text-gray-300 text-gray-700 leading-relaxed">{ex.explanation || 'Query executed.'}</p>
+                      <div className="dark:text-gray-300 text-gray-700 leading-relaxed text-sm">
+                        <MarkdownRenderer content={ex.explanation || 'Query executed.'} />
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {ex.isAgentMode && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 font-medium">Agent</span>
@@ -385,6 +391,23 @@ export default function QueryChat({
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 font-medium">Error</span>
                         )}
                       </div>
+                      {ex.isAgentMode && ex.results && !ex.insights && !ex.insightsLoading && onRequestInsights && (
+                        <button
+                          onClick={() => onRequestInsights(i)}
+                          className="mt-1 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium dark:text-indigo-400 text-indigo-600 dark:bg-indigo-500/10 bg-indigo-50 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                          </svg>
+                          Generate deeper insights?
+                        </button>
+                      )}
+                      {ex.insightsLoading && (
+                        <div className="flex items-center gap-2 mt-1 text-xs dark:text-gray-400 text-gray-500">
+                          <div className="w-3 h-3 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+                          Generating insights...
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
