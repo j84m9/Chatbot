@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import type { PinnedChart } from '@/app/components/data-explorer/Dashboard';
 import DashboardChartCard from '@/app/components/data-explorer/DashboardChartCard';
 import FullscreenChartModal from '@/app/components/data-explorer/FullscreenChartModal';
@@ -11,6 +12,7 @@ export default function DashboardPage() {
   const [dashboardTitle, setDashboardTitle] = useState<string>('Dashboard');
   const [darkMode, setDarkMode] = useState(true);
   const [fullscreenChart, setFullscreenChart] = useState<PinnedChart | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const saved = localStorage.getItem('theme');
@@ -69,8 +71,14 @@ export default function DashboardPage() {
 
   if (pinnedCharts.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen dark:bg-[#0d0d0e] bg-gray-50">
+      <div className="flex flex-col items-center justify-center h-screen dark:bg-[#0d0d0e] bg-gray-50 gap-4">
         <p className="dark:text-gray-500 text-gray-400 text-sm">No dashboard data available.</p>
+        <button
+          onClick={() => router.push('/data-explorer')}
+          className="px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
+        >
+          New Query
+        </button>
       </div>
     );
   }
@@ -90,6 +98,12 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs dark:text-gray-500 text-gray-400">{pinnedCharts.length} chart{pinnedCharts.length !== 1 ? 's' : ''}</span>
+          <button
+            onClick={() => router.push('/data-explorer')}
+            className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 transition-colors cursor-pointer"
+          >
+            New Query
+          </button>
           <button
             onClick={() => window.print()}
             className="px-3 py-1.5 text-xs rounded-lg bg-purple-500/15 text-purple-400 hover:bg-purple-500/25 transition-colors cursor-pointer"
