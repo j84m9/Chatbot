@@ -29,6 +29,8 @@ interface TableMetadata {
 interface SchemaBrowserProps {
   connectionId: string;
   onInsertColumn?: (text: string) => void;
+  onQueryTable?: (tableName: string) => void;
+  dbType?: 'sqlite' | 'mssql';
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -46,7 +48,7 @@ function getTagColor(tag: string): string {
   return TAG_COLORS[lower] || 'bg-indigo-500/20 text-indigo-400';
 }
 
-export default function SchemaBrowser({ connectionId, onInsertColumn }: SchemaBrowserProps) {
+export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTable, dbType }: SchemaBrowserProps) {
   const [tables, setTables] = useState<Table[]>([]);
   const [metadata, setMetadata] = useState<TableMetadata[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,8 +80,10 @@ export default function SchemaBrowser({ connectionId, onInsertColumn }: SchemaBr
         metaMap.set(m.table_name.toLowerCase(), m);
       }
 
-      if (Array.isArray(schemaData)) {
-        setTables(schemaData.map((t: any) => {
+      // API returns { schema: [...], cached } — unwrap if needed
+      const schemaArray = Array.isArray(schemaData) ? schemaData : schemaData?.schema;
+      if (Array.isArray(schemaArray)) {
+        setTables(schemaArray.map((t: any) => {
           const name = t.tableName || t.name;
           const meta = metaMap.get(name.toLowerCase());
           return {
@@ -264,20 +268,33 @@ export default function SchemaBrowser({ connectionId, onInsertColumn }: SchemaBr
       {/* Table list */}
       <div className="space-y-0.5 max-h-[300px] overflow-y-auto">
         {filteredTables.map(table => (
-          <div key={table.name}>
-            <button
-              onClick={() => setExpandedTable(expandedTable === table.name ? null : table.name)}
-              className="flex items-center gap-1.5 w-full px-2 py-1 text-xs rounded-md dark:hover:bg-[#1e1f20] hover:bg-gray-100 transition-colors cursor-pointer"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-2.5 h-2.5 dark:text-gray-500 text-gray-400 transition-transform flex-shrink-0 ${expandedTable === table.name ? 'rotate-90' : ''}`}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-              </svg>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3 text-indigo-400 flex-shrink-0">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 0v1.5c0 .621-.504 1.125-1.125 1.125" />
-              </svg>
-              <span className="dark:text-gray-300 text-gray-600 truncate">{table.name}</span>
-              <span className="text-[10px] dark:text-gray-600 text-gray-400 ml-auto flex-shrink-0">{table.columns.length}</span>
-            </button>
+          <div key={table.name} className="group/row">
+            <div className="flex items-center">
+              <button
+                onClick={() => setExpandedTable(expandedTable === table.name ? null : table.name)}
+                className="flex items-center gap-1.5 flex-1 min-w-0 px-2 py-1 text-xs rounded-md dark:hover:bg-[#1e1f20] hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-2.5 h-2.5 dark:text-gray-500 text-gray-400 transition-transform flex-shrink-0 ${expandedTable === table.name ? 'rotate-90' : ''}`}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3 text-indigo-400 flex-shrink-0">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 0v1.5c0 .621-.504 1.125-1.125 1.125" />
+                </svg>
+                <span className="dark:text-gray-300 text-gray-600 truncate">{table.name}</span>
+                <span className="text-[10px] dark:text-gray-600 text-gray-400 ml-auto flex-shrink-0">{table.columns.length}</span>
+              </button>
+              {onQueryTable && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onQueryTable(table.name); }}
+                  className="opacity-0 group-hover/row:opacity-100 p-1 mr-1 rounded dark:hover:bg-emerald-500/15 hover:bg-emerald-50 dark:text-gray-500 dark:hover:text-emerald-400 text-gray-400 hover:text-emerald-600 transition-all cursor-pointer flex-shrink-0"
+                  title={`Query ${table.name}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                    <path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.344-5.891a1.5 1.5 0 0 0 0-2.538L6.3 2.841Z" />
+                  </svg>
+                </button>
+              )}
+            </div>
 
             {/* Description + tags under table name (when not expanded) */}
             {table.description && expandedTable !== table.name && (

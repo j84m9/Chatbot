@@ -10,6 +10,7 @@ import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard
 import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
+import SqlEditor, { type SqlEditorHandle } from '@/app/components/data-explorer/SqlEditor';
 
 interface RefineContext {
   exchangeIndex: number;
@@ -65,6 +66,11 @@ export default function DataExplorer() {
 
   // Query mode: quick (single-shot) vs agent (agentic loop)
   const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
+
+  // SQL editor mode
+  const [editorMode, setEditorMode] = useState<'chat' | 'sql'>('chat');
+  const [editorSql, setEditorSql] = useState('');
+  const sqlEditorRef = useRef<SqlEditorHandle>(null);
 
   // Agent state
   const [installedAgents, setInstalledAgents] = useState<any[]>([]);
@@ -321,7 +327,11 @@ export default function DataExplorer() {
   };
 
   const handleInsertColumn = (text: string) => {
-    setQueryInput(prev => prev ? prev + ' ' + text : text);
+    if (editorMode === 'sql') {
+      sqlEditorRef.current?.insertText(text);
+    } else {
+      setQueryInput(prev => prev ? prev + ' ' + text : text);
+    }
   };
 
   // Load connections
@@ -591,6 +601,137 @@ export default function DataExplorer() {
       queryAbortRef.current = null;
       setIsQuerying(false);
     }
+  };
+
+  const handleExecuteSql = async (sql: string) => {
+    if (!activeConnectionId) return;
+
+    const exchangeId = crypto.randomUUID();
+    const newExchange: Exchange = {
+      id: exchangeId,
+      question: sql,
+      sql,
+      explanation: null,
+      results: null,
+      chartConfig: null,
+      chartConfigs: null,
+      error: null,
+      isLoading: true,
+      statusMessage: 'Running query...',
+      messageType: 'direct_sql',
+    };
+
+    setExchanges(prev => [...prev, newExchange]);
+    setSelectedExchangeIndex(exchanges.length);
+    setIsQuerying(true);
+
+    const abortController = new AbortController();
+    queryAbortRef.current = abortController;
+
+    try {
+      const res = await fetch('/api/data-explorer/execute-sql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sql,
+          connectionId: activeConnectionId,
+          sessionId,
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error('Stream request failed');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const { stage, data } = JSON.parse(line.slice(6));
+
+            setExchanges(prev =>
+              prev.map(ex => {
+                if (ex.id !== exchangeId) return ex;
+                switch (stage) {
+                  case 'status':
+                    return { ...ex, statusMessage: data.message };
+                  case 'sql':
+                    return { ...ex, sql: data.sql };
+                  case 'results':
+                    return { ...ex, results: data.results };
+                  case 'charts':
+                    return {
+                      ...ex,
+                      chartConfig: data.chartConfig,
+                      chartConfigs: data.chartConfigs,
+                    };
+                  case 'error':
+                    return {
+                      ...ex,
+                      error: data.message,
+                      sql: data.sql || ex.sql,
+                      isLoading: false,
+                    };
+                  case 'complete':
+                    if (data.sessionId && !sessionId) {
+                      setSessionId(data.sessionId);
+                      fetchSessions();
+                    } else if (data.sessionId) {
+                      fetchSessions();
+                    }
+                    return { ...ex, isLoading: false, statusMessage: undefined };
+                  default:
+                    return ex;
+                }
+              })
+            );
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId ? { ...ex, isLoading: false, statusMessage: undefined } : ex
+          )
+        );
+      } else {
+        setExchanges(prev =>
+          prev.map(ex =>
+            ex.id === exchangeId
+              ? { ...ex, error: err.message || 'Request failed', isLoading: false }
+              : ex
+          )
+        );
+      }
+    } finally {
+      queryAbortRef.current = null;
+      setIsQuerying(false);
+    }
+  };
+
+  const handleQueryTable = (tableName: string) => {
+    const conn = connections.find(c => c.id === activeConnectionId);
+    const isSqlite = conn?.db_type === 'sqlite';
+    const sql = isSqlite
+      ? `SELECT * FROM "${tableName}" LIMIT 1000;`
+      : `SELECT TOP 1000 * FROM [${tableName}];`;
+    setEditorSql(sql);
+    setEditorMode('sql');
   };
 
   const handleSubmitAgentQuestion = async (question: string) => {
@@ -1312,6 +1453,8 @@ export default function DataExplorer() {
         onRunSavedQuery={handleRunSavedQuery}
         onDeleteSavedQuery={handleDeleteSavedQuery}
         onInsertColumn={handleInsertColumn}
+        onQueryTable={handleQueryTable}
+        dbType={connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'sqlite' : 'mssql'}
       />
 
       {/* Main content: split pane */}
@@ -1343,18 +1486,25 @@ export default function DataExplorer() {
                   <span>{connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'SQLite' : 'MSSQL'}</span>
                 </div>
               )}
-              {/* Quick / Agent toggle */}
+              {/* Chat / SQL / Agent toggle */}
               <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
                 <button
-                  onClick={() => setQueryMode('quick')}
-                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${queryMode === 'quick' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
-                  title="Quick mode — single-shot SQL generation"
+                  onClick={() => { setEditorMode('chat'); setQueryMode('quick'); }}
+                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'chat' && queryMode === 'quick' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="Chat mode — natural language SQL generation"
                 >
-                  Quick
+                  Chat
                 </button>
                 <button
-                  onClick={() => setQueryMode('agent')}
-                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${queryMode === 'agent' ? 'dark:bg-[#2a2b2d] bg-white dark:text-amber-400 text-amber-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  onClick={() => setEditorMode('sql')}
+                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'sql' ? 'dark:bg-[#2a2b2d] bg-white dark:text-emerald-400 text-emerald-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
+                  title="SQL mode — write and run raw SQL"
+                >
+                  SQL
+                </button>
+                <button
+                  onClick={() => { setEditorMode('chat'); setQueryMode('agent'); }}
+                  className={`px-2 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${editorMode === 'chat' && queryMode === 'agent' ? 'dark:bg-[#2a2b2d] bg-white dark:text-amber-400 text-amber-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Agent mode — multi-step reasoning with self-correction"
                 >
                   Agent
@@ -1487,36 +1637,48 @@ export default function DataExplorer() {
             />
           ) : (
           <>
-          {/* Left pane: Query Chat */}
+          {/* Left pane: SQL Editor or Query Chat */}
           <div
             className="flex flex-col transition-[width] duration-300"
             style={{ width: showResults ? `${splitPosition}%` : '100%' }}
           >
-            <QueryChat
-              exchanges={exchanges}
-              selectedIndex={selectedExchangeIndex}
-              onSelectExchange={setSelectedExchangeIndex}
-              onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
-              onEditQuestion={handleEditQuestion}
-              isQuerying={isQuerying}
-              onStop={handleStopQuery}
-              hasConnection={!!activeConnectionId}
-              refineContext={refineContext}
-              onCancelRefine={handleCancelRefine}
-              onRefineSubmit={handleRefineSubmit}
-              inputValue={queryInput}
-              onInputChange={setQueryInput}
-              fireEffect={fireEffect}
-              onTriggerFire={() => { setFireEffect(true); setTimeout(() => setFireEffect(false), 1700); }}
-              darkMode={darkMode}
-              onRequestInsights={handleRequestInsights}
-              selectedProvider={selectedProvider}
-              selectedModel={selectedModel}
-              modelCatalog={modelCatalog}
-              providerNames={providerNames}
-              savedApiKeys={savedApiKeys}
-              onQuickModelSwitch={handleQuickModelSwitch}
-            />
+            {editorMode === 'sql' ? (
+              <SqlEditor
+                ref={sqlEditorRef}
+                initialSql={editorSql}
+                onExecute={handleExecuteSql}
+                isExecuting={isQuerying}
+                darkMode={darkMode}
+                dbType={connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'sqlite' : 'mssql'}
+              />
+            ) : (
+              <QueryChat
+                exchanges={exchanges}
+                selectedIndex={selectedExchangeIndex}
+                onSelectExchange={setSelectedExchangeIndex}
+                onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
+                onEditQuestion={handleEditQuestion}
+                isQuerying={isQuerying}
+                onStop={handleStopQuery}
+                hasConnection={!!activeConnectionId}
+                refineContext={refineContext}
+                onCancelRefine={handleCancelRefine}
+                onRefineSubmit={handleRefineSubmit}
+                inputValue={queryInput}
+                onInputChange={setQueryInput}
+                fireEffect={fireEffect}
+                onTriggerFire={() => { setFireEffect(true); setTimeout(() => setFireEffect(false), 1700); }}
+                darkMode={darkMode}
+                onRequestInsights={handleRequestInsights}
+                selectedProvider={selectedProvider}
+                selectedModel={selectedModel}
+                modelCatalog={modelCatalog}
+                providerNames={providerNames}
+                savedApiKeys={savedApiKeys}
+                onQuickModelSwitch={handleQuickModelSwitch}
+                queryMode={queryMode}
+              />
+            )}
           </div>
 
           {showResults && (

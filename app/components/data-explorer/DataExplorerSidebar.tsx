@@ -45,6 +45,8 @@ interface DataExplorerSidebarProps {
   onDeleteSavedQuery?: (id: string) => void;
   // Schema browser
   onInsertColumn?: (text: string) => void;
+  onQueryTable?: (tableName: string) => void;
+  dbType?: 'sqlite' | 'mssql';
 }
 
 export default function DataExplorerSidebar({
@@ -56,6 +58,7 @@ export default function DataExplorerSidebar({
   savedApiKeys, onProviderChange, onModelChange, onSaveApiKey,
   savedQueries, onRunSavedQuery, onDeleteSavedQuery,
   onInsertColumn,
+  onQueryTable, dbType,
 }: DataExplorerSidebarProps) {
   const activeConn = connections.find(c => c.id === activeConnectionId);
   const [sessionSearch, setSessionSearch] = useState('');
@@ -177,6 +180,8 @@ export default function DataExplorerSidebar({
                 <SchemaBrowser
                   connectionId={activeConnectionId}
                   onInsertColumn={onInsertColumn}
+                  onQueryTable={onQueryTable}
+                  dbType={dbType}
                 />
               </div>
             )}

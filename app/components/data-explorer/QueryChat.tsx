@@ -66,6 +66,7 @@ interface QueryChatProps {
   providerNames?: Record<string, string>;
   savedApiKeys?: Record<string, string | null>;
   onQuickModelSwitch?: (provider: string, model: string) => void;
+  queryMode?: 'quick' | 'agent';
 }
 
 export default function QueryChat({
@@ -76,6 +77,7 @@ export default function QueryChat({
   darkMode,
   onRequestInsights,
   selectedProvider, selectedModel, modelCatalog, providerNames, savedApiKeys, onQuickModelSwitch,
+  queryMode = 'quick',
 }: QueryChatProps) {
   const [internalInput, setInternalInput] = useState('');
   const input = controlledInput !== undefined ? controlledInput : internalInput;
@@ -206,8 +208,14 @@ export default function QueryChat({
                   </>
                 )}
               </button>
-              <h3 className="text-3xl font-semibold dark:text-gray-100 text-gray-800 tracking-tight">Ask your database</h3>
-              <p className="dark:text-gray-500 text-gray-400 mt-3 text-sm max-w-sm leading-relaxed">Type a question in plain English and get SQL, results, and charts instantly.</p>
+              <h3 className="text-3xl font-semibold dark:text-gray-100 text-gray-800 tracking-tight">
+                {queryMode === 'agent' ? 'Agent Mode' : 'Ask your database'}
+              </h3>
+              <p className="dark:text-gray-500 text-gray-400 mt-3 text-sm max-w-sm leading-relaxed">
+                {queryMode === 'agent'
+                  ? 'Multi-step reasoning with self-correction. The agent will explore your schema, write SQL, and fix errors autonomously.'
+                  : 'Type a question in plain English and get SQL, results, and charts instantly.'}
+              </p>
 
               {hasConnection && (
                 <div className="flex flex-wrap justify-center gap-2 mt-8 max-w-lg">
@@ -464,7 +472,7 @@ export default function QueryChat({
               )}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="dark:bg-[#161718] bg-white rounded-2xl border dark:border-white/[0.08] border-gray-200 shadow-xl dark:shadow-black/30 shadow-gray-300/40 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all duration-300">
+          <form onSubmit={handleSubmit} className={`dark:bg-[#161718] bg-white rounded-2xl border shadow-xl transition-all duration-300 ${queryMode === 'agent' ? 'dark:border-amber-500/20 border-amber-300/40 dark:shadow-amber-900/10 shadow-amber-200/30 focus-within:border-amber-500/40 focus-within:ring-2 focus-within:ring-amber-500/10' : 'dark:border-white/[0.08] border-gray-200 dark:shadow-black/30 shadow-gray-300/40 focus-within:border-indigo-500/40 focus-within:ring-2 focus-within:ring-indigo-500/10'}`}>
             {/* Textarea row */}
             <textarea
               className="w-full pt-4 pb-2 px-4 outline-none dark:text-gray-100 text-gray-800 bg-transparent dark:placeholder-gray-500 placeholder-gray-400 text-[15px] resize-none max-h-40 overflow-y-auto"
@@ -475,9 +483,11 @@ export default function QueryChat({
                   ? refineContext.type === 'chart'
                     ? 'Describe how to change the chart (e.g., "make it a pie chart")...'
                     : 'Describe how to modify the SQL (e.g., "add WHERE salary > 50000")...'
-                  : hasConnection
-                    ? 'Ask a question about your data...'
-                    : 'Add a connection first...'
+                  : !hasConnection
+                    ? 'Add a connection first...'
+                    : queryMode === 'agent'
+                      ? 'Ask a complex question — the agent will reason step by step...'
+                      : 'Ask a question about your data...'
               }
               onChange={e => {
                 setInput(e.target.value);
@@ -600,7 +610,12 @@ export default function QueryChat({
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1.5">
+                {queryMode === 'agent' && (
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/15 dark:text-amber-400 text-amber-600 border dark:border-amber-500/20 border-amber-300/30">
+                    Agent
+                  </span>
+                )}
                 {isQuerying ? (
                   <button
                     type="button"
