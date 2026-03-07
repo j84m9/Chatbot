@@ -26,6 +26,7 @@ interface DataExplorerSidebarProps {
   onSelectSession: (id: string) => void;
   onNewQuery: () => void;
   onDeleteSession: (id: string) => void;
+  onRenameSession?: (id: string, newTitle: string) => void;
   userProfile: any;
   onLogout: () => void;
   darkMode: boolean;
@@ -54,7 +55,7 @@ interface DataExplorerSidebarProps {
 export default function DataExplorerSidebar({
   collapsed, onToggleCollapse, connections, activeConnectionId,
   onSelectConnection, onManageConnections, sessions, activeSessionId,
-  onSelectSession, onNewQuery, onDeleteSession, userProfile, onLogout,
+  onSelectSession, onNewQuery, onDeleteSession, onRenameSession, userProfile, onLogout,
   darkMode, onToggleDarkMode,
   selectedProvider, selectedModel, modelCatalog, providerNames,
   savedApiKeys, onProviderChange, onModelChange, onSaveApiKey,
@@ -68,6 +69,8 @@ export default function DataExplorerSidebar({
   const [savedQueriesExpanded, setSavedQueriesExpanded] = useState(true);
   const [schemaExpanded, setSchemaExpanded] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Add database popover state
   const [dbPopoverOpen, setDbPopoverOpen] = useState(false);
@@ -426,25 +429,76 @@ export default function DataExplorerSidebar({
                 ) : (
                   filteredSessions.map(session => (
                     <div key={session.id} className="relative group">
-                      <button
-                        onClick={() => onSelectSession(session.id)}
-                        className={`w-full text-left px-3 py-2.5 pr-8 rounded-lg text-sm truncate transition-colors cursor-pointer ${
-                          activeSessionId === session.id
-                            ? 'dark:bg-indigo-500/[0.08] bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium border-l-2 border-indigo-500 dark:border-indigo-400'
-                            : 'dark:hover:bg-white/[0.04] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
-                        }`}
-                      >
-                        {session.ai_title || session.title}
-                      </button>
-                      <button
-                        onClick={() => onDeleteSession(session.id)}
-                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all cursor-pointer"
-                        title="Delete"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
-                        </svg>
-                      </button>
+                      {renamingSessionId === session.id ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (renameValue.trim() && onRenameSession) {
+                              onRenameSession(session.id, renameValue.trim());
+                            }
+                            setRenamingSessionId(null);
+                          }}
+                          className="px-2 py-1"
+                        >
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={e => setRenameValue(e.target.value)}
+                            onBlur={() => {
+                              if (renameValue.trim() && onRenameSession) {
+                                onRenameSession(session.id, renameValue.trim());
+                              }
+                              setRenamingSessionId(null);
+                            }}
+                            onKeyDown={e => { if (e.key === 'Escape') setRenamingSessionId(null); }}
+                            className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-indigo-500/40 border-indigo-300 rounded-lg px-2.5 py-1.5 outline-none transition-colors"
+                          />
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => onSelectSession(session.id)}
+                            onDoubleClick={() => {
+                              if (onRenameSession) {
+                                setRenamingSessionId(session.id);
+                                setRenameValue(session.ai_title || session.title || '');
+                              }
+                            }}
+                            className={`w-full text-left px-3 py-2.5 pr-14 rounded-lg text-sm truncate transition-colors cursor-pointer ${
+                              activeSessionId === session.id
+                                ? 'dark:bg-indigo-500/[0.08] bg-indigo-50 dark:text-indigo-300 text-indigo-600 font-medium border-l-2 border-indigo-500 dark:border-indigo-400'
+                                : 'dark:hover:bg-white/[0.04] hover:bg-gray-100 dark:text-gray-400 text-gray-600 dark:hover:text-gray-200 hover:text-gray-900'
+                            }`}
+                          >
+                            {session.ai_title || session.title}
+                          </button>
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                            {onRenameSession && (
+                              <button
+                                onClick={() => {
+                                  setRenamingSessionId(session.id);
+                                  setRenameValue(session.ai_title || session.title || '');
+                                }}
+                                className="p-1 rounded-md hover:bg-indigo-500/10 text-gray-500 hover:text-indigo-400 transition-all cursor-pointer"
+                                title="Rename"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
+                                </svg>
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onDeleteSession(session.id)}
+                              className="p-1 rounded-md hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all cursor-pointer"
+                              title="Delete"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.519.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.798l-.35 5.25a.75.75 0 0 1-1.497-.1l.35-5.25a.75.75 0 0 1 .797-.699Zm2.84 0a.75.75 0 0 1 .798.699l.35 5.25a.75.75 0 0 1-1.498.1l-.35-5.25a.75.75 0 0 1 .7-.798Z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))
                 )}

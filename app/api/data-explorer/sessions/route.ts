@@ -50,6 +50,10 @@ export async function PATCH(request: NextRequest) {
 
   const updates: Record<string, any> = {};
   if ('agent_id' in body) updates.agent_id = agent_id;
+  if ('title' in body) {
+    updates.title = body.title;
+    updates.ai_title = body.title;
+  }
 
   const { error } = await dbAdmin
     .from('data_explorer_sessions')

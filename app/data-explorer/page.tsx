@@ -455,6 +455,19 @@ export default function DataExplorer() {
     }
   };
 
+  const handleRenameSession = async (id: string, newTitle: string) => {
+    const res = await fetch('/api/data-explorer/sessions', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title: newTitle }),
+    });
+    if (res.ok) {
+      setSessions(prev => prev.map(s =>
+        s.id === id ? { ...s, title: newTitle, ai_title: newTitle } : s
+      ));
+    }
+  };
+
   const handleDeleteSession = async (id: string) => {
     const res = await fetch(`/api/data-explorer/sessions?id=${id}`, { method: 'DELETE' });
     if (res.ok) {
@@ -1475,6 +1488,7 @@ export default function DataExplorer() {
         onSelectSession={handleSelectSession}
         onNewQuery={handleNewQuery}
         onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
         userProfile={userProfile}
         onLogout={handleLogout}
         darkMode={darkMode}
