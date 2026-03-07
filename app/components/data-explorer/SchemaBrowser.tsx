@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 
 interface Column {
   name: string;
@@ -58,6 +58,7 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
   const [editValue, setEditValue] = useState('');
   const [catalogGenerating, setCatalogGenerating] = useState(false);
   const [catalogProgress, setCatalogProgress] = useState<{ total: number; completed: number } | null>(null);
+  const catalogReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
 
   useEffect(() => {
     if (!connectionId) return;
@@ -155,6 +156,7 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
       }
 
       const reader = res.body.getReader();
+      catalogReaderRef.current = reader;
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -198,10 +200,39 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
         }
       }
     } catch {
-      // Generation failed
+      // Generation failed or cancelled
     }
+    catalogReaderRef.current = null;
     setCatalogGenerating(false);
     setCatalogProgress(null);
+
+    // Refresh metadata (partial results are still useful if stopped early)
+    try {
+      const catalogRes = await fetch(`/api/data-explorer/catalog?connectionId=${connectionId}`);
+      const catalogData = await catalogRes.json();
+      const metaRows: TableMetadata[] = catalogData?.metadata || [];
+      setMetadata(metaRows);
+
+      const metaMap = new Map<string, TableMetadata>();
+      for (const m of metaRows) {
+        metaMap.set(m.table_name.toLowerCase(), m);
+      }
+      setTables(prev => prev.map(t => {
+        const meta = metaMap.get(t.name.toLowerCase());
+        return {
+          ...t,
+          description: meta?.user_description || meta?.auto_description || null,
+          tags: meta?.tags || [],
+        };
+      }));
+    } catch {
+      // Refresh failed
+    }
+  };
+
+  const handleStopCatalog = () => {
+    catalogReaderRef.current?.cancel();
+    catalogReaderRef.current = null;
   };
 
   if (loading) {
@@ -269,9 +300,17 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
       {/* Catalog generation progress */}
       {catalogGenerating && catalogProgress && (
         <div className="mx-2 px-2 py-1.5 rounded-md dark:bg-[#1a1a1a] bg-gray-50 border dark:border-[#333] border-gray-200">
-          <p className="text-[10px] dark:text-gray-400 text-gray-500 mb-1">
-            Cataloging {catalogProgress.completed} / {catalogProgress.total} tables...
-          </p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] dark:text-gray-400 text-gray-500">
+              Cataloging {catalogProgress.completed} / {catalogProgress.total} tables...
+            </p>
+            <button
+              onClick={handleStopCatalog}
+              className="text-[10px] px-1.5 py-0.5 rounded dark:bg-red-500/20 bg-red-100 dark:text-red-400 text-red-600 dark:hover:bg-red-500/30 hover:bg-red-200 transition-colors cursor-pointer"
+            >
+              Stop
+            </button>
+          </div>
           <div className="w-full h-1 rounded-full dark:bg-[#333] bg-gray-200 overflow-hidden">
             <div
               className="h-full bg-indigo-500 rounded-full transition-all duration-300"
