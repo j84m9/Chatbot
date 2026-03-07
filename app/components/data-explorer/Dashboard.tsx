@@ -713,11 +713,7 @@ function TabBar({
           {/* Delete tab X */}
           {dashboards.length > 1 && onDeleteTab && (
             <button
-              onClick={() => {
-                if (confirm(`Delete tab "${tab.title}"? Charts on this tab will also be removed.`)) {
-                  onDeleteTab(tab.id);
-                }
-              }}
+              onClick={() => onDeleteTab(tab.id)}
               className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-red-400 hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
               title="Delete tab"
             >
