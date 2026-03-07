@@ -711,7 +711,7 @@ function TabBar({
             </button>
           )}
           {/* Delete tab X */}
-          {dashboards.length > 1 && onDeleteTab && (
+          {onDeleteTab && (
             <button
               onClick={() => onDeleteTab(tab.id)}
               className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-red-400 hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
