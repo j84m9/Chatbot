@@ -32,10 +32,24 @@ export default function DataExplorer() {
   // Sidebar
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Connections
+  // Connections — persist selection across refreshes
   const [connections, setConnections] = useState<any[]>([]);
-  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('de-active-connection') || null;
+    }
+    return null;
+  });
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+
+  // Persist active connection to localStorage
+  useEffect(() => {
+    if (activeConnectionId) {
+      localStorage.setItem('de-active-connection', activeConnectionId);
+    } else {
+      localStorage.removeItem('de-active-connection');
+    }
+  }, [activeConnectionId]);
 
   // Sessions
   const [sessions, setSessions] = useState<any[]>([]);
@@ -351,7 +365,11 @@ export default function DataExplorer() {
       const data = await res.json();
       setConnections(data);
       if (data.length > 0) {
-        setActiveConnectionId(prev => prev ?? data[0].id);
+        setActiveConnectionId(prev => {
+          // Validate saved selection still exists, otherwise fall back to first
+          if (prev && data.some((c: any) => c.id === prev)) return prev;
+          return data[0].id;
+        });
       }
     }
   }, []);
