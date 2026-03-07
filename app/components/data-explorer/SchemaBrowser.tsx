@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import yaml from 'js-yaml';
 
 interface Column {
   name: string;
@@ -49,6 +51,7 @@ function getTagColor(tag: string): string {
 }
 
 export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTable, dbType }: SchemaBrowserProps) {
+  const router = useRouter();
   const [tables, setTables] = useState<Table[]>([]);
   const [metadata, setMetadata] = useState<TableMetadata[]>([]);
   const [loading, setLoading] = useState(false);
@@ -235,8 +238,73 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
     catalogReaderRef.current = null;
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleEditCatalog = () => {
-    window.open(`/data-explorer/catalog?connectionId=${connectionId}`, '_blank');
+    router.push(`/data-explorer/catalog?connectionId=${connectionId}`);
+  };
+
+  const handleDownloadCatalog = () => {
+    const tablesObj: Record<string, any> = {};
+    for (const meta of metadata) {
+      tablesObj[meta.table_name] = {
+        schema: meta.table_schema,
+        description: meta.user_description || meta.auto_description || '',
+        tags: meta.tags?.length ? meta.tags : [],
+        category: meta.category || '',
+      };
+    }
+    const doc = yaml.dump({ tables: tablesObj }, { lineWidth: -1 });
+    const header = '# Data Catalogue\n# Edit descriptions, tags, and categories, then re-upload.\n\n';
+    const blob = new Blob([header + doc], { type: 'text/yaml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'catalog.yaml';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleUploadCatalog = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = yaml.load(text) as any;
+      if (!parsed?.tables || typeof parsed.tables !== 'object') {
+        alert('Invalid YAML: missing "tables" key.');
+        return;
+      }
+      const res = await fetch('/api/data-explorer/catalog/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId, entries: parsed.tables }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`Import failed: ${err.error || 'Unknown error'}`);
+        return;
+      }
+      // Refresh metadata
+      const catalogRes = await fetch(`/api/data-explorer/catalog?connectionId=${connectionId}`);
+      const catalogData = await catalogRes.json();
+      const metaRows: TableMetadata[] = catalogData?.metadata || [];
+      setMetadata(metaRows);
+
+      const metaMap = new Map<string, TableMetadata>();
+      for (const m of metaRows) {
+        metaMap.set(m.table_name.toLowerCase(), m);
+      }
+      setTables(prev => prev.map(t => {
+        const meta = metaMap.get(t.name.toLowerCase());
+        return {
+          ...t,
+          description: meta?.user_description || meta?.auto_description || null,
+          tags: meta?.tags || [],
+        };
+      }));
+    } catch {
+      alert('Failed to parse YAML file.');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   if (loading) {
@@ -300,14 +368,46 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
               {hasMetadata ? 'Regenerate Descriptions' : 'Generate Descriptions'}
             </button>
             {hasMetadata && (
-              <button
-                onClick={handleEditCatalog}
-                className="text-[10px] px-2 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
-                title="Edit catalogue in YAML editor"
-              >
-                Edit Catalogue
-              </button>
+              <>
+                <button
+                  onClick={handleEditCatalog}
+                  className="text-[10px] px-2 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
+                  title="Edit catalogue in YAML editor"
+                >
+                  Edit Catalogue
+                </button>
+                <button
+                  onClick={handleDownloadCatalog}
+                  className="text-[10px] px-1.5 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
+                  title="Download catalogue as YAML"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                    <path d="M8.75 2.75a.75.75 0 0 0-1.5 0v5.69L5.03 6.22a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 0 0-1.06-1.06L8.75 8.44V2.75Z" />
+                    <path d="M3.5 9.75a.75.75 0 0 0-1.5 0v1.5A2.75 2.75 0 0 0 4.75 14h6.5A2.75 2.75 0 0 0 14 11.25v-1.5a.75.75 0 0 0-1.5 0v1.5c0 .69-.56 1.25-1.25 1.25h-6.5c-.69 0-1.25-.56-1.25-1.25v-1.5Z" />
+                  </svg>
+                </button>
+              </>
             )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-[10px] px-1.5 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
+              title="Upload catalogue YAML"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                <path d="M7.25 10.25a.75.75 0 0 0 1.5 0V4.56l2.22 2.22a.75.75 0 1 0 1.06-1.06l-3.5-3.5a.75.75 0 0 0-1.06 0l-3.5 3.5a.75.75 0 0 0 1.06 1.06l2.22-2.22v5.69Z" />
+                <path d="M3.5 9.75a.75.75 0 0 0-1.5 0v1.5A2.75 2.75 0 0 0 4.75 14h6.5A2.75 2.75 0 0 0 14 11.25v-1.5a.75.75 0 0 0-1.5 0v1.5c0 .69-.56 1.25-1.25 1.25h-6.5c-.69 0-1.25-.56-1.25-1.25v-1.5Z" />
+              </svg>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".yaml,.yml"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUploadCatalog(file);
+              }}
+            />
           </div>
         </div>
       )}

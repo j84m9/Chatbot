@@ -19,6 +19,7 @@ export default function CatalogEditorPage() {
   const viewRef = useRef<any>(null);
   const themeCompartmentRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(false);
+  const [yamlContent, setYamlContent] = useState('');
 
   // Read theme from localStorage
   useEffect(() => {
@@ -61,18 +62,18 @@ export default function CatalogEditorPage() {
 
         const header = '# Data Catalogue\n# Edit descriptions, tags, and categories, then save.\n\n';
         const doc = yaml.dump({ tables: tablesObj }, { lineWidth: -1 });
-        initEditor(header + doc);
+        setYamlContent(header + doc);
       } catch {
-        initEditor('# Failed to load catalogue data.\n');
+        setYamlContent('# Failed to load catalogue data.\n');
       } finally {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
 
-  const initEditor = useCallback((content: string) => {
-    if (!containerRef.current) return;
+  // Initialize editor after loading completes and container mounts
+  useEffect(() => {
+    if (loading || !containerRef.current || !yamlContent) return;
     let destroyed = false;
 
     (async () => {
@@ -104,7 +105,7 @@ export default function CatalogEditorPage() {
       const isDark = localStorage.getItem('theme') !== 'light';
 
       const state = EditorState.create({
-        doc: content,
+        doc: yamlContent,
         extensions: [
           lineNumbers(),
           highlightActiveLineGutter(),
@@ -147,7 +148,8 @@ export default function CatalogEditorPage() {
       viewRef.current = null;
       setEditorReady(false);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, yamlContent]);
 
   // Update theme when darkMode changes
   useEffect(() => {
@@ -225,9 +227,9 @@ export default function CatalogEditorPage() {
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/90 bg-gray-50/90 backdrop-blur-xl flex-shrink-0">
         <button
-          onClick={() => window.close()}
+          onClick={() => router.back()}
           className="p-1.5 rounded-lg dark:hover:bg-white/5 hover:bg-gray-200 transition-colors cursor-pointer"
-          title="Close"
+          title="Back"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 dark:text-gray-400 text-gray-500">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
