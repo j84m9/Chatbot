@@ -15,6 +15,7 @@ import { detectAnomalies, anomaliesToAnnotations } from '@/utils/anomaly-detecti
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 import SqlEditor, { type SqlEditorHandle } from '@/app/components/data-explorer/SqlEditor';
+import CatalogueEditor from '@/app/components/data-explorer/CatalogueEditor';
 
 interface RefineContext {
   exchangeIndex: number;
@@ -102,10 +103,10 @@ export default function DataExplorer() {
     searchParams.get('mode') === 'agent' ? 'agent' : 'quick'
   );
   const queryModeBeforeDashboardRef = useRef<'quick' | 'agent'>(queryMode);
-  const editorModeBeforeDashboardRef = useRef<'chat' | 'sql'>('chat');
+  const editorModeBeforeDashboardRef = useRef<'chat' | 'sql' | 'catalogue'>('chat');
 
   // SQL editor mode
-  const [editorMode, setEditorMode] = useState<'chat' | 'sql'>('chat');
+  const [editorMode, setEditorMode] = useState<'chat' | 'sql' | 'catalogue'>('chat');
   const [editorSql, setEditorSql] = useState('');
   const sqlEditorRef = useRef<SqlEditorHandle>(null);
 
@@ -2149,6 +2150,7 @@ export default function DataExplorer() {
         onQueryTable={handleQueryTable}
         dbType={connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'sqlite' : 'mssql'}
         onAddDatabase={handleAddDatabase}
+        onEditCatalogue={() => setEditorMode('catalogue')}
       />
 
       {/* Main content: split pane */}
@@ -2357,6 +2359,14 @@ export default function DataExplorer() {
               onRefreshInsights={handleRefreshInsights}
               insightsData={insightsData}
             />
+          ) : editorMode === 'catalogue' ? (
+          /* Catalogue mode: full-height YAML editor */
+          <div className="flex-1 flex flex-col min-h-0">
+            <CatalogueEditor
+              connectionId={activeConnectionId || ''}
+              darkMode={darkMode}
+            />
+          </div>
           ) : editorMode === 'sql' ? (
           /* SQL mode: vertical split (editor top, results bottom) */
           <div className="flex-1 flex flex-col min-h-0">

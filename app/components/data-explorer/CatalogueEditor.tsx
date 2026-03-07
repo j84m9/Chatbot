@@ -1,48 +1,27 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import yaml from 'js-yaml';
 
-export default function CatalogEditorPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const connectionId = searchParams.get('connectionId') || '';
+interface CatalogueEditorProps {
+  connectionId: string;
+  darkMode: boolean;
+}
 
-  const [darkMode, setDarkMode] = useState(true);
-  const [connectionName, setConnectionName] = useState('');
+export default function CatalogueEditor({ connectionId, darkMode }: CatalogueEditorProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [yamlContent, setYamlContent] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
   const themeCompartmentRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(false);
-  const [yamlContent, setYamlContent] = useState('');
-
-  // Read theme from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    const isDark = saved ? saved === 'dark' : true;
-    setDarkMode(isDark);
-    document.documentElement.classList.toggle('dark', isDark);
-  }, []);
 
   // Fetch metadata and build YAML
   useEffect(() => {
     if (!connectionId) return;
-
-    // Try to get connection name from sessionStorage
-    try {
-      const raw = sessionStorage.getItem('data-explorer-state');
-      if (raw) {
-        const state = JSON.parse(raw);
-        if (state.connectionName) setConnectionName(state.connectionName);
-      }
-    } catch {
-      // Ignore
-    }
 
     (async () => {
       try {
@@ -102,8 +81,6 @@ export default function CatalogEditorPage() {
         '.cm-matchingBracket': { backgroundColor: '#c7d2fe', color: '#4338ca' },
       });
 
-      const isDark = localStorage.getItem('theme') !== 'light';
-
       const state = EditorState.create({
         doc: yamlContent,
         extensions: [
@@ -128,7 +105,7 @@ export default function CatalogEditorPage() {
             indentWithTab,
           ]),
           yamlLang(),
-          themeCompartment.of(isDark ? oneDark : lightTheme),
+          themeCompartment.of(darkMode ? oneDark : lightTheme),
           EditorView.lineWrapping,
         ],
       });
@@ -223,42 +200,13 @@ export default function CatalogEditorPage() {
   }, [connectionId]);
 
   return (
-    <div className="h-screen flex flex-col dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-100 text-gray-900 font-sans">
-      {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b dark:border-white/[0.06] border-gray-200/80 dark:bg-[#0d0d0e]/90 bg-gray-50/90 backdrop-blur-xl flex-shrink-0">
-        <button
-          onClick={() => router.back()}
-          className="p-1.5 rounded-lg dark:hover:bg-white/5 hover:bg-gray-200 transition-colors cursor-pointer"
-          title="Back"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 dark:text-gray-400 text-gray-500">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-          </svg>
-        </button>
-
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4.5 h-4.5 text-indigo-400">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-        </svg>
-        <span className="text-sm font-semibold dark:text-gray-100 text-gray-800">Edit Catalogue</span>
-
-        {connectionName && (
-          <span className="text-xs px-2 py-0.5 rounded-full dark:bg-indigo-500/15 bg-indigo-100 dark:text-indigo-300 text-indigo-600">
-            {connectionName}
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        {saveStatus && (
-          <span className={`text-xs ${saveStatus.type === 'success' ? 'dark:text-emerald-400 text-emerald-600' : 'dark:text-red-400 text-red-600'}`}>
-            {saveStatus.message}
-          </span>
-        )}
-
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b dark:border-[#2a2b2d] border-gray-200 dark:bg-[#1a1b1c] bg-gray-50 flex-shrink-0">
         <button
           onClick={handleSave}
           disabled={saving || loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
         >
           {saving ? (
             <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -269,9 +217,20 @@ export default function CatalogEditorPage() {
           )}
           Save
         </button>
-      </header>
 
-      {/* Editor */}
+        {saveStatus && (
+          <span className={`text-xs ${saveStatus.type === 'success' ? 'dark:text-emerald-400 text-emerald-600' : 'dark:text-red-400 text-red-600'}`}>
+            {saveStatus.message}
+          </span>
+        )}
+
+        <div className="flex-1" />
+        <span className="text-[10px] dark:text-gray-500 text-gray-400 px-1.5 py-0.5 rounded dark:bg-[#2a2b2d] bg-gray-200 font-mono">
+          YAML
+        </span>
+      </div>
+
+      {/* Editor container */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex items-center gap-2">

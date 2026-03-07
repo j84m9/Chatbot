@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import yaml from 'js-yaml';
 
 interface Column {
@@ -33,6 +32,7 @@ interface SchemaBrowserProps {
   onInsertColumn?: (text: string) => void;
   onQueryTable?: (tableName: string) => void;
   dbType?: 'sqlite' | 'mssql';
+  onEditCatalogue?: () => void;
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -50,8 +50,7 @@ function getTagColor(tag: string): string {
   return TAG_COLORS[lower] || 'bg-indigo-500/20 text-indigo-400';
 }
 
-export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTable, dbType }: SchemaBrowserProps) {
-  const router = useRouter();
+export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTable, dbType, onEditCatalogue }: SchemaBrowserProps) {
   const [tables, setTables] = useState<Table[]>([]);
   const [metadata, setMetadata] = useState<TableMetadata[]>([]);
   const [loading, setLoading] = useState(false);
@@ -241,7 +240,7 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleEditCatalog = () => {
-    router.push(`/data-explorer/catalog?connectionId=${connectionId}`);
+    onEditCatalogue?.();
   };
 
   const handleDownloadCatalog = () => {

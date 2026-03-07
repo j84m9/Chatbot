@@ -50,6 +50,8 @@ interface DataExplorerSidebarProps {
   dbType?: 'sqlite' | 'mssql';
   // Add database from server
   onAddDatabase?: (sourceConnectionId: string, databaseName: string) => void;
+  // Edit catalogue
+  onEditCatalogue?: () => void;
 }
 
 export default function DataExplorerSidebar({
@@ -63,6 +65,7 @@ export default function DataExplorerSidebar({
   onInsertColumn,
   onQueryTable, dbType,
   onAddDatabase,
+  onEditCatalogue,
 }: DataExplorerSidebarProps) {
   const activeConn = connections.find(c => c.id === activeConnectionId);
   const [sessionSearch, setSessionSearch] = useState('');
@@ -350,6 +353,7 @@ export default function DataExplorerSidebar({
                   onInsertColumn={onInsertColumn}
                   onQueryTable={onQueryTable}
                   dbType={dbType}
+                  onEditCatalogue={onEditCatalogue}
                 />
               </div>
             )}
