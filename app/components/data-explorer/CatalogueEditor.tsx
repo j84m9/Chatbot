@@ -6,9 +6,10 @@ import yaml from 'js-yaml';
 interface CatalogueEditorProps {
   connectionId: string;
   darkMode: boolean;
+  onClose: () => void;
 }
 
-export default function CatalogueEditor({ connectionId, darkMode }: CatalogueEditorProps) {
+export default function CatalogueEditor({ connectionId, darkMode, onClose }: CatalogueEditorProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -229,6 +230,15 @@ export default function CatalogueEditor({ connectionId, darkMode }: CatalogueEdi
         <span className="text-[10px] dark:text-gray-500 text-gray-400 px-1.5 py-0.5 rounded dark:bg-[#2a2b2d] bg-gray-200 font-mono">
           YAML
         </span>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md dark:hover:bg-white/5 hover:bg-gray-200 dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+          title="Close editor"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       {/* Editor container */}

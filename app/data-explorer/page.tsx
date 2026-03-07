@@ -2365,6 +2365,7 @@ export default function DataExplorer() {
             <CatalogueEditor
               connectionId={activeConnectionId || ''}
               darkMode={darkMode}
+              onClose={() => setEditorMode('chat')}
             />
           </div>
           ) : editorMode === 'sql' ? (
