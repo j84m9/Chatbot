@@ -450,9 +450,6 @@ export default function DataExplorer() {
       });
 
       setExchanges(loaded);
-      if (loaded.length > 0) {
-        setSelectedExchangeIndex(loaded.length - 1);
-      }
     } catch {
       // If loading fails, session is selected but exchanges stay empty
     }
