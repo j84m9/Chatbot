@@ -54,6 +54,7 @@ interface QueryChatProps {
   selectedIndex: number;
   onSelectExchange: (index: number) => void;
   onSubmitQuestion: (question: string) => void;
+  onSubmitAgentFollowUp?: (question: string) => void;
   onEditQuestion?: (index: number, newQuestion: string) => void;
   isQuerying: boolean;
   onStop?: () => void;
@@ -90,6 +91,7 @@ export default function QueryChat({
   onRequestInsights,
   selectedProvider, selectedModel, modelCatalog, providerNames, savedApiKeys, onQuickModelSwitch,
   queryMode = 'quick',
+  onSubmitAgentFollowUp,
 }: QueryChatProps) {
   const [internalInput, setInternalInput] = useState('');
   const input = controlledInput !== undefined ? controlledInput : internalInput;
@@ -461,7 +463,9 @@ export default function QueryChat({
                                       const prompt = items.length === 1
                                         ? items[0]
                                         : 'Please analyze the following:\n' + items.map(s => `- ${s}`).join('\n');
-                                      onSubmitQuestion(prompt);
+                                      // Always route through agent handler for full analysis with charts
+                                      const submit = onSubmitAgentFollowUp || onSubmitQuestion;
+                                      submit(prompt);
                                       setSelectedSuggestions(prev => {
                                         const next = { ...prev };
                                         delete next[ex.id];

@@ -1657,6 +1657,7 @@ export default function DataExplorer() {
                 selectedIndex={selectedExchangeIndex}
                 onSelectExchange={setSelectedExchangeIndex}
                 onSubmitQuestion={queryMode === 'agent' ? handleSubmitAgentQuestion : handleSubmitQuestion}
+                onSubmitAgentFollowUp={handleSubmitAgentQuestion}
                 onEditQuestion={handleEditQuestion}
                 isQuerying={isQuerying}
                 onStop={handleStopQuery}
