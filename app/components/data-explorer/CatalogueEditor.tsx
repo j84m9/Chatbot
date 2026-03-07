@@ -203,6 +203,7 @@ export default function CatalogueEditor({ connectionId, darkMode }: CatalogueEdi
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b dark:border-[#2a2b2d] border-gray-200 dark:bg-[#1a1b1c] bg-gray-50 flex-shrink-0">
+        <span className="text-xs font-semibold dark:text-gray-300 text-gray-600 mr-1">Catalogue Editor</span>
         <button
           onClick={handleSave}
           disabled={saving || loading}
