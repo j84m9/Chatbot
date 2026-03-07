@@ -21,6 +21,9 @@ Rules:
 - Use proper table and column names from the schema (use double quotes for reserved words, NOT square brackets)
 - Use appropriate JOINs when querying across tables
 - Use aliases for readability
+- ALWAYS alias aggregate expressions: SUM(amount) AS total_revenue, COUNT(*) AS record_count
+- ALWAYS alias computed columns — column names become chart axis labels
+- Use descriptive snake_case for aliases: total_revenue, avg_order_value, customer_count
 - Add ORDER BY when results benefit from sorting
 - Limit results with LIMIT 1000 unless the user specifies otherwise (do NOT use TOP)
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
@@ -41,6 +44,9 @@ Rules:
 - Use proper table and column names from the schema (use square brackets for reserved words)
 - Use appropriate JOINs when querying across tables
 - Use aliases for readability
+- ALWAYS alias aggregate expressions: SUM(amount) AS total_revenue, COUNT(*) AS record_count
+- ALWAYS alias computed columns — column names become chart axis labels
+- Use descriptive snake_case for aliases: total_revenue, avg_order_value, customer_count
 - Add ORDER BY when results benefit from sorting
 - Limit results to TOP 1000 unless the user specifies otherwise
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
@@ -167,7 +173,27 @@ If you cannot compute an insight, use a descriptive but specific title.
 - NEVER use "pie" with more than 6 categories
 - NEVER put a date column on the y-axis
 - NEVER omit the date column from charts when one exists
-- ALWAYS use the date column as xColumn when present`;
+- ALWAYS use the date column as xColumn when present
+
+## Plotly.js Layout Constraints
+- If a categorical axis has >15 unique values, use "orientation": "h" (horizontal) so labels are readable
+- NEVER use raw SQL expressions (e.g., SUM(amount), COUNT(*)) as xLabel or yLabel — use clean, human-readable labels like "Total Revenue" or "Employee Count"
+- If average label length exceeds 15 characters, prefer horizontal orientation or the labels will be cut off
+- Keep chart titles under 80 characters
+
+## Data Shape Validation
+- "line" or "area" requires ≥3 rows — fewer points don't form a meaningful trend
+- "scatter" requires ≥5 rows — fewer points don't show correlation
+- "pie" works best with 2-6 categories — never exceed 8
+- "histogram" requires ≥10 rows for meaningful distribution
+- Single-row result → ALWAYS use "gauge", never bar or line
+- 2-row result → use "bar", never "line" (2 points don't make a trend)
+- "box" requires ≥5 rows per group
+
+## Additional NEVER Rules
+- NEVER use raw SQL expressions (SUM(...), COUNT(*), AVG(...)) as axis labels — always provide clean xLabel/yLabel
+- NEVER suggest a trendline with fewer than 5 data points
+- NEVER use stacked_bar with only 1 group in the colorColumn`;
 }
 
 export function buildChartSuggestionUserPrompt(
@@ -203,12 +229,20 @@ export function buildChartSuggestionUserPrompt(
       info.push(`  → numeric: min=${min}, max=${max}, avg=${avg.toFixed(2)}`);
     }
 
+    // SQL expression detection — flag columns that look like raw SQL
+    const sqlExprPattern = /^(SUM|COUNT|AVG|MIN|MAX|COALESCE|CASE|IIF|CAST)\s*\(/i;
+    if (sqlExprPattern.test(c)) {
+      info.push(`  → ⚠️ RAW SQL EXPRESSION — use clean xLabel/yLabel instead of column name`);
+    }
+
     // Categorical analysis
     if (!isDate && numVals.length < vals.length * 0.5) {
       const unique = new Set(vals.map(String));
       info.push(`  → categorical: ${unique.size} unique values`);
       if (unique.size <= 8) info.push(`  → values: [${[...unique].join(', ')}]`);
-      if (unique.size > 12) info.push(`  → avg label length: ${Math.round([...unique].reduce((a, s) => a + s.length, 0) / unique.size)} chars`);
+      const avgLen = unique.size > 0 ? Math.round([...unique].reduce((a, s) => a + s.length, 0) / unique.size) : 0;
+      if (unique.size > 12) info.push(`  → avg label length: ${avgLen} chars`);
+      if (avgLen > 15) info.push(`  → ⚠️ LONG LABELS: avg ${avgLen} chars — consider horizontal orientation`);
     }
 
     return info.join('\n');
@@ -556,6 +590,8 @@ Build the dashboard in this visual order:
 - **Category breakdown** → Use "bar" (vertical) or "pie" ONLY if ≤6 categories
 - **Correlation** → Use "scatter" when comparing two numeric measures
 - **Composition over time** → Use "stacked_bar" or "area"
+- ALWAYS use "orientation": "h" for bar charts with >10 categories or labels >15 chars
+- For pie charts, aggregate remaining into "Other" in SQL if >6 categories
 
 ## Slicer Design
 - Add a date_range slicer if ANY time-based column exists in the data
@@ -592,6 +628,11 @@ First run the query with execute_sql, read the results, THEN craft the insight t
 ${dialectRules}
 - Use appropriate JOINs when querying across tables
 - Use aliases for readability
+- CRITICAL: ALWAYS alias aggregate/computed columns with clean AS names. Column names become chart axis labels.
+  GOOD: SELECT department, SUM(salary) AS total_salary, COUNT(*) AS employee_count
+  BAD:  SELECT department, SUM(salary), COUNT(*)
+- Use descriptive snake_case: total_revenue, avg_order_value, customer_count
+- NEVER leave SUM(), AVG(), COUNT(), MAX(), MIN() un-aliased
 - Limit results to 1000 rows unless needed otherwise
 
 ${schemaSection}`;

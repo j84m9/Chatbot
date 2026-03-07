@@ -60,6 +60,7 @@ const CHART_COLORS = [
 ];
 
 const CURRENCY_PATTERNS = /revenue|salary|cost|price|amount|total_sales|income|profit|budget|payment|fee|spend|avg_|average_|sum_|total_|net_/i;
+const PERCENT_PATTERNS = /rate|percent|pct|ratio|margin|growth|change/i;
 
 /** Detect whether a column likely contains date/time values */
 function isDateColumn(colName: string, sampleValues: any[]): boolean {
@@ -117,6 +118,35 @@ function formatNumber(val: number): string {
   return val.toLocaleString();
 }
 
+/** Build a Plotly hovertemplate with smart formatting based on column names */
+function buildHoverTemplate(
+  xCol: string,
+  yCol: string,
+  traceName: string | null,
+  xIsDate: boolean,
+  isHorizontal: boolean
+): string {
+  const isCurrency = CURRENCY_PATTERNS.test(yCol);
+  const isPercent = PERCENT_PATTERNS.test(yCol);
+
+  let valFormat: string;
+  if (isCurrency) valFormat = '$%{VAL:,.0f}';
+  else if (isPercent) valFormat = '%{VAL:.1f}%';
+  else valFormat = '%{VAL:,.2~f}';
+
+  let xFormat: string;
+  if (xIsDate) xFormat = '%{X|%b %d, %Y}';
+  else xFormat = '%{X}';
+
+  const extra = traceName ? `<extra>${traceName}</extra>` : '<extra></extra>';
+
+  if (isHorizontal) {
+    // Horizontal: x=value, y=category
+    return `${xFormat.replace('X', 'y')}<br>${valFormat.replace('VAL', 'x')}${extra}`;
+  }
+  return `${xFormat.replace('X', 'x')}<br>${valFormat.replace('VAL', 'y')}${extra}`;
+}
+
 const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode, annotationMode, onChartClick, hideTitle }, ref) {
   const plotRef = useRef<any>(null);
   const [mounted, setMounted] = useState(false);
@@ -153,6 +183,8 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
 
     const traces: any[] = [];
     let barmode: string | undefined;
+    const xCol = chartConfig.xColumn;
+    const yCol = chartConfig.yColumn;
 
     // Helper: group rows by colorColumn and create one trace per group
     function buildGroupedTraces(type: string, mode?: string) {
@@ -175,6 +207,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           };
         }
         if (type === 'scatter' && !mode) trace.mode = 'markers';
+        trace.hovertemplate = buildHoverTemplate(xCol, yCol, null, xIsDate, chartConfig.orientation === 'h');
         traces.push(trace);
         return;
       }
@@ -204,6 +237,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
         };
         if (chartConfig.orientation === 'h') trace.orientation = 'h';
         if (mode) trace.mode = mode;
+        trace.hovertemplate = buildHoverTemplate(xCol, yCol, name, xIsDate, chartConfig.orientation === 'h');
         traces.push(trace);
         idx++;
       }
@@ -218,7 +252,9 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           marker: { colors: CHART_COLORS },
           textfont: { color: colors.text },
           textinfo: 'percent+label',
-          hoverinfo: 'label+value+percent',
+          hovertemplate: CURRENCY_PATTERNS.test(yCol)
+            ? '%{label}<br>$%{value:,.0f} (%{percent})<extra></extra>'
+            : '%{label}<br>%{value:,.2~f} (%{percent})<extra></extra>',
           hole: 0.35,
           pull: xValues.map((_: any, i: number) => i === 0 ? 0.03 : 0),
         });
@@ -230,6 +266,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           x: xValues,
           marker: { color: colors.primary, line: { color: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 0.5 } },
           nbinsx: Math.min(50, Math.max(10, Math.ceil(Math.sqrt(xValues.length)))),
+          hovertemplate: '%{x}<br>Count: %{y}<extra></extra>',
         });
         break;
 
@@ -255,6 +292,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           z: zMatrix,
           colorscale: [[0, '#312e81'], [0.5, '#6366f1'], [1, '#c4b5fd']],
           hoverongaps: false,
+          hovertemplate: '%{x}<br>%{y}<br>Value: %{z:,.2~f}<extra></extra>',
         });
         break;
       }
@@ -269,7 +307,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
             fill: 'tozeroy',
             fillcolor: 'rgba(99, 102, 241, 0.12)',
             line: { color: colors.primary, width: 2, shape: 'spline' },
-            hovertemplate: '%{x}<br>%{y:,.0f}<extra></extra>',
+            hovertemplate: buildHoverTemplate(xCol, yCol, null, xIsDate, false),
           });
         } else {
           const groups = new Map<string, { x: any[]; y: any[] }>();
@@ -292,6 +330,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
               fill: 'tozeroy',
               fillcolor: c + '1A',
               line: { color: c, width: 2, shape: 'spline' },
+              hovertemplate: buildHoverTemplate(xCol, yCol, name, xIsDate, false),
             });
             idx++;
           }
@@ -340,6 +379,9 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
             color: xValues.map((_: any, i: number) => CHART_COLORS[i % CHART_COLORS.length]),
           },
           connector: { line: { color: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1 } },
+          hovertemplate: CURRENCY_PATTERNS.test(yCol)
+            ? '%{y}<br>$%{x:,.0f}<extra></extra>'
+            : '%{y}<br>%{x:,.2~f}<extra></extra>',
         });
         break;
 
@@ -356,6 +398,9 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           decreasing: { marker: { color: '#f43f5e' } },
           totals: { marker: { color: '#6366f1' } },
           textposition: 'outside',
+          hovertemplate: CURRENCY_PATTERNS.test(yCol)
+            ? '%{x}<br>$%{y:,.0f}<extra></extra>'
+            : '%{x}<br>%{y:,.2~f}<extra></extra>',
         });
         break;
 
@@ -465,8 +510,6 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     const isHorizontal = chartConfig.orientation === 'h';
 
     // Smart axis formatting
-    const xCol = chartConfig.xColumn;
-    const yCol = chartConfig.yColumn;
     const isCurrency = CURRENCY_PATTERNS.test(yCol);
 
     // Date formatting — detect from actual values, not just column name
@@ -483,8 +526,8 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     const xLabelWidth = isHorizontal ? 0 : estimateLabelWidth(xValues);
     const yLabelWidth = estimateLabelWidth(yValues);
     const needsXRotation = !isHorizontal && !xIsDate && xValues.length > 5 && xLabelWidth > 60;
-    const leftMargin = Math.max(60, Math.min(120, yLabelWidth + 20));
-    const bottomMargin = needsXRotation ? Math.max(80, Math.min(140, xLabelWidth * 0.7)) : 60;
+    const leftMargin = Math.max(60, Math.min(150, yLabelWidth + 20));
+    const bottomMargin = needsXRotation ? Math.max(80, Math.min(180, xLabelWidth * 0.7)) : 60;
     const rightMargin = chartConfig.secondaryY?.column ? 70 : 30;
 
     const plotLayout: any = {
@@ -523,15 +566,17 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
         bgcolor: darkMode ? '#1e1f20' : '#ffffff',
         bordercolor: darkMode ? '#3a3b3d' : '#e5e7eb',
         font: { color: colors.text, size: 12 },
+        namelength: -1,
       },
       hovermode: xIsDate || chartConfig.chartType === 'line' || chartConfig.chartType === 'area' ? 'x unified' : 'closest',
+      showlegend: traces.length > 1,
       legend: {
         font: { size: 11 },
-        bgcolor: 'rgba(0,0,0,0)',
+        bgcolor: darkMode ? 'rgba(22,23,24,0.85)' : 'rgba(255,255,255,0.85)',
         orientation: traces.length > 4 ? 'v' : 'h',
-        x: traces.length > 4 ? 1.02 : 0.5,
-        xanchor: traces.length > 4 ? 'left' : 'center',
-        y: traces.length > 4 ? 1 : -0.15,
+        x: traces.length > 4 ? 0.98 : 0.5,
+        xanchor: traces.length > 4 ? 'right' : 'center',
+        y: traces.length > 4 ? 1 : -0.05,
         yanchor: traces.length > 4 ? 'top' : 'top',
       },
     };
@@ -542,6 +587,21 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     if (['bar', 'grouped_bar', 'stacked_bar'].includes(chartConfig.chartType)) {
       plotLayout.bargap = xValues.length > 20 ? 0.1 : 0.2;
       plotLayout.bargroupgap = 0.1;
+    }
+
+    // Truncate long category labels for bar-type charts
+    if (['bar', 'grouped_bar', 'stacked_bar'].includes(chartConfig.chartType) && !xIsDate) {
+      const maxLabelLen = 30;
+      const categoryAxis = isHorizontal ? 'yaxis' : 'xaxis';
+      const catValues = isHorizontal ? xValues : xValues;
+      const hasLongLabels = catValues.some((v: any) => String(v ?? '').length > maxLabelLen);
+      if (hasLongLabels && plotLayout[categoryAxis]) {
+        const tickvals = catValues.map(String);
+        const ticktext = tickvals.map((v: string) => v.length > maxLabelLen ? v.slice(0, maxLabelLen - 1) + '…' : v);
+        plotLayout[categoryAxis].tickmode = 'array';
+        plotLayout[categoryAxis].tickvals = tickvals;
+        plotLayout[categoryAxis].ticktext = ticktext;
+      }
     }
 
     // Gauge charts don't need axis config

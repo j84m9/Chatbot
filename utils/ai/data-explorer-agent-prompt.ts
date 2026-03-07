@@ -71,6 +71,11 @@ ${approach}
 ${dialectRules}
 - Use appropriate JOINs when querying across tables
 - Use aliases for readability
+- CRITICAL: ALWAYS alias aggregate/computed columns with clean AS names. Column names become chart axis labels.
+  GOOD: SELECT department, SUM(salary) AS total_salary, COUNT(*) AS employee_count
+  BAD:  SELECT department, SUM(salary), COUNT(*)
+- Use descriptive snake_case: total_revenue, avg_order_value, customer_count
+- NEVER leave SUM(), AVG(), COUNT(), MAX(), MIN() un-aliased
 - Add ORDER BY when results benefit from sorting
 - Limit results to 1000 rows unless specified otherwise
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
@@ -173,6 +178,11 @@ If the pre-selected tables are insufficient, use \`search_tables\` to discover a
 ${dialectRules}
 - Use appropriate JOINs when querying across tables
 - Use aliases for readability
+- CRITICAL: ALWAYS alias aggregate/computed columns with clean AS names. Column names become chart axis labels.
+  GOOD: SELECT department, SUM(salary) AS total_salary, COUNT(*) AS employee_count
+  BAD:  SELECT department, SUM(salary), COUNT(*)
+- Use descriptive snake_case: total_revenue, avg_order_value, customer_count
+- NEVER leave SUM(), AVG(), COUNT(), MAX(), MIN() un-aliased
 - Add ORDER BY when results benefit from sorting
 - Limit results to 1000 rows unless specified otherwise
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
