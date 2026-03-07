@@ -17,6 +17,7 @@ import { buildAgentSystemPrompt } from '@/utils/ai/data-explorer-agent-prompt';
 import { routeTables } from '@/utils/ai/table-router';
 import { buildCatalog, buildCatalogText, TableMetadataRow } from '@/utils/ai/catalog-builder';
 import { buildFKGraph } from '@/utils/ai/fk-graph';
+import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -146,6 +147,15 @@ export async function POST(req: Request) {
 
         const schemaText = schemaToPromptText(schema, dialect);
 
+        // 3a. Load semantic context for SQLite connections
+        let semanticContext: string | null = null;
+        if (isSqlite && conn.file_path) {
+          const metadataPath = findMetadataPath(conn.file_path);
+          if (metadataPath) {
+            semanticContext = loadSemanticContext(metadataPath);
+          }
+        }
+
         // 3b. Fetch agent domain context
         let domainContext: string | null = null;
         let resolvedAgentId = agentId || null;
@@ -253,7 +263,12 @@ export async function POST(req: Request) {
           }
         } else {
           systemPrompt = buildAgentSystemPrompt(dialect, schemaText, conversationContext, domainContext, false);
-          maxSteps = 5;
+          maxSteps = 8;
+        }
+
+        // Prepend semantic context if available
+        if (semanticContext) {
+          systemPrompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${systemPrompt}`;
         }
 
         const agentSteps: any[] = [];

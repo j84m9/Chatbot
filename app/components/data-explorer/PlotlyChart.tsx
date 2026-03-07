@@ -32,6 +32,9 @@ export interface ChartConfig {
   fillGradient?: boolean;
   annotations?: ChartAnnotation[];
   showAnnotations?: boolean;
+  referenceLine?: { value: number; label: string };
+  secondaryY?: { column: string; label: string };
+  trendline?: boolean;
 }
 
 export interface PlotlyChartHandle {
@@ -342,6 +345,46 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       }
     }
 
+    // Trendline — linear regression for line/scatter/bar/area charts with ≥2 numeric points
+    if (chartConfig.trendline && ['line', 'scatter', 'bar', 'area'].includes(chartConfig.chartType)) {
+      const numericY = yValues.map((v: any) => (typeof v === 'number' ? v : Number(v))).filter((v: number) => !isNaN(v));
+      if (numericY.length >= 2) {
+        const n = numericY.length;
+        const xIdx = numericY.map((_: number, i: number) => i);
+        const sumX = xIdx.reduce((a: number, b: number) => a + b, 0);
+        const sumY = numericY.reduce((a: number, b: number) => a + b, 0);
+        const sumXY = xIdx.reduce((a: number, i: number) => a + i * numericY[i], 0);
+        const sumX2 = xIdx.reduce((a: number, i: number) => a + i * i, 0);
+        const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        const trendY = xIdx.map((i: number) => slope * i + intercept);
+        traces.push({
+          type: 'scatter',
+          mode: 'lines',
+          x: xValues.slice(0, numericY.length),
+          y: trendY,
+          name: 'Trend',
+          line: { color: '#f97316', dash: 'dash', width: 2 },
+          showlegend: true,
+        });
+      }
+    }
+
+    // Secondary Y-axis — additional trace on yaxis2
+    if (chartConfig.secondaryY?.column && rows.length > 0 && rows[0][chartConfig.secondaryY.column] !== undefined) {
+      const secondaryValues = rows.map(r => r[chartConfig.secondaryY!.column]);
+      traces.push({
+        type: 'scatter',
+        mode: 'lines+markers',
+        x: xValues,
+        y: secondaryValues,
+        name: chartConfig.secondaryY.label || chartConfig.secondaryY.column,
+        yaxis: 'y2',
+        line: { color: '#f97316', width: 2 },
+        marker: { color: '#f97316', size: 5 },
+      });
+    }
+
     const isHorizontal = chartConfig.orientation === 'h';
 
     // Auto-detect axis formatting
@@ -407,6 +450,47 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
         borderpad: 4,
         font: { color: darkMode ? '#d1d5db' : '#374151', size: 11 },
       }));
+    }
+
+    // Reference line — horizontal dashed line
+    if (chartConfig.referenceLine) {
+      plotLayout.shapes = [
+        ...(plotLayout.shapes || []),
+        {
+          type: 'line',
+          x0: 0,
+          x1: 1,
+          xref: 'paper',
+          y0: chartConfig.referenceLine.value,
+          y1: chartConfig.referenceLine.value,
+          line: { color: '#f97316', width: 2, dash: 'dash' },
+        },
+      ];
+      plotLayout.annotations = [
+        ...(plotLayout.annotations || []),
+        {
+          x: 1,
+          xref: 'paper',
+          y: chartConfig.referenceLine.value,
+          text: chartConfig.referenceLine.label,
+          showarrow: false,
+          xanchor: 'left',
+          font: { color: '#f97316', size: 11 },
+        },
+      ];
+    }
+
+    // Secondary Y-axis layout config
+    if (chartConfig.secondaryY?.column) {
+      plotLayout.yaxis2 = {
+        title: chartConfig.secondaryY.label || chartConfig.secondaryY.column,
+        overlaying: 'y',
+        side: 'right',
+        titlefont: { color: '#f97316' },
+        tickfont: { color: '#f97316' },
+        gridcolor: 'rgba(0,0,0,0)',
+      };
+      plotLayout.margin.r = 60;
     }
 
     return { data: traces, layout: plotLayout };

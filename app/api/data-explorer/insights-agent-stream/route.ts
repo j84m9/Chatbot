@@ -162,7 +162,7 @@ export async function POST(req: Request) {
           system: systemPrompt,
           prompt: agentPrompt,
           tools,
-          stopWhen: stepCountIs(5),
+          stopWhen: stepCountIs(8),
           onStepFinish: (event) => {
             stepCount = event.stepNumber + 1;
 

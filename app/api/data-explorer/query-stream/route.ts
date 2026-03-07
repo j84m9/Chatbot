@@ -13,6 +13,7 @@ import {
   categorizeError,
   wrapWithDomainContext,
 } from '@/utils/ai/data-explorer-prompts';
+import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
 
 // Reuse the schema cache
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
@@ -157,6 +158,15 @@ export async function POST(req: Request) {
 
         let schemaText = schemaToPromptText(schema, dialect);
 
+        // 3a. Load semantic context for SQLite connections
+        let semanticContext: string | null = null;
+        if (isSqlite && conn.file_path) {
+          const metadataPath = findMetadataPath(conn.file_path);
+          if (metadataPath) {
+            semanticContext = loadSemanticContext(metadataPath);
+          }
+        }
+
         // 3b. Fetch sample rows (capped at 15 tables)
         const tablesToSample = schema.slice(0, 15);
         const sampleTexts: string[] = [];
@@ -219,9 +229,13 @@ export async function POST(req: Request) {
         sendEvent(controller, 'status', { step: 'generating_sql', message: 'Generating SQL...' });
 
         const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
+        let sqlSystemPrompt = wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext);
+        if (semanticContext) {
+          sqlSystemPrompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${sqlSystemPrompt}`;
+        }
         const sqlText = await streamTextWithHeartbeat(controller, {
           model,
-          system: wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext),
+          system: sqlSystemPrompt,
           prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
         });
 

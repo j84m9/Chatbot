@@ -114,10 +114,19 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each 
   "colorColumn": "optional: categorical column for color grouping",
   "orientation": "optional: 'v' or 'h' for vertical/horizontal",
   "aggregation": "optional: 'sum' | 'avg' | 'count' | 'none'",
-  "yAxisType": "optional: 'linear' | 'log'"
+  "yAxisType": "optional: 'linear' | 'log'",
+  "referenceLine": "optional: { value: number, label: string } — a horizontal reference line (e.g., average, target, threshold)",
+  "secondaryY": "optional: { column: string, label: string } — plot a second column on a right-side Y-axis",
+  "trendline": "optional: boolean — add a linear trendline overlay"
 }
 
-Rules:
+## Title Guidelines
+Use narrative, insight-driven titles that convey what the data shows, not just what it is:
+- GOOD: "Revenue grew 23% YoY to $1.2M", "Engineering leads with 45% of headcount"
+- BAD: "Revenue by Month", "Headcount by Department"
+If you can identify a key insight from the data, put it in the title.
+
+## Chart Type Rules
 - Suggest 1 chart for simple data (few columns, single metric)
 - Suggest 2-3 charts for multi-dimensional data (multiple metrics, categories + time, etc.)
 - Maximum 3 charts
@@ -137,7 +146,12 @@ Rules:
 - Use "line" for time series or trends
 - Use "scatter" for correlation between two numeric columns
 - Use "pie" for parts of a whole (only when fewer than 8 categories)
-- Pick the most meaningful columns for each chart`;
+- Pick the most meaningful columns for each chart
+
+## Statistical Enhancements
+- Use "trendline": true for time series or sequential data to show the overall direction
+- Use "referenceLine" to mark meaningful thresholds: averages, targets, benchmarks, or SLA limits
+- Use "secondaryY" when two columns have different scales but share an x-axis (e.g., revenue + order count, bounce rate + sessions)`;
 }
 
 export function buildChartSuggestionUserPrompt(
@@ -215,7 +229,10 @@ Respond with ONLY a valid JSON array of chart configurations (no markdown fences
   "colorColumn": "optional: categorical column for color grouping",
   "orientation": "optional: 'v' or 'h'",
   "aggregation": "optional: 'sum' | 'avg' | 'count' | 'none'",
-  "yAxisType": "optional: 'linear' | 'log'"
+  "yAxisType": "optional: 'linear' | 'log'",
+  "referenceLine": "optional: { value: number, label: string } — horizontal reference line",
+  "secondaryY": "optional: { column: string, label: string } — second Y-axis column",
+  "trendline": "optional: boolean — linear trendline overlay"
 }
 
 Rules:
@@ -224,6 +241,9 @@ Rules:
 - If user asks for a specific chart type, change it
 - If user asks to add a chart, append to the array
 - If user asks to remove a chart, remove it
+- If user asks for a trendline, set "trendline": true
+- If user asks for a reference/target line, set "referenceLine" with value and label
+- If user asks to overlay a second metric, use "secondaryY"
 - Maximum 3 charts total`;
 }
 
@@ -352,8 +372,15 @@ Analyze the existing results and run follow-up queries to uncover:
 
 ## Approach
 1. Review the existing results to understand what data was retrieved
-2. Run 1-3 follow-up SQL queries to gather additional statistical context (e.g., aggregations, breakdowns, distributions)
-3. Produce structured findings based on all data gathered
+2. Run 2-4 follow-up SQL queries to gather additional statistical context (e.g., aggregations, breakdowns, distributions)
+3. Always run at least 2 queries
+4. Produce structured findings based on all data gathered
+
+## Suggested Follow-Up Query Types
+- **Time-based data** → period-over-period comparison (this month vs last month, this quarter vs prior)
+- **Categorical data** → top/bottom N analysis, ranking by a metric
+- **Numeric data** → min/max/avg distribution, percentile breakdown, standard deviation
+- **Any data** → NULL rates and data quality checks (COUNT(*) vs COUNT(column), percentage of missing values)
 
 ## SQL Rules
 - Only generate SELECT statements — NEVER INSERT, UPDATE, DELETE, DROP, or DDL
@@ -388,6 +415,9 @@ Values that deviate significantly from the norm. Explain why they stand out.
 ## Comparisons
 How categories, time periods, or groups compare to each other.
 
+## Data Quality
+Note any NULL rates, missing values, data gaps, or inconsistencies found. If the data is clean, briefly confirm that.
+
 ## Recommendations
 Actionable next steps or deeper questions the data suggests exploring.
 
@@ -395,6 +425,7 @@ Rules:
 - Use specific numbers and percentages from the data
 - Be concise — each bullet should be one sentence
 - Skip sections that are not relevant rather than forcing content
+- If the analyst ran multiple queries, reference findings from ALL queries
 - Format as clean markdown with ## headings and - bullet points`;
 }
 

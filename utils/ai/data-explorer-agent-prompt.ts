@@ -33,15 +33,16 @@ This database has many tables. You have a lightweight catalog below showing all 
 **Important**: Do NOT write SQL until you have loaded the full schema for the tables involved. The catalog below only shows table names and relationships, not column details.
 
 **Critical**: ONLY use exact table and column names returned by \`get_schema\`. Never guess column names. If a query fails with "no such column", call \`get_schema\` again to verify.`
-    : `## Approach
-1. **Understand** the user's question and identify what data is needed
-2. **Explore** the schema if you're unsure about table/column names — use get_schema or get_sample_data
-3. **Write & execute** SQL using execute_sql — start simple, then refine
-4. **Self-correct** if a query fails — read the error, fix the SQL, and retry
-5. **Synthesize** your findings into a clear answer with specific numbers`;
+    : `## Approach — Multi-Step Analytical Workflow
+You should typically run 3-5 queries. A single query is rarely sufficient for a thorough answer.
 
-  const compoundQueryGuidance = catalogMode
-    ? `
+1. **Explore** — Start with a broad query to understand the data shape: row counts, date ranges, value distributions, and distinct categories
+2. **Quantify** — Write the specific query that directly answers the user's question
+3. **Contextualize** — Run 1-2 comparison queries to put results in perspective: prior period comparisons, overall averages, segment breakdowns, or rankings
+4. **Validate** — Check for data quality issues: NULL rates in key columns, outliers, or unexpected distributions that could skew results
+5. **Synthesize** — Provide a comprehensive answer citing findings from ALL queries, not just the last one`;
+
+  const compoundQueryGuidance = `
 ## Compound Query Patterns
 When the question requires data from multiple tables:
 
@@ -49,11 +50,9 @@ When the question requires data from multiple tables:
   \`\`\`sql
   WITH filtered AS (...), aggregated AS (SELECT ... FROM filtered ...) SELECT ... FROM aggregated ...
   \`\`\`
-- **Aggregate before joining**: When combining summaries from large tables, aggregate first then join the results — this is much faster than joining raw tables then aggregating
-- **Multi-table JOINs**: Use \`get_join_path\` to find the FK chain, then write JOINs in that order
+- **Aggregate before joining**: When combining summaries from large tables, aggregate first then join the results — this is much faster than joining raw tables then aggregating${catalogMode ? '\n- **Multi-table JOINs**: Use `get_join_path` to find the FK chain, then write JOINs in that order' : ''}
 - **Subqueries**: Use correlated subqueries for per-row lookups (e.g., "most recent order for each customer")
-`
-    : '';
+`;
 
   const schemaSection = catalogMode
     ? `## Table Catalog

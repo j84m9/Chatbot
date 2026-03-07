@@ -1,0 +1,297 @@
+database:
+  name: Demo E-Commerce & HR Database
+  description: >
+    A comprehensive demo database modeling an e-commerce business with HR operations.
+    Contains 11 tables covering customers, orders, products, employees, performance,
+    website analytics, and customer support.
+
+key_metrics:
+  - name: Revenue
+    formula: SUM(orders.total_amount) WHERE orders.status NOT IN ('cancelled', 'refunded')
+    description: Total revenue from completed and shipped orders, excluding cancellations and refunds.
+
+  - name: Average Order Value (AOV)
+    formula: AVG(orders.total_amount) WHERE orders.status NOT IN ('cancelled', 'refunded')
+    description: Mean order value for non-cancelled/refunded orders.
+
+  - name: Profit Margin
+    formula: (SUM(oi.unit_price * oi.quantity * (1 - oi.discount_pct)) - SUM(p.cost * oi.quantity)) / SUM(oi.unit_price * oi.quantity * (1 - oi.discount_pct)) * 100
+    description: Percentage of revenue retained as profit after cost of goods.
+
+  - name: Customer Churn
+    formula: >
+      Customers with no orders in the last 90 days who had prior orders,
+      divided by total active customers.
+    description: Rate at which customers stop purchasing.
+
+  - name: Conversion Funnel
+    formula: >
+      /home → /products → /products/detail → /cart → /checkout sessions progression.
+    description: Website visitor journey from landing page to checkout.
+
+  - name: Employee Tenure
+    formula: (julianday('now') - julianday(employees.hire_date)) / 365.25
+    description: Years since employee hire date.
+
+  - name: Support Resolution Rate
+    formula: COUNT(WHERE status IN ('resolved','closed')) / COUNT(*) * 100
+    description: Percentage of support tickets that have been resolved or closed.
+
+  - name: Average Resolution Time
+    formula: AVG(support_tickets.resolution_time_hours) WHERE status IN ('resolved','closed')
+    description: Mean hours to resolve a support ticket.
+
+tables:
+  departments:
+    description: Company departments with budget and headcount targets.
+    business_context: Each employee belongs to one department. Used for org analysis, budget tracking.
+    columns:
+      id: Primary key
+      name: Department name (e.g., Engineering, Marketing, Sales, HR, Finance, Operations)
+      location: Office location (e.g., New York, San Francisco, Chicago, Austin, Seattle)
+      budget: Annual department budget in USD
+      headcount_target: Target number of employees for the department
+
+  employees:
+    description: Employee roster with compensation, title, and status.
+    business_context: Core HR table. Links to departments, salary_history, and performance_reviews.
+    columns:
+      id: Primary key
+      first_name: Employee first name
+      last_name: Employee last name
+      email: Unique employee email
+      department_id: "FK → departments.id"
+      hire_date: Date of hire (ISO format YYYY-MM-DD)
+      salary: Current annual salary in USD
+      title: Job title (e.g., Software Engineer, Marketing Manager, Sales Rep)
+      level:
+        description: Seniority level
+        values: [Junior, Mid, Senior, Lead, Principal, Director]
+        ordering: Junior < Mid < Senior < Lead < Principal < Director
+      is_active:
+        description: Employment status
+        values: { 1: "currently employed", 0: "terminated/left" }
+
+  salary_history:
+    description: Historical salary changes for each employee.
+    business_context: Tracks compensation changes over time for pay equity and retention analysis.
+    columns:
+      id: Primary key
+      employee_id: "FK → employees.id"
+      effective_date: Date the salary change took effect (ISO format)
+      salary: New salary amount in USD
+      change_reason:
+        description: Why the salary changed
+        values: [Initial hire, Promotion, Annual review, Retention bonus, Market adjustment]
+
+  performance_reviews:
+    description: Annual performance review ratings.
+    business_context: Links employees to reviewers (also employees). Used for talent management.
+    columns:
+      id: Primary key
+      employee_id: "FK → employees.id — the employee being reviewed"
+      review_date: Date of the review (ISO format)
+      rating:
+        description: Performance score
+        values: { 1: "needs improvement", 2: "below expectations", 3: "meets expectations", 4: "exceeds expectations", 5: "outstanding" }
+      reviewer_id: "FK → employees.id — the manager who conducted the review"
+      comments: Free-text review commentary
+
+  products:
+    description: Product catalog with pricing, cost, and inventory.
+    business_context: Source of truth for what the business sells. Links to order_items and product_reviews.
+    columns:
+      id: Primary key
+      name: Product name
+      category:
+        description: Top-level product category
+        values: [Electronics, Audio, Accessories, Storage, Networking, Cables, Power, Furniture, Input Devices, Adapters, Cameras, Displays, Stands]
+      subcategory: More specific product grouping within category
+      price: Retail price in USD (what customers pay)
+      cost: Cost of goods sold (COGS) in USD — what the business pays
+      stock_quantity: Current inventory count
+      launch_date: Date product was added to catalog (ISO format)
+      is_active:
+        description: Whether product is currently for sale
+        values: { 1: "active/available", 0: "discontinued" }
+
+  product_reviews:
+    description: Customer reviews and ratings for products.
+    business_context: Links customers to products they've reviewed. Star rating 1-5.
+    columns:
+      id: Primary key
+      product_id: "FK → products.id"
+      customer_id: "FK → customers.id"
+      rating:
+        description: Star rating
+        values: { 1: "terrible", 2: "poor", 3: "average", 4: "good", 5: "excellent" }
+      review_date: Date review was submitted (ISO format)
+      review_text: Free-text review content
+
+  customers:
+    description: Customer profiles with geography and segmentation.
+    business_context: Core customer table. Links to orders, product_reviews, and support_tickets.
+    columns:
+      id: Primary key
+      first_name: Customer first name
+      last_name: Customer last name
+      email: Unique customer email
+      city: Customer city
+      state: Customer US state
+      region:
+        description: Geographic region
+        values: [Northeast, South, Midwest, West]
+      signup_date: Date customer created their account (ISO format)
+      customer_tier:
+        description: Customer loyalty/spending tier
+        values: [standard, premium, enterprise]
+        business_rule: "Tiers affect pricing and support priority"
+
+  orders:
+    description: Customer orders with totals, discounts, and shipping.
+    business_context: Central transaction table. Each order has one or more order_items.
+    columns:
+      id: Primary key
+      customer_id: "FK → customers.id"
+      order_date: Date order was placed (ISO format)
+      total_amount: Total order value in USD (before discount subtraction)
+      discount_amount: Dollar discount applied to the order
+      shipping_cost: Shipping charge in USD
+      status:
+        description: Order fulfillment status
+        values: [pending, processing, shipped, completed, cancelled, refunded]
+        business_rule: "Only 'completed' and 'shipped' count as successful revenue"
+      payment_method:
+        description: How the customer paid
+        values: [credit_card, debit_card, paypal, apple_pay, google_pay]
+      shipping_method:
+        description: Shipping speed selected
+        values: [standard, express, overnight, pickup]
+
+  order_items:
+    description: Line items within each order.
+    business_context: Links orders to products with quantity and per-item pricing. Use for product-level revenue analysis.
+    columns:
+      id: Primary key
+      order_id: "FK → orders.id"
+      product_id: "FK → products.id"
+      quantity: Number of units ordered
+      unit_price: Price per unit at time of purchase (may differ from current product price)
+      discount_pct:
+        description: Per-item discount as a decimal (0.0 = no discount, 0.15 = 15% off)
+        business_rule: "Net item revenue = unit_price * quantity * (1 - discount_pct)"
+
+  website_traffic:
+    description: Daily website analytics by page and traffic source.
+    business_context: Used for marketing funnel analysis and channel attribution.
+    columns:
+      id: Primary key
+      visit_date: Date of the traffic data (ISO format)
+      page:
+        description: Page path visited
+        values: [/home, /products, /products/detail, /pricing, /about, /blog, /cart, /checkout, /support]
+      source:
+        description: Traffic acquisition channel
+        values: [organic, paid_search, social, direct, email, referral]
+      sessions: Number of unique sessions
+      pageviews: Total page views
+      bounce_rate: "Fraction of single-page sessions (0.0–1.0, e.g., 0.45 = 45%)"
+      avg_session_duration_sec: Average session length in seconds
+
+  support_tickets:
+    description: Customer support tickets with resolution tracking.
+    business_context: Links to customers. Used for service quality and SLA monitoring.
+    columns:
+      id: Primary key
+      customer_id: "FK → customers.id"
+      created_date: Date ticket was opened (ISO format)
+      resolved_date: Date ticket was resolved (ISO format, NULL if still open)
+      category:
+        description: Issue category
+        values: [technical, shipping, returns, account, product_inquiry, billing]
+      priority:
+        description: Ticket urgency
+        values: [low, medium, high, urgent]
+      status:
+        description: Current ticket state
+        values: [open, in_progress, resolved, closed]
+        business_rule: "'resolved' and 'closed' are both considered completed"
+      resolution_time_hours: Hours from creation to resolution (NULL if unresolved)
+
+example_queries:
+  - question: What is total revenue?
+    sql: >
+      SELECT SUM(total_amount) as total_revenue
+      FROM orders
+      WHERE status NOT IN ('cancelled', 'refunded')
+    notes: Exclude cancelled/refunded orders for accurate revenue.
+
+  - question: Monthly revenue trend
+    sql: >
+      SELECT strftime('%Y-%m', order_date) as month,
+             SUM(total_amount) as revenue,
+             COUNT(*) as order_count
+      FROM orders
+      WHERE status NOT IN ('cancelled', 'refunded')
+      GROUP BY month
+      ORDER BY month
+    notes: Group by year-month for time series.
+
+  - question: Top products by revenue
+    sql: >
+      SELECT p.name, p.category,
+             SUM(oi.unit_price * oi.quantity * (1 - oi.discount_pct)) as net_revenue,
+             SUM(oi.quantity) as units_sold
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status NOT IN ('cancelled', 'refunded')
+      GROUP BY p.id
+      ORDER BY net_revenue DESC
+      LIMIT 20
+
+  - question: Customer lifetime value
+    sql: >
+      SELECT c.id, c.first_name || ' ' || c.last_name as name,
+             c.customer_tier, c.region,
+             COUNT(o.id) as order_count,
+             SUM(o.total_amount) as lifetime_value,
+             MIN(o.order_date) as first_order,
+             MAX(o.order_date) as last_order
+      FROM customers c
+      LEFT JOIN orders o ON o.customer_id = c.id AND o.status NOT IN ('cancelled', 'refunded')
+      GROUP BY c.id
+      ORDER BY lifetime_value DESC
+
+  - question: Employee compensation analysis
+    sql: >
+      SELECT d.name as department, e.level,
+             COUNT(*) as headcount,
+             AVG(e.salary) as avg_salary,
+             MIN(e.salary) as min_salary,
+             MAX(e.salary) as max_salary
+      FROM employees e
+      JOIN departments d ON d.id = e.department_id
+      WHERE e.is_active = 1
+      GROUP BY d.name, e.level
+      ORDER BY d.name, avg_salary DESC
+
+  - question: Support ticket resolution performance
+    sql: >
+      SELECT category, priority,
+             COUNT(*) as total_tickets,
+             SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved,
+             ROUND(AVG(resolution_time_hours), 1) as avg_resolution_hours
+      FROM support_tickets
+      GROUP BY category, priority
+      ORDER BY category, priority
+
+  - question: Website conversion funnel
+    sql: >
+      SELECT page,
+             SUM(sessions) as total_sessions,
+             SUM(pageviews) as total_pageviews,
+             ROUND(AVG(bounce_rate) * 100, 1) as avg_bounce_rate_pct
+      FROM website_traffic
+      GROUP BY page
+      ORDER BY total_sessions DESC
