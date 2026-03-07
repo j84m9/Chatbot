@@ -330,11 +330,11 @@ export default function DataExplorer() {
     if (res.ok) {
       const data = await res.json();
       setConnections(data);
-      if (data.length > 0 && !activeConnectionId) {
-        setActiveConnectionId(data[0].id);
+      if (data.length > 0) {
+        setActiveConnectionId(prev => prev ?? data[0].id);
       }
     }
-  }, [activeConnectionId]);
+  }, []);
 
   useEffect(() => {
     fetchConnections();
