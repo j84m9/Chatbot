@@ -298,9 +298,10 @@ export async function POST(req: Request) {
         // 7. Generate explanation (chat mode skips charts for speed)
         sendEvent(controller, 'status', { step: 'analyzing', message: 'Summarizing...' });
 
+        const resultPreview = JSON.stringify(results.rows.slice(0, 10));
         const explanation = await streamTextWithHeartbeat(controller, {
           model,
-          prompt: `In one sentence, explain what this SQL query does:\n${sqlQuery}`,
+          prompt: `The user asked: "${question}"\n\nSQL query:\n${sqlQuery}\n\nResults (${results.rowCount} row${results.rowCount === 1 ? '' : 's'}):\n${resultPreview}\n\nAnswer the user's question directly using the results. Be concise (1-2 sentences). Lead with the answer, not what the query does.`,
         }).then(t => t.trim()).catch(() => 'Query executed.');
 
         sendEvent(controller, 'explanation', { explanation });
