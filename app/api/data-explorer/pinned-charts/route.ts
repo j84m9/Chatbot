@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const connectionId = searchParams.get('connectionId');
+  const dashboardId = searchParams.get('dashboardId');
 
   const dbAdmin = createAdminClient(
     process.env.SUPABASE_URL!,
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest) {
     .eq('user_id', user.id)
     .order('display_order', { ascending: true });
 
-  if (connectionId) {
+  if (dashboardId) {
+    query = query.eq('dashboard_id', dashboardId);
+  } else if (connectionId) {
     query = query.eq('connection_id', connectionId);
   }
 
@@ -46,10 +49,14 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { connection_id, title, chart_config, results_snapshot, source_message_id, source_sql, source_question } = body;
+  const { connection_id, title, chart_config, results_snapshot, source_message_id, source_sql, source_question, item_type, slicer_config, dashboard_id } = body;
 
-  if (!connection_id || !title || !chart_config || !results_snapshot) {
+  // Slicers don't need chart_config/results_snapshot
+  if (!connection_id || !title) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
+  if (item_type !== 'slicer' && (!chart_config || !results_snapshot)) {
+    return NextResponse.json({ error: 'Missing chart_config or results_snapshot' }, { status: 400 });
   }
 
   const dbAdmin = createAdminClient(
@@ -68,19 +75,24 @@ export async function POST(request: NextRequest) {
 
   const nextOrder = existing && existing.length > 0 ? existing[0].display_order + 1 : 0;
 
+  const insertData: Record<string, any> = {
+    user_id: user.id,
+    connection_id,
+    title,
+    chart_config: chart_config || {},
+    results_snapshot: results_snapshot || { rows: [], columns: [] },
+    source_message_id: source_message_id || null,
+    source_sql: source_sql || null,
+    source_question: source_question || null,
+    display_order: nextOrder,
+    item_type: item_type || 'chart',
+  };
+  if (slicer_config) insertData.slicer_config = slicer_config;
+  if (dashboard_id) insertData.dashboard_id = dashboard_id;
+
   const { data, error } = await dbAdmin
     .from('pinned_charts')
-    .insert({
-      user_id: user.id,
-      connection_id,
-      title,
-      chart_config,
-      results_snapshot,
-      source_message_id: source_message_id || null,
-      source_sql: source_sql || null,
-      source_question: source_question || null,
-      display_order: nextOrder,
-    })
+    .insert(insertData)
     .select()
     .single();
 
@@ -118,6 +130,7 @@ export async function PATCH(request: NextRequest) {
   if (body.auto_refresh_interval !== undefined) updates.auto_refresh_interval = body.auto_refresh_interval;
   if (body.last_refreshed_at !== undefined) updates.last_refreshed_at = body.last_refreshed_at;
   if (body.results_snapshot !== undefined) updates.results_snapshot = body.results_snapshot;
+  if (body.dashboard_id !== undefined) updates.dashboard_id = body.dashboard_id;
 
   const { error } = await dbAdmin
     .from('pinned_charts')

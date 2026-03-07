@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import type { PinnedChart } from './Dashboard';
-import type { CrossFilter, DrillDownState, DrillDownLevel } from '@/types/dashboard';
+import type { CrossFilter } from '@/types/dashboard';
 import ChartTypeSwitcher from './ChartTypeSwitcher';
 import DashboardKPICard from './DashboardKPICard';
 
@@ -70,8 +70,6 @@ export default function DashboardChartCard({
   const [showRefreshMenu, setShowRefreshMenu] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
-  const [drillDown, setDrillDown] = useState<DrillDownState | null>(null);
-  const [drillMode, setDrillMode] = useState(false);
 
   const columns = filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (pin.results_snapshot.columns || []);
   const hasAnnotations = pin.chart_config.annotations && pin.chart_config.annotations.length > 0;
@@ -80,31 +78,11 @@ export default function DashboardChartCard({
   const isFiltered = crossFilter && !isSourceChart && filteredRows.length < pin.results_snapshot.rows.length;
   const canRefresh = !!pin.source_sql;
 
-  // Drill-down: get the effective rows (drilled or filtered)
-  const effectiveRows = drillDown ? drillDown.levels.reduce((rows, level) => {
-    return rows.filter(r => String(r[level.column]) === String(level.value));
-  }, [...filteredRows]) : filteredRows;
-
-  // Click handler: priority is annotate > drill > cross-filter
+  // Click handler: annotate mode or cross-filter
   const handleChartClick = useCallback((x: number | string, y: number | string) => {
     if (annotatingCard) {
       setPendingAnnotation({ x, y });
       setAnnotationText('');
-      return;
-    }
-
-    if (drillMode && pin.source_sql) {
-      // Determine column from chart type
-      const col = ['pie', 'funnel'].includes(pin.chart_config.chartType)
-        ? pin.chart_config.xColumn
-        : pin.chart_config.xColumn;
-
-      const newLevel: DrillDownLevel = { column: col, value: x, label: `${col}: ${x}` };
-
-      setDrillDown(prev => ({
-        levels: [...(prev?.levels || []), newLevel],
-        originalSnapshot: prev?.originalSnapshot || pin.results_snapshot,
-      }));
       return;
     }
 
@@ -113,20 +91,7 @@ export default function DashboardChartCard({
       const col = pin.chart_config.xColumn;
       onCrossFilter(pin.id, col, x);
     }
-  }, [annotatingCard, drillMode, pin, onCrossFilter]);
-
-  const handleDrillBack = () => {
-    if (!drillDown) return;
-    if (drillDown.levels.length <= 1) {
-      setDrillDown(null);
-    } else {
-      setDrillDown({ ...drillDown, levels: drillDown.levels.slice(0, -1) });
-    }
-  };
-
-  const handleDrillReset = () => {
-    setDrillDown(null);
-  };
+  }, [annotatingCard, pin, onCrossFilter]);
 
   const handleTitleDoubleClick = () => {
     if (!onTitleChange) return;
@@ -246,23 +211,6 @@ export default function DashboardChartCard({
           </div>
         )}
 
-        {/* Drill-down toggle */}
-        {pin.source_sql && (
-          <button
-            onClick={() => setDrillMode(!drillMode)}
-            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
-              drillMode
-                ? 'bg-blue-500/20 text-blue-400'
-                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
-            }`}
-            title={drillMode ? 'Exit drill-down mode' : 'Drill down into data'}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
-            </svg>
-          </button>
-        )}
-
         {/* Chart type switcher */}
         {onChangeChartType && (
           <button
@@ -290,7 +238,6 @@ export default function DashboardChartCard({
                 setAnnotationText('');
               } else {
                 setAnnotatingCard(true);
-                setDrillMode(false);
               }
             }}
             className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
@@ -356,7 +303,7 @@ export default function DashboardChartCard({
         <div className="px-3 py-1.5 border-b dark:border-[#2a2b2d]/50 border-gray-100">
           <ChartTypeSwitcher
             currentType={pin.chart_config.chartType}
-            rows={effectiveRows}
+            rows={filteredRows}
             columns={columns}
             onChangeType={(t) => onChangeChartType(pin.id, t)}
           />
@@ -369,30 +316,6 @@ export default function DashboardChartCard({
           <span className="text-[10px] dark:text-purple-300 text-purple-600">
             Filtered by: {crossFilter!.column} = {String(crossFilter!.value)}
           </span>
-        </div>
-      )}
-
-      {/* Drill-down breadcrumb */}
-      {drillDown && drillDown.levels.length > 0 && (
-        <div className="flex items-center gap-1.5 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-blue-500/5">
-          <button
-            onClick={handleDrillReset}
-            className="text-[10px] dark:text-blue-300 text-blue-600 hover:underline cursor-pointer"
-          >
-            All
-          </button>
-          {drillDown.levels.map((level, i) => (
-            <span key={i} className="flex items-center gap-1 text-[10px] dark:text-blue-300 text-blue-600">
-              <span className="dark:text-gray-600 text-gray-400">&gt;</span>
-              {level.label}
-            </span>
-          ))}
-          <button
-            onClick={handleDrillBack}
-            className="ml-auto text-[10px] dark:text-blue-300 text-blue-600 hover:underline cursor-pointer"
-          >
-            Back
-          </button>
         </div>
       )}
 
@@ -450,17 +373,6 @@ export default function DashboardChartCard({
         </div>
       )}
 
-      {/* Drill mode hint */}
-      {drillMode && !annotatingCard && (
-        <div className="flex items-center gap-2 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-blue-500/10">
-          <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-          </span>
-          <span className="text-[11px] dark:text-blue-300 text-blue-600">Click a data point to drill down</span>
-        </div>
-      )}
-
       {/* Chart or KPI card */}
       <div className="flex-1 min-h-0 relative">
         {!canRefresh && (
@@ -474,16 +386,15 @@ export default function DashboardChartCard({
           <DashboardKPICard
             pin={pin}
             darkMode={darkMode}
-            rows={effectiveRows}
+            rows={filteredRows}
           />
         ) : (
           <PlotlyChart
             chartConfig={pin.chart_config}
-            rows={effectiveRows}
+            rows={filteredRows}
             darkMode={darkMode}
             hideTitle
             annotationMode={annotatingCard}
-            drillDownMode={drillMode}
             onChartClick={handleChartClick}
           />
         )}

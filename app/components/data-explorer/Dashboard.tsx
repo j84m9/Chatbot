@@ -3,11 +3,11 @@
 import { useCallback, useRef, useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import type { ChartConfig } from './PlotlyChart';
-import type { CrossFilter, GlobalFilter } from '@/types/dashboard';
+import type { CrossFilter, GlobalFilter, SlicerConfig, DashboardTab } from '@/types/dashboard';
 import DashboardChartCard from './DashboardChartCard';
-import DashboardFilterBar from './DashboardFilterBar';
+import DashboardSlicerCard from './DashboardSlicerCard';
 import FullscreenChartModal from './FullscreenChartModal';
-import { applyClientFilters } from '@/utils/dashboard-filters';
+import { applyClientFilters, detectFilterableColumns } from '@/utils/dashboard-filters';
 // CSS imported in globals.css
 type Layout = { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number };
 
@@ -33,6 +33,9 @@ export interface PinnedChart {
   auto_refresh_interval?: number;
   last_refreshed_at?: string | null;
   created_at: string;
+  item_type?: string;
+  slicer_config?: SlicerConfig | null;
+  dashboard_id?: string | null;
 }
 
 /** Detect if a chart is KPI-eligible: gauge type OR single row with 1-3 numeric columns */
@@ -66,6 +69,16 @@ interface DashboardProps {
   globalFilters?: GlobalFilter[];
   onGlobalFiltersChange?: (filters: GlobalFilter[]) => void;
   onApplyAndRefresh?: (filters: GlobalFilter[]) => void;
+  // Slicer
+  onAddSlicer?: (column: string, filterType: 'multi_select' | 'date_range') => void;
+  // Tabs
+  dashboards?: DashboardTab[];
+  activeDashboardId?: string | null;
+  onSwitchTab?: (id: string) => void;
+  onCreateTab?: (title: string) => void;
+  onDeleteTab?: (id: string) => void;
+  onRenameTab?: (id: string, title: string) => void;
+  onAutoOrganize?: () => void;
 }
 
 export default function Dashboard({
@@ -73,6 +86,7 @@ export default function Dashboard({
   onToggleAnnotations, connectionName, dashboardTitle, dashboardId, onDashboardTitleChange,
   onRefreshChart, onRefreshAll, refreshingCharts, onAutoRefreshChange, onChartTitleChange,
   globalFilters, onGlobalFiltersChange, onApplyAndRefresh,
+  onAddSlicer, dashboards, activeDashboardId, onSwitchTab, onCreateTab, onDeleteTab, onRenameTab, onAutoOrganize,
 }: DashboardProps) {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -83,6 +97,33 @@ export default function Dashboard({
 
   // Fullscreen state
   const [fullscreenChart, setFullscreenChart] = useState<PinnedChart | null>(null);
+
+  // Slicer dropdown
+  const [showSlicerMenu, setShowSlicerMenu] = useState(false);
+
+  // Tab rename state
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
+  const [tabNameDraft, setTabNameDraft] = useState('');
+
+  // Tab "+" menu
+  const [showTabMenu, setShowTabMenu] = useState(false);
+
+  // Separate charts and slicers
+  const chartItems = useMemo(() => pinnedCharts.filter(p => p.item_type !== 'slicer'), [pinnedCharts]);
+  const slicerItems = useMemo(() => pinnedCharts.filter(p => p.item_type === 'slicer'), [pinnedCharts]);
+
+  // Detect filterable columns for "Add Slicer" menu
+  const { dateColumns, categoricalColumns } = useMemo(
+    () => detectFilterableColumns(chartItems),
+    [chartItems]
+  );
+  const allFilterableColumns = useMemo(() => {
+    const existing = new Set(slicerItems.map(s => s.slicer_config?.column));
+    return [
+      ...dateColumns.filter(c => !existing.has(c)).map(c => ({ column: c, type: 'date_range' as const })),
+      ...categoricalColumns.filter(c => !existing.has(c)).map(c => ({ column: c, type: 'multi_select' as const })),
+    ];
+  }, [dateColumns, categoricalColumns, slicerItems]);
 
   const handleLayoutChange = useCallback((layout: Layout[], _allLayouts: any) => {
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -98,7 +139,7 @@ export default function Dashboard({
     }, 500);
   }, [pinnedCharts, onLayoutChange]);
 
-  // Cross-filter: filter rows client-side for each chart
+  // Cross-filter + global filters: filter rows client-side for each chart
   const getFilteredRows = useCallback((pin: PinnedChart): Record<string, any>[] => {
     let rows = pin.results_snapshot.rows;
 
@@ -118,13 +159,24 @@ export default function Dashboard({
   }, [crossFilter, globalFilters]);
 
   const handleCrossFilter = useCallback((sourceChartId: string, column: string, value: string | number) => {
-    // Toggle off if clicking the same filter
     if (crossFilter && crossFilter.sourceChartId === sourceChartId && crossFilter.column === column && String(crossFilter.value) === String(value)) {
       setCrossFilter(null);
     } else {
       setCrossFilter({ sourceChartId, column, value });
     }
   }, [crossFilter]);
+
+  // Slicer filter changes -> update globalFilters
+  const handleSlicerFilterChange = useCallback((column: string, update: Partial<GlobalFilter>) => {
+    if (!onGlobalFiltersChange) return;
+    const current = globalFilters || [];
+    const existing = current.find(f => f.column === column);
+    if (existing) {
+      onGlobalFiltersChange(current.map(f => f.column === column ? { ...f, ...update } : f));
+    } else {
+      onGlobalFiltersChange([...current, { column, type: 'select', ...update } as GlobalFilter]);
+    }
+  }, [globalFilters, onGlobalFiltersChange]);
 
   // Dashboard title editing
   const handleTitleDoubleClick = () => {
@@ -140,22 +192,57 @@ export default function Dashboard({
     }
   };
 
-  // Compute charts with filtered rows for cross-filter + global filters
+  // Tab handlers
+  const handleTabDoubleClick = (tabId: string, currentTitle: string) => {
+    setRenamingTabId(tabId);
+    setTabNameDraft(currentTitle);
+  };
+
+  const handleTabRenameSave = () => {
+    if (renamingTabId && tabNameDraft.trim() && onRenameTab) {
+      onRenameTab(renamingTabId, tabNameDraft.trim());
+    }
+    setRenamingTabId(null);
+  };
+
+  // Compute charts with filtered rows
   const chartsWithFilteredRows = useMemo(() => {
-    return pinnedCharts.map(pin => ({
+    return chartItems.map(pin => ({
       pin,
       filteredRows: getFilteredRows(pin),
     }));
-  }, [pinnedCharts, getFilteredRows]);
+  }, [chartItems, getFilteredRows]);
 
   if (pinnedCharts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full dark:text-gray-500 text-gray-400">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-12 h-12 mx-auto mb-3 opacity-30">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
-        </svg>
-        <p className="text-sm mb-1">No pinned charts yet</p>
-        <p className="text-xs dark:text-gray-600 text-gray-400">Pin charts from query results to build your dashboard</p>
+      <div className="h-full w-full overflow-y-auto p-4">
+        {/* Tab bar even when empty */}
+        {dashboards && dashboards.length > 0 && (
+          <TabBar
+            dashboards={dashboards}
+            activeDashboardId={activeDashboardId}
+            renamingTabId={renamingTabId}
+            tabNameDraft={tabNameDraft}
+            showTabMenu={showTabMenu}
+            onSwitchTab={onSwitchTab}
+            onDoubleClick={handleTabDoubleClick}
+            onRenameSave={handleTabRenameSave}
+            onTabNameDraftChange={setTabNameDraft}
+            setRenamingTabId={setRenamingTabId}
+            onDeleteTab={onDeleteTab}
+            onCreateTab={onCreateTab}
+            onAutoOrganize={onAutoOrganize}
+            setShowTabMenu={setShowTabMenu}
+            chartCount={chartItems.length}
+          />
+        )}
+        <div className="flex flex-col items-center justify-center h-full w-full dark:text-gray-500 text-gray-400">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-12 h-12 mx-auto mb-3 opacity-30">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5" />
+          </svg>
+          <p className="text-sm mb-1">No pinned charts yet</p>
+          <p className="text-xs dark:text-gray-600 text-gray-400">Pin charts from query results to build your dashboard</p>
+        </div>
       </div>
     );
   }
@@ -163,11 +250,14 @@ export default function Dashboard({
   // Build layout from saved positions or auto-arrange
   const buildLayout = (): Layout[] => {
     return pinnedCharts.map((pin, i) => {
-      const isKPI = isKPIChart(pin);
+      const isSlicer = pin.item_type === 'slicer';
+      const isKPI = !isSlicer && isKPIChart(pin);
       if (pin.layout) {
         return { i: pin.id, x: pin.layout.x, y: pin.layout.y, w: pin.layout.w, h: pin.layout.h, minW: 2, minH: 2 };
       }
-      // KPI cards default smaller
+      if (isSlicer) {
+        return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 3, w: 3, h: 3, minW: 2, minH: 2 };
+      }
       if (isKPI) {
         return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 2, w: 3, h: 2, minW: 2, minH: 2 };
       }
@@ -201,7 +291,7 @@ export default function Dashboard({
                 {dashboardTitle || 'Dashboard'}
               </h2>
             )}
-            <p className="text-xs dark:text-gray-500 text-gray-400">{connectionName} — {pinnedCharts.length} pinned chart{pinnedCharts.length !== 1 ? 's' : ''} · Drag to rearrange, resize from corners</p>
+            <p className="text-xs dark:text-gray-500 text-gray-400">{connectionName} — {chartItems.length} chart{chartItems.length !== 1 ? 's' : ''}{slicerItems.length > 0 ? `, ${slicerItems.length} slicer${slicerItems.length !== 1 ? 's' : ''}` : ''} · Drag to rearrange, resize from corners</p>
           </div>
           <div className="flex items-center gap-2">
             {/* Cross-filter clear pill */}
@@ -216,6 +306,42 @@ export default function Dashboard({
                 Filter: {crossFilter.column} = {String(crossFilter.value)}
               </button>
             )}
+
+            {/* Add Slicer */}
+            {onAddSlicer && allFilterableColumns.length > 0 && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowSlicerMenu(!showSlicerMenu)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 dark:text-gray-300 text-gray-600 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer shadow-sm flex-shrink-0"
+                  title="Add a slicer filter widget"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+                  </svg>
+                  Add Slicer
+                </button>
+                {showSlicerMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-30 dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] max-h-[300px] overflow-y-auto">
+                    {allFilterableColumns.map(({ column, type }) => (
+                      <button
+                        key={column}
+                        onClick={() => {
+                          onAddSlicer(column, type);
+                          setShowSlicerMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:dark:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer dark:text-gray-300 text-gray-600 flex items-center gap-2"
+                      >
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded ${type === 'date_range' ? 'bg-blue-500/15 text-blue-400' : 'bg-purple-500/15 text-purple-400'}`}>
+                          {type === 'date_range' ? 'Date' : 'Select'}
+                        </span>
+                        {column.replace(/_/g, ' ')}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Refresh All */}
             {onRefreshAll && (
               <button
@@ -229,6 +355,7 @@ export default function Dashboard({
                 Refresh All
               </button>
             )}
+
             {/* Pop Out */}
             <button
               onClick={() => {
@@ -255,14 +382,24 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Global filter bar */}
-      {globalFilters !== undefined && onGlobalFiltersChange && (
-        <DashboardFilterBar
-          pinnedCharts={pinnedCharts}
-          darkMode={darkMode}
-          filters={globalFilters || []}
-          onFiltersChange={onGlobalFiltersChange}
-          onApplyAndRefresh={onApplyAndRefresh}
+      {/* Tab bar */}
+      {dashboards && dashboards.length > 0 && (
+        <TabBar
+          dashboards={dashboards}
+          activeDashboardId={activeDashboardId}
+          renamingTabId={renamingTabId}
+          tabNameDraft={tabNameDraft}
+          showTabMenu={showTabMenu}
+          onSwitchTab={onSwitchTab}
+          onDoubleClick={handleTabDoubleClick}
+          onRenameSave={handleTabRenameSave}
+          onTabNameDraftChange={setTabNameDraft}
+          setRenamingTabId={setRenamingTabId}
+          onDeleteTab={onDeleteTab}
+          onCreateTab={onCreateTab}
+          onAutoOrganize={onAutoOrganize}
+          setShowTabMenu={setShowTabMenu}
+          chartCount={chartItems.length}
         />
       )}
 
@@ -279,24 +416,36 @@ export default function Dashboard({
         compactType="vertical"
         margin={[16, 16]}
       >
-        {chartsWithFilteredRows.map(({ pin, filteredRows }) => (
+        {pinnedCharts.map(pin => (
           <div key={pin.id}>
-            <DashboardChartCard
-              pin={pin}
-              darkMode={darkMode}
-              filteredRows={filteredRows}
-              isRefreshing={refreshingCharts?.has(pin.id) || false}
-              crossFilter={crossFilter}
-              onUnpin={onUnpin}
-              onChangeChartType={onChangeChartType}
-              onAddAnnotation={onAddAnnotation}
-              onToggleAnnotations={onToggleAnnotations}
-              onRefresh={onRefreshChart}
-              onAutoRefreshChange={onAutoRefreshChange}
-              onCrossFilter={handleCrossFilter}
-              onExpand={setFullscreenChart}
-              onTitleChange={onChartTitleChange}
-            />
+            {pin.item_type === 'slicer' && pin.slicer_config ? (
+              <DashboardSlicerCard
+                pin={pin}
+                darkMode={darkMode}
+                slicerConfig={pin.slicer_config}
+                currentFilter={(globalFilters || []).find(f => f.column === pin.slicer_config!.column)}
+                allCharts={chartItems}
+                onFilterChange={handleSlicerFilterChange}
+                onUnpin={onUnpin}
+              />
+            ) : (
+              <DashboardChartCard
+                pin={pin}
+                darkMode={darkMode}
+                filteredRows={chartsWithFilteredRows.find(c => c.pin.id === pin.id)?.filteredRows || pin.results_snapshot.rows}
+                isRefreshing={refreshingCharts?.has(pin.id) || false}
+                crossFilter={crossFilter}
+                onUnpin={onUnpin}
+                onChangeChartType={onChangeChartType}
+                onAddAnnotation={onAddAnnotation}
+                onToggleAnnotations={onToggleAnnotations}
+                onRefresh={onRefreshChart}
+                onAutoRefreshChange={onAutoRefreshChange}
+                onCrossFilter={handleCrossFilter}
+                onExpand={setFullscreenChart}
+                onTitleChange={onChartTitleChange}
+              />
+            )}
           </div>
         ))}
       </GridLayout>
@@ -309,6 +458,126 @@ export default function Dashboard({
           rows={getFilteredRows(fullscreenChart)}
           onClose={() => setFullscreenChart(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/** Tab bar sub-component */
+function TabBar({
+  dashboards, activeDashboardId, renamingTabId, tabNameDraft, showTabMenu,
+  onSwitchTab, onDoubleClick, onRenameSave, onTabNameDraftChange, setRenamingTabId,
+  onDeleteTab, onCreateTab, onAutoOrganize, setShowTabMenu, chartCount,
+}: {
+  dashboards: DashboardTab[];
+  activeDashboardId?: string | null;
+  renamingTabId: string | null;
+  tabNameDraft: string;
+  showTabMenu: boolean;
+  onSwitchTab?: (id: string) => void;
+  onDoubleClick: (id: string, title: string) => void;
+  onRenameSave: () => void;
+  onTabNameDraftChange: (v: string) => void;
+  setRenamingTabId: (id: string | null) => void;
+  onDeleteTab?: (id: string) => void;
+  onCreateTab?: (title: string) => void;
+  onAutoOrganize?: () => void;
+  setShowTabMenu: (v: boolean) => void;
+  chartCount: number;
+}) {
+  return (
+    <div className="flex items-center gap-1 mb-3 border-b dark:border-[#2a2b2d] border-gray-200 pb-0">
+      {dashboards.map(tab => (
+        <div key={tab.id} className="relative group flex items-center">
+          {renamingTabId === tab.id ? (
+            <input
+              autoFocus
+              value={tabNameDraft}
+              onChange={e => onTabNameDraftChange(e.target.value)}
+              onBlur={onRenameSave}
+              onKeyDown={e => {
+                if (e.key === 'Enter') onRenameSave();
+                if (e.key === 'Escape') setRenamingTabId(null);
+              }}
+              className="text-xs px-3 py-1.5 dark:bg-[#1e1f20] bg-gray-100 border dark:border-[#2a2b2d] border-gray-300 rounded-t-md outline-none focus:border-purple-500 dark:text-gray-200 text-gray-700 min-w-[60px]"
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <button
+              onClick={() => onSwitchTab?.(tab.id)}
+              onDoubleClick={() => onDoubleClick(tab.id, tab.title)}
+              className={`text-xs px-3 py-1.5 rounded-t-md transition-colors cursor-pointer border-b-2 ${
+                tab.id === activeDashboardId
+                  ? 'dark:text-purple-300 text-purple-600 border-purple-500 dark:bg-purple-500/5 bg-purple-50'
+                  : 'dark:text-gray-500 text-gray-400 border-transparent dark:hover:text-gray-300 hover:text-gray-600 dark:hover:bg-[#1e1f20] hover:bg-gray-50'
+              }`}
+              title="Double-click to rename"
+            >
+              {tab.title}
+            </button>
+          )}
+          {/* Delete tab X */}
+          {dashboards.length > 1 && onDeleteTab && (
+            <button
+              onClick={() => {
+                if (confirm(`Delete tab "${tab.title}"? Charts on this tab will also be removed.`)) {
+                  onDeleteTab(tab.id);
+                }
+              }}
+              className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-red-400 hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100"
+              title="Delete tab"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      ))}
+
+      {/* "+" button with dropdown */}
+      {onCreateTab && (
+        <div className="relative">
+          <button
+            onClick={() => setShowTabMenu(!showTabMenu)}
+            className="p-1 rounded dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+            title="Add or organize tabs"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </button>
+          {showTabMenu && (
+            <div className="absolute left-0 top-full mt-1 z-30 dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]">
+              <button
+                onClick={() => {
+                  onCreateTab('New Tab');
+                  setShowTabMenu(false);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:dark:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer dark:text-gray-300 text-gray-600 flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                New Tab
+              </button>
+              {onAutoOrganize && chartCount > 2 && (
+                <button
+                  onClick={() => {
+                    onAutoOrganize();
+                    setShowTabMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:dark:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer dark:text-gray-300 text-gray-600 flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" />
+                  </svg>
+                  Auto-organize
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
 import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard';
 import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
-import type { GlobalFilter } from '@/types/dashboard';
+import type { GlobalFilter, DashboardTab } from '@/types/dashboard';
 import { applyFiltersToSql } from '@/utils/dashboard-filters';
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
@@ -70,6 +70,8 @@ export default function DataExplorer() {
   const [refreshingCharts, setRefreshingCharts] = useState<Set<string>>(new Set());
   const [globalFilters, setGlobalFilters] = useState<GlobalFilter[]>([]);
   const autoRefreshTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const [dashboards, setDashboards] = useState<DashboardTab[]>([]);
+  const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null);
 
   // Query mode: quick (single-shot) vs agent (agentic loop)
   const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
@@ -1306,10 +1308,14 @@ export default function DataExplorer() {
   };
 
   // Pinned chart handlers
-  const fetchPinnedCharts = useCallback(async () => {
+  const fetchPinnedCharts = useCallback(async (dashId?: string) => {
     if (!activeConnectionId) return;
+    const targetDashId = dashId || activeDashboardId;
     try {
-      const res = await fetch(`/api/data-explorer/pinned-charts?connectionId=${activeConnectionId}`);
+      const url = targetDashId
+        ? `/api/data-explorer/pinned-charts?dashboardId=${targetDashId}`
+        : `/api/data-explorer/pinned-charts?connectionId=${activeConnectionId}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setPinnedCharts(data);
@@ -1317,7 +1323,7 @@ export default function DataExplorer() {
     } catch (err) {
       console.error('Failed to fetch pinned charts:', err);
     }
-  }, [activeConnectionId]);
+  }, [activeConnectionId, activeDashboardId]);
 
   useEffect(() => {
     fetchPinnedCharts();
@@ -1359,6 +1365,7 @@ export default function DataExplorer() {
           source_message_id: null,
           source_sql: exchange.sql || null,
           source_question: exchange.question || null,
+          dashboard_id: activeDashboardId || undefined,
         }),
       });
       if (res.ok) {
@@ -1574,20 +1581,184 @@ export default function DataExplorer() {
     }
   };
 
-  // Fetch dashboard record on connection change
-  useEffect(() => {
+  // Slicer handler: add a slicer widget to the dashboard
+  const handleAddSlicer = async (column: string, filterType: 'multi_select' | 'date_range') => {
     if (!activeConnectionId) return;
-    fetch(`/api/data-explorer/dashboards?connectionId=${activeConnectionId}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data) {
-          setDashboardId(data.id);
-          setDashboardTitle(data.title || 'Dashboard');
-          setGlobalFilters(data.global_filters || []);
+    try {
+      const res = await fetch('/api/data-explorer/pinned-charts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          connection_id: activeConnectionId,
+          title: column.replace(/_/g, ' '),
+          item_type: 'slicer',
+          slicer_config: { column, filterType },
+          chart_config: {},
+          results_snapshot: { rows: [], columns: [] },
+          dashboard_id: activeDashboardId || undefined,
+        }),
+      });
+      if (res.ok) {
+        fetchPinnedCharts();
+      }
+    } catch (err) {
+      console.error('Failed to add slicer:', err);
+    }
+  };
+
+  // Tab handlers
+  const handleCreateTab = async (title: string) => {
+    if (!activeConnectionId) return;
+    try {
+      const res = await fetch('/api/data-explorer/dashboards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connection_id: activeConnectionId, title }),
+      });
+      if (res.ok) {
+        const tab = await res.json();
+        setDashboards(prev => [...prev, tab]);
+        setActiveDashboardId(tab.id);
+        setDashboardId(tab.id);
+        setDashboardTitle(tab.title);
+        setGlobalFilters([]);
+        fetchPinnedCharts(tab.id);
+      }
+    } catch (err) {
+      console.error('Failed to create tab:', err);
+    }
+  };
+
+  const handleDeleteTab = async (id: string) => {
+    if (!activeConnectionId) return;
+    try {
+      const res = await fetch(`/api/data-explorer/dashboards?id=${id}&connectionId=${activeConnectionId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const remaining = dashboards.filter(d => d.id !== id);
+        setDashboards(remaining);
+        if (activeDashboardId === id && remaining.length > 0) {
+          const next = remaining[0];
+          setActiveDashboardId(next.id);
+          setDashboardId(next.id);
+          setDashboardTitle(next.title);
+          setGlobalFilters(next.global_filters || []);
+          fetchPinnedCharts(next.id);
         }
-      })
-      .catch(err => console.error('Failed to fetch dashboard:', err));
+      }
+    } catch (err) {
+      console.error('Failed to delete tab:', err);
+    }
+  };
+
+  const handleRenameTab = async (id: string, title: string) => {
+    setDashboards(prev => prev.map(d => d.id === id ? { ...d, title } : d));
+    if (id === activeDashboardId) setDashboardTitle(title);
+    fetch('/api/data-explorer/dashboards', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title }),
+    }).catch(err => console.error('Failed to rename tab:', err));
+  };
+
+  const handleSwitchTab = (id: string) => {
+    const tab = dashboards.find(d => d.id === id);
+    if (!tab) return;
+    setActiveDashboardId(id);
+    setDashboardId(id);
+    setDashboardTitle(tab.title);
+    setGlobalFilters(tab.global_filters || []);
+    fetchPinnedCharts(id);
+  };
+
+  // Auto-organize: group charts by keyword themes into tabs
+  const handleAutoOrganize = async () => {
+    if (!activeConnectionId || pinnedCharts.length < 3) return;
+
+    const THEME_KEYWORDS: Record<string, string[]> = {
+      'Sales': ['sales', 'revenue', 'order', 'orders', 'purchase'],
+      'Finance': ['profit', 'cost', 'expense', 'budget', 'payment', 'income', 'margin'],
+      'Inventory': ['inventory', 'stock', 'warehouse', 'product', 'products', 'quantity'],
+      'Customers': ['customer', 'client', 'user', 'account', 'subscriber'],
+      'HR': ['employee', 'salary', 'department', 'hire', 'staff'],
+      'Performance': ['kpi', 'metric', 'performance', 'target', 'goal'],
+    };
+
+    // Group charts by theme
+    const groups = new Map<string, PinnedChart[]>();
+    const ungrouped: PinnedChart[] = [];
+
+    for (const chart of pinnedCharts.filter(c => c.item_type !== 'slicer')) {
+      const titleLower = chart.title.toLowerCase();
+      const questionLower = (chart.source_question || '').toLowerCase();
+      const combined = `${titleLower} ${questionLower}`;
+
+      let matched = false;
+      for (const [theme, keywords] of Object.entries(THEME_KEYWORDS)) {
+        if (keywords.some(kw => combined.includes(kw))) {
+          if (!groups.has(theme)) groups.set(theme, []);
+          groups.get(theme)!.push(chart);
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) ungrouped.push(chart);
+    }
+
+    // Only proceed if we have at least 2 groups
+    if (groups.size < 2) return;
+
+    // Create tabs for each group and move charts
+    for (const [theme, charts] of groups) {
+      try {
+        const res = await fetch('/api/data-explorer/dashboards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connection_id: activeConnectionId, title: theme }),
+        });
+        if (res.ok) {
+          const tab = await res.json();
+          // Move charts to new tab
+          for (const chart of charts) {
+            await fetch('/api/data-explorer/pinned-charts', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: chart.id, dashboard_id: tab.id }),
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to auto-organize:', err);
+      }
+    }
+
+    // Refresh dashboards and charts
+    await fetchDashboards();
+  };
+
+  // Fetch dashboard tabs on connection change
+  const fetchDashboards = useCallback(async () => {
+    if (!activeConnectionId) return;
+    try {
+      const res = await fetch(`/api/data-explorer/dashboards?connectionId=${activeConnectionId}`);
+      if (!res.ok) return;
+      const data: DashboardTab[] = await res.json();
+      setDashboards(data);
+      // Set active to the default or first tab
+      const defaultTab = data.find(d => d.is_default) || data[0];
+      if (defaultTab) {
+        setActiveDashboardId(defaultTab.id);
+        setDashboardId(defaultTab.id);
+        setDashboardTitle(defaultTab.title || 'Dashboard');
+        setGlobalFilters(defaultTab.global_filters || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch dashboards:', err);
+    }
   }, [activeConnectionId]);
+
+  useEffect(() => {
+    fetchDashboards();
+  }, [fetchDashboards]);
 
   // Drag handle for split pane
   const dragAxis = useRef<'horizontal' | 'vertical'>('horizontal');
@@ -1854,6 +2025,14 @@ export default function DataExplorer() {
               globalFilters={globalFilters}
               onGlobalFiltersChange={handleGlobalFiltersChange}
               onApplyAndRefresh={handleApplyAndRefresh}
+              onAddSlicer={handleAddSlicer}
+              dashboards={dashboards}
+              activeDashboardId={activeDashboardId}
+              onSwitchTab={handleSwitchTab}
+              onCreateTab={handleCreateTab}
+              onDeleteTab={handleDeleteTab}
+              onRenameTab={handleRenameTab}
+              onAutoOrganize={handleAutoOrganize}
             />
           ) : editorMode === 'sql' ? (
           /* SQL mode: vertical split (editor top, results bottom) */
@@ -1955,7 +2134,7 @@ export default function DataExplorer() {
 
               {/* Right pane: Results Panel */}
               <div
-                className="flex flex-col"
+                className="flex flex-col min-h-0"
                 style={{ width: `${100 - splitPosition}%` }}
               >
                 <ResultsPanel
