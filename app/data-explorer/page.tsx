@@ -1730,7 +1730,7 @@ export default function DataExplorer() {
           /* Chat/Agent mode: horizontal split (chat left, results right) */
           <>
           <div
-            className="flex flex-col transition-[width] duration-300"
+            className="flex flex-col transition-[width] duration-300 min-w-0 overflow-hidden"
             style={{ width: showResults ? `${splitPosition}%` : '100%' }}
           >
               <QueryChat
