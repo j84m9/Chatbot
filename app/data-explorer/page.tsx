@@ -34,13 +34,14 @@ export default function DataExplorer() {
 
   // Connections — persist selection across refreshes
   const [connections, setConnections] = useState<any[]>([]);
-  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('de-active-connection') || null;
-    }
-    return null;
-  });
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [showConnectionModal, setShowConnectionModal] = useState(false);
+
+  // Restore active connection from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('de-active-connection');
+    if (saved) setActiveConnectionId(prev => prev ?? saved);
+  }, []);
 
   // Persist active connection to localStorage
   useEffect(() => {
