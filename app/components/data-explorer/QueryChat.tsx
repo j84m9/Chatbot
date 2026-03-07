@@ -5,13 +5,24 @@ import type { ChartConfig } from './PlotlyChart';
 import AgentStepsTimeline, { AgentStepEvent } from './AgentStepsTimeline';
 import MarkdownRenderer from '@/app/components/MarkdownRenderer';
 
+/** Strip markdown formatting to plain text for button labels */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')   // **bold**
+    .replace(/\*(.+?)\*/g, '$1')       // *italic*
+    .replace(/__(.+?)__/g, '$1')       // __bold__
+    .replace(/_(.+?)_/g, '$1')         // _italic_
+    .replace(/`(.+?)`/g, '$1')         // `code`
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // [link](url)
+}
+
 /** Parse [SUGGESTIONS] block from agent explanation text */
 function parseSuggestions(text: string): { cleanText: string; suggestions: string[] } {
   const match = text.match(/\[SUGGESTIONS\]\s*\n([\s\S]*?)\n?\[\/SUGGESTIONS\]/);
   if (!match) return { cleanText: text, suggestions: [] };
   const suggestions = match[1]
     .split('\n')
-    .map(line => line.replace(/^[-*]\s*/, '').trim())
+    .map(line => stripMarkdown(line.replace(/^[-*\d.]\s*/, '').trim()))
     .filter(Boolean);
   const cleanText = text.replace(/\[SUGGESTIONS\]\s*\n[\s\S]*?\n?\[\/SUGGESTIONS\]/, '').trim();
   return { cleanText, suggestions };
