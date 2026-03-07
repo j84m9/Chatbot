@@ -101,9 +101,9 @@ Rules:
 }
 
 export function buildMultiChartSuggestionSystemPrompt(): string {
-  return `You are a data visualization expert. Given query results, suggest the best chart configurations to visualize the data.
+  return `You are an enterprise data visualization expert. You will receive query results with column analysis metadata. Your job is to suggest the BEST chart configuration(s) that tell a clear story from the data.
 
-Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each element has this structure:
+Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each element:
 {
   "chartType": "bar" | "line" | "scatter" | "pie" | "histogram" | "heatmap" | "grouped_bar" | "stacked_bar" | "area" | "box" | "funnel" | "waterfall" | "gauge",
   "title": "Chart title",
@@ -112,46 +112,62 @@ Respond with ONLY a valid JSON array (no markdown fences, no explanation). Each 
   "xLabel": "X axis label",
   "yLabel": "Y axis label",
   "colorColumn": "optional: categorical column for color grouping",
-  "orientation": "optional: 'v' or 'h' for vertical/horizontal",
+  "orientation": "optional: 'v' or 'h'",
   "aggregation": "optional: 'sum' | 'avg' | 'count' | 'none'",
   "yAxisType": "optional: 'linear' | 'log'",
-  "referenceLine": "optional: { value: number, label: string } — a horizontal reference line (e.g., average, target, threshold)",
-  "secondaryY": "optional: { column: string, label: string } — plot a second column on a right-side Y-axis",
-  "trendline": "optional: boolean — add a linear trendline overlay"
+  "referenceLine": "optional: { value: number, label: string }",
+  "secondaryY": "optional: { column: string, label: string }",
+  "trendline": "optional: boolean"
 }
 
-## Title Guidelines
-Use narrative, insight-driven titles that convey what the data shows, not just what it is:
-- GOOD: "Revenue grew 23% YoY to $1.2M", "Engineering leads with 45% of headcount"
-- BAD: "Revenue by Month", "Headcount by Department"
-If you can identify a key insight from the data, put it in the title.
+## CRITICAL: Time Series Detection
+THIS IS THE MOST IMPORTANT RULE. If the metadata flags a column as "DATE COLUMN", you MUST:
+1. Use that column as xColumn
+2. Use "line" or "area" chart type (NOT bar, NOT scatter)
+3. A numeric column as yColumn
+Time series data should ALWAYS be plotted as a line chart unless the user specifically asked for something else.
 
-## Chart Type Rules
-- Suggest 1 chart for simple data (few columns, single metric)
-- Suggest 2-3 charts for multi-dimensional data (multiple metrics, categories + time, etc.)
-- Maximum 3 charts
-- Always include a line or area chart if there's a time/date column
-- Use "area" for time series showing volume or cumulative values
-- Use "box" for distribution analysis across categories (salary by department, scores by group)
-- Use "funnel" for pipeline or stage data with decreasing values (max 15 categories)
-- Use "waterfall" for revenue breakdowns, cumulative effects, or sequential changes
-- Use "gauge" ONLY for single-row results showing one KPI value
-- Use "histogram" for single-column distribution analysis
-- Use "heatmap" for two categorical columns with a numeric value
-- Use "grouped_bar" when comparing categories across groups
-- Use "stacked_bar" for parts-of-whole across categories
-- Use "colorColumn" to group data by a categorical column
-- Use "orientation": "h" for horizontal bars when category labels are long
-- Use "bar" for categorical comparisons
-- Use "line" for time series or trends
-- Use "scatter" for correlation between two numeric columns
-- Use "pie" for parts of a whole (only when fewer than 8 categories)
-- Pick the most meaningful columns for each chart
+## Chart Selection Decision Tree
+Follow this order strictly:
+
+1. **Single numeric value (1 row, 1-2 columns)** → "gauge"
+2. **Date/time column exists** → "line" (or "area" for cumulative/volume data)
+   - If multiple numeric columns share the date axis, use "secondaryY" or suggest 2 line charts
+   - Add "trendline": true when ≥5 data points
+3. **Two numeric columns, no categories** → "scatter"
+4. **One categorical + one numeric column** → "bar"
+   - Use "orientation": "h" if category labels average >12 characters or there are >10 categories
+   - Use "pie" ONLY if ≤6 categories AND data represents parts-of-whole (proportions, percentages, shares)
+5. **One categorical + one numeric + one grouping column** → "grouped_bar" or "stacked_bar"
+6. **One numeric column only** → "histogram"
+7. **Two categorical + one numeric** → "heatmap"
+8. **Sequential stages with decreasing values** → "funnel"
+9. **Incremental changes (waterfall breakdown)** → "waterfall"
+10. **Distribution across categories** → "box"
+
+## Title Guidelines
+Use narrative, insight-driven titles. Scan the data for a key takeaway:
+- GOOD: "Revenue grew 23% YoY to $1.2M", "Engineering leads with 45% of headcount", "Orders peak in Q4"
+- BAD: "Revenue by Month", "Headcount by Department", "Orders Over Time"
+If you cannot compute an insight, use a descriptive but specific title.
+
+## How Many Charts
+- 1 chart: simple data (single metric, one dimension)
+- 2 charts: date + multiple metrics, or category + metric with a clear secondary view
+- Maximum 3 charts, only for genuinely multi-dimensional data
 
 ## Statistical Enhancements
-- Use "trendline": true for time series or sequential data to show the overall direction
-- Use "referenceLine" to mark meaningful thresholds: averages, targets, benchmarks, or SLA limits
-- Use "secondaryY" when two columns have different scales but share an x-axis (e.g., revenue + order count, bounce rate + sessions)`;
+- "trendline": true — for time series or sequential data with ≥5 points
+- "referenceLine" — to mark averages, targets, or thresholds when the average is provided in the data or computable
+- "secondaryY" — when two columns have different scales but share an x-axis (e.g., revenue + count, rate + volume)
+
+## Common Mistakes to Avoid
+- NEVER use "bar" for time series data — use "line" or "area"
+- NEVER use "scatter" when one axis is a date — use "line"
+- NEVER use "pie" with more than 6 categories
+- NEVER put a date column on the y-axis
+- NEVER omit the date column from charts when one exists
+- ALWAYS use the date column as xColumn when present`;
 }
 
 export function buildChartSuggestionUserPrompt(
@@ -161,17 +177,56 @@ export function buildChartSuggestionUserPrompt(
   sampleRows: Record<string, any>[],
   rowCount: number
 ): string {
-  const colInfo = columns.map(c => `${c} (${types[c] || 'unknown'})`).join(', ');
+  // Build rich column analysis metadata so the AI makes informed chart type decisions
+  const datePattern = /^\d{4}[-/]\d{2}([-/]\d{2})?/;
+  const dateNamePattern = /^(date|time|created|updated|timestamp|month|year|day|week|quarter|period)|_(date|time|at|on|timestamp|month|year|quarter|period)$|_date$|_time$/i;
+
+  const columnAnalysis = columns.map(c => {
+    const vals = sampleRows.map(r => r[c]).filter(v => v != null);
+    const colType = types[c] || 'unknown';
+    const info: string[] = [`${c} (${colType})`];
+
+    // Detect date columns from values AND name
+    const isDate = dateNamePattern.test(c) ||
+      (vals.length > 0 && vals.filter(v => typeof v === 'string' && datePattern.test(v)).length >= vals.length * 0.7);
+    if (isDate) {
+      info.push('  → DATE COLUMN');
+      if (vals.length > 0) info.push(`  → range: ${vals[0]} to ${vals[vals.length - 1]}`);
+    }
+
+    // Numeric analysis
+    const numVals = vals.map(v => typeof v === 'number' ? v : Number(v)).filter(v => !isNaN(v));
+    if (numVals.length > 0 && !isDate) {
+      const min = Math.min(...numVals);
+      const max = Math.max(...numVals);
+      const avg = numVals.reduce((a, b) => a + b, 0) / numVals.length;
+      info.push(`  → numeric: min=${min}, max=${max}, avg=${avg.toFixed(2)}`);
+    }
+
+    // Categorical analysis
+    if (!isDate && numVals.length < vals.length * 0.5) {
+      const unique = new Set(vals.map(String));
+      info.push(`  → categorical: ${unique.size} unique values`);
+      if (unique.size <= 8) info.push(`  → values: [${[...unique].join(', ')}]`);
+      if (unique.size > 12) info.push(`  → avg label length: ${Math.round([...unique].reduce((a, s) => a + s.length, 0) / unique.size)} chars`);
+    }
+
+    return info.join('\n');
+  }).join('\n');
+
   const sample = JSON.stringify(sampleRows.slice(0, 5), null, 2);
 
   return `The user asked: "${question}"
 
-Query returned ${rowCount} rows with columns: ${colInfo}
+Query returned ${rowCount} rows.
 
-Sample data (first 5 rows):
+## Column Analysis
+${columnAnalysis}
+
+## Sample Data (first 5 rows)
 ${sample}
 
-Suggest the best chart configuration(s) for this data.`;
+Based on the column analysis above, suggest the best chart configuration(s).`;
 }
 
 export function buildSessionTitlePrompt(questions: string[]): string {
