@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import DataExplorerSidebar, { SavedQuery } from '@/app/components/data-explorer/DataExplorerSidebar';
 import ConnectionManager from '@/app/components/data-explorer/ConnectionManager';
@@ -23,6 +24,7 @@ interface RefineContext {
 
 export default function DataExplorer() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
 
   // Auth & profile
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -96,7 +98,9 @@ export default function DataExplorer() {
   const [insightsData, setInsightsData] = useState<Map<string, { text: string | null; loading: boolean }>>(new Map());
 
   // Query mode: quick (single-shot) vs agent (agentic loop)
-  const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
+  const [queryMode, setQueryMode] = useState<'quick' | 'agent'>(
+    searchParams.get('mode') === 'agent' ? 'agent' : 'quick'
+  );
 
   // SQL editor mode
   const [editorMode, setEditorMode] = useState<'chat' | 'sql'>('chat');

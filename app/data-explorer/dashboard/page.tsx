@@ -74,7 +74,7 @@ export default function DashboardPage() {
       <div className="flex flex-col items-center justify-center h-screen dark:bg-[#0d0d0e] bg-gray-50 gap-4">
         <p className="dark:text-gray-500 text-gray-400 text-sm">No dashboard data available.</p>
         <button
-          onClick={() => router.push('/data-explorer')}
+          onClick={() => router.push('/data-explorer?mode=agent')}
           className="px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors cursor-pointer"
         >
           New Query
@@ -99,7 +99,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <span className="text-xs dark:text-gray-500 text-gray-400">{pinnedCharts.length} chart{pinnedCharts.length !== 1 ? 's' : ''}</span>
           <button
-            onClick={() => router.push('/data-explorer')}
+            onClick={() => router.push('/data-explorer?mode=agent')}
             className="px-3 py-1.5 text-xs rounded-lg bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 transition-colors cursor-pointer"
           >
             New Query
