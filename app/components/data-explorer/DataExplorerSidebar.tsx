@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import SchemaBrowser from './SchemaBrowser';
 
 export interface SavedQuery {
@@ -65,6 +65,26 @@ export default function DataExplorerSidebar({
   const [savedQueriesExpanded, setSavedQueriesExpanded] = useState(true);
   const [schemaExpanded, setSchemaExpanded] = useState(false);
 
+  // Group connections by server for two-tier selection
+  const serverGroups = useMemo(() => {
+    const groups: Record<string, { label: string; connections: typeof connections }> = {};
+    for (const conn of connections) {
+      const serverKey = conn.db_type === 'sqlite' ? 'local' : conn.server;
+      const label = conn.db_type === 'sqlite' ? 'Local' : conn.server;
+      if (!groups[serverKey]) {
+        groups[serverKey] = { label, connections: [] };
+      }
+      groups[serverKey].connections.push(conn);
+    }
+    return groups;
+  }, [connections]);
+
+  const servers = useMemo(() => Object.keys(serverGroups), [serverGroups]);
+  const activeServer = activeConn
+    ? (activeConn.db_type === 'sqlite' ? 'local' : activeConn.server)
+    : servers[0] || '';
+  const serverConnections = serverGroups[activeServer]?.connections || [];
+
   const filteredSessions = sessionSearch.trim()
     ? sessions.filter(s =>
         (s.ai_title || s.title || '').toLowerCase().includes(sessionSearch.toLowerCase())
@@ -112,22 +132,31 @@ export default function DataExplorerSidebar({
         </a>
       </div>
 
-      {/* Connection selector */}
+      {/* Server + Database selectors */}
       {!collapsed && (
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-3 space-y-2">
+          {/* Server selector */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <div className={`absolute left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full flex-shrink-0 ${activeConn ? 'bg-emerald-400 shadow-md shadow-emerald-400/50' : 'bg-gray-500'}`} />
               <select
-                value={activeConnectionId || ''}
-                onChange={(e) => onSelectConnection(e.target.value)}
+                value={activeServer}
+                onChange={(e) => {
+                  const newServer = e.target.value;
+                  const group = serverGroups[newServer];
+                  if (group && group.connections.length > 0) {
+                    onSelectConnection(group.connections[0].id);
+                  }
+                }}
                 className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-[#2a2b2d] border-gray-200 rounded-lg pl-7 pr-3 py-2 outline-none focus:border-indigo-500/40 transition-colors cursor-pointer appearance-none"
               >
-                {connections.length === 0 && (
-                  <option value="">No connection</option>
+                {servers.length === 0 && (
+                  <option value="">No server</option>
                 )}
-                {connections.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {servers.map(serverKey => (
+                  <option key={serverKey} value={serverKey}>
+                    {serverGroups[serverKey].label}
+                  </option>
                 ))}
               </select>
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -145,6 +174,31 @@ export default function DataExplorerSidebar({
               </svg>
             </button>
           </div>
+
+          {/* Database selector */}
+          {serverConnections.length > 0 && (
+            <div className="relative">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+              </svg>
+              <select
+                value={activeConnectionId || ''}
+                onChange={(e) => onSelectConnection(e.target.value)}
+                className="w-full text-sm dark:bg-[#111213] bg-gray-50 dark:text-gray-300 text-gray-600 border dark:border-[#2a2b2d] border-gray-200 rounded-lg pl-8 pr-3 py-2 outline-none focus:border-indigo-500/40 transition-colors cursor-pointer appearance-none"
+              >
+                {serverConnections.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.db_type === 'sqlite'
+                      ? c.file_path?.split('/').pop() || c.name
+                      : c.database_name || c.name}
+                  </option>
+                ))}
+              </select>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-500 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 15 12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" />
+              </svg>
+            </div>
+          )}
         </div>
       )}
 

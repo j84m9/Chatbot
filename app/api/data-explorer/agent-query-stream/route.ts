@@ -437,18 +437,18 @@ export async function POST(req: Request) {
               ),
             }).text;
             stopChartHeartbeat();
-            let chartText = chartText_.trim();
-            chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-            const parsed = JSON.parse(chartText);
-            if (Array.isArray(parsed)) {
-              chartConfig = parsed[0] || null;
-              chartConfigs = parsed;
-            } else {
-              chartConfig = parsed;
-              chartConfigs = [parsed];
+            const parsed = extractJsonFromText(chartText_);
+            if (parsed) {
+              if (Array.isArray(parsed)) {
+                chartConfig = parsed[0] || null;
+                chartConfigs = parsed;
+              } else {
+                chartConfig = parsed;
+                chartConfigs = [parsed];
+              }
             }
-          } catch {
-            // Chart generation failed — not critical
+          } catch (chartErr: any) {
+            console.error('[agent-query-stream] Chart generation failed:', chartErr?.message || chartErr);
           }
         }
 
@@ -474,8 +474,8 @@ export async function POST(req: Request) {
             }).text;
             stopInsightHeartbeat();
             insights = insightText.trim() || null;
-          } catch {
-            // Insight generation failed — not critical
+          } catch (insightErr: any) {
+            console.error('[agent-query-stream] Insight generation failed:', insightErr?.message || insightErr);
           }
         }
 
@@ -604,6 +604,63 @@ function stripHallucinatedContent(text: string): string {
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
 
   return cleaned || 'Analysis complete.';
+}
+
+/**
+ * Robustly extract a JSON array or object from model output text.
+ * Handles markdown code fences, extra text before/after JSON, and
+ * other formatting the model may add despite being told not to.
+ */
+function extractJsonFromText(raw: string): any | null {
+  const text = raw.trim();
+
+  // 1. Try direct parse first (ideal case: model returned pure JSON)
+  try {
+    return JSON.parse(text);
+  } catch { /* continue */ }
+
+  // 2. Strip markdown code fences and try again
+  const fenceStripped = text
+    .replace(/^```(?:json)?\s*\n?/i, '')
+    .replace(/\n?\s*```\s*$/i, '')
+    .trim();
+  try {
+    return JSON.parse(fenceStripped);
+  } catch { /* continue */ }
+
+  // 3. Extract from code block if embedded in other text
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1].trim());
+    } catch { /* continue */ }
+  }
+
+  // 4. Find first [ or { and try to parse from there
+  const arrayStart = text.indexOf('[');
+  const objStart = text.indexOf('{');
+  const startIdx = arrayStart === -1 ? objStart : objStart === -1 ? arrayStart : Math.min(arrayStart, objStart);
+
+  if (startIdx !== -1) {
+    const openChar = text[startIdx];
+    const closeChar = openChar === '[' ? ']' : '}';
+    let depth = 0;
+    for (let i = startIdx; i < text.length; i++) {
+      if (text[i] === openChar) depth++;
+      if (text[i] === closeChar) {
+        depth--;
+        if (depth === 0) {
+          try {
+            return JSON.parse(text.substring(startIdx, i + 1));
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any) {
