@@ -1540,7 +1540,7 @@ export default function DataExplorer() {
                   onClose={() => setSelectedExchangeIndex(-1)}
                   onRefineSubmit={handleDirectChartRefine}
                   onRefineSql={handleRefineSql}
-                  onRequestInsights={handleRequestInsights}
+                  onRequestInsights={() => handleRequestInsights()}
                   onSaveQuery={handleSaveQuery}
                   onChangeChartType={handleChangeChartType}
                   onAddAnnotation={handleAddAnnotation}
