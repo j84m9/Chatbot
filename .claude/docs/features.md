@@ -101,4 +101,26 @@
 - [x] Auto-catalog generation: SSE endpoint batches tables in groups of 10, LLM generates descriptions/tags/categories
 - [x] Catalog CRUD API: GET/PATCH/DELETE for table metadata per connection
 - [x] Schema browser enhancements: search filter, description display, inline user description editing, color-coded tag badges
-- [x] Catalog generation UI: banner for large databases, progress bar during generation
+- [x] Catalog generation UI: banner for all database sizes, progress bar with stop button, regenerate option
+- [x] Table descriptions for all DB sizes: descriptions injected into prompts even for small databases (< 30 tables)
+- [x] Red warning banner for large databases without descriptions, indigo for small DBs
+- [x] Catalog schema matching fix: name-only fallback for SQLite where schema is "main"
+- [x] Web search tool in chat via Tavily API
+- [x] Semantic YAML context for SQLite databases (auto-loaded from metadata files)
+- [x] SQL script editor mode in Data Explorer (direct SQL editing + execution)
+- [x] Interactive follow-up suggestions in Agent mode
+- [x] Agent responses rendered as markdown with inline insights button
+- [x] Three query modes: Chat, SQL Editor, Agent (charts only in Agent mode)
+- [x] Lightweight "Add Database" flow for MSSQL servers (server/database two-tier selector)
+- [x] Enterprise-grade chart rendering with smart data analysis
+- [x] Run button in CodeBlock header next to Copy
+- [x] Run icon on SQL tab to open generated query in SQL Editor
+- [x] Query History collapsible section in sidebar
+- [x] Rename data explorer sessions
+- [x] Weather tool with animated SVG icons in chat
+- [x] Model selector redesigned as collapsible accordion with active model display
+- [x] GPT-5 series models added (GPT-5, GPT-5.3 Instant, GPT-5.4 Pro)
+- [x] Stop generation button for Data Explorer queries
+- [x] Connection manager redesign: list + add form, edit support, test before save
+- [x] MSSQL Windows auth support (NTLM, ODBC Driver 17, msnodesqlv8)
+- [x] Named instance port discovery and default trust cert

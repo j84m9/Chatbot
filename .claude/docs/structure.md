@@ -73,7 +73,8 @@ utils/
   ai/data-explorer-agent-prompt.ts — System prompt builder for the Data Explorer agent query loop (standard + catalog mode)
   ai/data-explorer-tools.ts — Tool factory (execute_sql, get_schema, get_sample_data + catalog mode: search_tables, get_join_path)
   ai/fk-graph.ts            — FK graph builder (bidirectional adjacency list, BFS join path, reachable tables)
-  ai/catalog-builder.ts     — Table catalog builder (merge schema + metadata, compact text for prompts, search)
+  ai/catalog-builder.ts     — Table catalog builder (merge schema + metadata, compact text for prompts, description comments for small DBs, search)
+  ai/semantic-context.ts    — Semantic YAML context loader for SQLite databases
   supabase/
     server.ts           — Server-side Supabase client (cookie-based)
     client.ts           — Browser-side Supabase client

@@ -9,11 +9,14 @@ Everything listed in `.claude/docs/features.md` is implemented and working. No k
 
 ## Where You Left Off
 The most recent work focused on:
-- Data Explorer agent query mode: full agentic loop with tools (execute_sql, get_schema, get_sample_data) via SSE streaming
-- Agent-powered insights: Generate/Regenerate in agent mode runs a full agent loop with follow-up queries for deeper analysis
-- Smooth chart carousel transitions (fade animation) and arrow visibility fix
-- Agent steps timeline component for visualizing tool calls/results during agent queries
-- Chart annotations, pinned dashboard, agent domain context injection (prior session)
+- Table descriptions for all DB sizes: descriptions injected into prompts even for small databases, with catalog generation UI improvements (stop button, regenerate, red warning for large DBs)
+- Catalog schema matching fix for SQLite databases (name-only fallback)
+- SQL Editor mode: direct SQL editing in Data Explorer, three query modes (Chat, SQL, Agent)
+- Follow-up suggestions in Agent mode with interactive buttons
+- Web search tool in chat (Tavily API)
+- Enterprise-grade chart overhaul with smart data analysis
+- MSSQL connection improvements: Windows auth, server/database selector, connection test before save
+- Model selector redesign as accordion, GPT-5 series models added
 
 ## Key Files to Start With
 - `app/page.tsx` — Chat UI, all chat state lives here (~2000+ lines, single-page architecture)
@@ -33,7 +36,7 @@ The most recent work focused on:
 - **Agents are just system prompts**: The `tools`/`skills` fields on `installed_agents` are stored but NOT executed. Agents only customize the system prompt.
 - **Chart data is frozen**: Pinned charts store a `results_snapshot` — they don't re-query the database on load.
 - **Streaming uses SSE, not WebSockets**: Data Explorer query-stream returns `ReadableStream` with named events.
-- **Two query modes**: Quick mode (single SQL generation) and Agent mode (multi-step tool loop). Agent mode uses `generateText()` with tools, not `streamText()`.
+- **Three query modes**: Chat mode (direct answers, no charts), SQL Editor mode (direct SQL editing + execution), and Agent mode (multi-step tool loop with charts + insights). Agent mode uses `generateText()` with tools, not `streamText()`.
 - **Insight generation is mode-aware**: Quick mode uses simple `/api/data-explorer/query` endpoint; Agent mode uses `/api/data-explorer/insights-agent-stream` SSE endpoint with follow-up queries.
 
 ## Future Improvements (Prioritized)

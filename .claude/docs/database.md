@@ -78,7 +78,7 @@
 - `UNIQUE(connection_id, table_schema, table_name)`
 - Full-text search GIN index on descriptions + table name
 - RLS enabled: all operations gated on `auth.uid() = user_id`
-- Used by catalog mode (>30 tables) to provide lightweight table catalog to agent
+- Used by catalog mode (>30 tables) for lightweight table catalog, and by all DB sizes for description injection into prompts
 
 ## Demo Database (`data/demo.db`)
 Pre-seeded SQLite database with 11 tables of realistic sample data:

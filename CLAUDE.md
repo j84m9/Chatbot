@@ -1,7 +1,7 @@
 # Chatbot Project
 
 ## Overview
-A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, Anthropic, Google, OpenAI) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer for natural language querying of MSSQL and SQLite databases. Integrates with an external AI Agent Store for browsing, installing, and using agents as named system prompts.
+A full-stack AI chatbot built with Next.js 16, Supabase, and the Vercel AI SDK v5. Supports multiple AI providers (Ollama, Anthropic, Google, OpenAI) via a Bring Your Own Key (BYOK) system. Dark/light theme, collapsible sidebar, chat history, user profiles. Includes a Data Explorer with three query modes (Chat, SQL Editor, Agent) for natural language and direct SQL querying of MSSQL and SQLite databases with auto-generated charts, dashboards, and insights. Features web search tool (Tavily), AI Agent Store integration, semantic YAML context, and enterprise-grade data visualization.
 
 ## Tech Stack
 - **Framework**: Next.js 16 (App Router) with React 19, TypeScript, Tailwind CSS v4
@@ -43,6 +43,8 @@ Detailed docs are split into focused files under `.claude/docs/`:
 - `app/api/data-explorer/insights-agent-stream/route.ts` — SSE agent insight generation
 - `utils/ai/provider.ts` — Model catalog and `getModel()` factory
 - `utils/ai/data-explorer-tools.ts` — Tool factory for agent loops (execute_sql, get_schema, get_sample_data)
+- `utils/ai/catalog-builder.ts` — Table catalog builder, description comments for prompts
+- `utils/ai/semantic-context.ts` — Semantic YAML context loader for SQLite
 
 ### Auth Pattern
 All API routes use two Supabase clients: `createAuthClient()` for cookie verification, `createAdminClient()` (service role) for DB writes bypassing RLS.
@@ -53,6 +55,7 @@ All API routes use two Supabase clients: `createAuthClient()` for cookie verific
 - `DB_CONNECTIONS_ENCRYPTION_KEY` — symmetric key for encrypting API keys and DB passwords
 - `DATABASE_URL` — Postgres connection string for dbmate migrations
 - `AGENT_STORE_API_URL` — server-only, base URL for agent store API
+- `TAVILY_API_KEY` — server-only, API key for Tavily web search tool in chat
 
 ## Known Issues
 None currently tracked.

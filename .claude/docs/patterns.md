@@ -62,6 +62,8 @@ All API routes use a two-client pattern:
 - **Catalog builder**: `buildCatalogText()` produces ~80 tokens/table summary (name, description, PKs, FK targets, row count). 500 tables ≈ 15-20K tokens
 - **Auto-catalog**: SSE endpoint (`catalog/generate/route.ts`) batches tables (10/batch), sends column info + 3 sample rows to LLM, gets 1-sentence descriptions + tags + categories. Row counts via `sys.partitions` (MSSQL) or `COUNT(*)` (SQLite)
 - **Table metadata**: `table_metadata` table stores auto/user descriptions, tags, category, row counts. User descriptions override auto descriptions
+- **Table descriptions for all DB sizes**: `buildDescriptionComments()` generates SQL-comment-style description text for injection into full-DDL prompts (small databases). Catalog mode (compact prompt + table router) still gated at 30+ tables
+- **Catalog generation**: Available for all DB sizes (not just 30+). Banner with stop button, regenerate option, red warning for large DBs without descriptions. Schema matching uses name-only fallback for SQLite
 - **Agent prompt**: `buildAgentSystemPrompt()` in `utils/ai/data-explorer-agent-prompt.ts` — standard mode or catalog mode with discovery-first approach and compound query patterns
 - **SSE streaming**: `onStepFinish` callback streams `agent_step` events (tool_call, tool_result, reasoning, error_recovery) in real-time
 - **Last successful result tracking**: Agent loop tracks `lastSuccessfulResult` and `lastSuccessfulSql` across steps — the final successful query result is used for charts/insights
@@ -213,9 +215,37 @@ All API routes use a two-client pattern:
 - Assistant message bubbles: faint indigo ambient glow in dark mode
 - Login button: `hover:shadow-xl hover:shadow-indigo-500/25` lift effect
 
+## Web Search Tool
+- Chat supports a web search tool via Tavily API (`TAVILY_API_KEY` env var)
+- Integrated into `chat/route.ts` as an AI SDK tool alongside conversation
+
+## SQL Editor Mode
+- Third query mode in Data Explorer alongside Chat and Agent
+- Direct SQL editing and execution, results shown below editor (not side panel)
+- Run icon on SQL tab opens generated query in editor mode
+- Charts skipped in Chat and SQL modes (only generated in Agent mode)
+
+## Follow-up Suggestions
+- Agent mode generates interactive follow-up suggestion buttons after each response
+- Suggestion follow-ups route through the agent handler for full analysis
+- Markdown formatting stripped from suggestion button labels
+
+## Semantic Context (YAML)
+- SQLite connections auto-load semantic context from YAML metadata files adjacent to the database
+- `findMetadataPath()` discovers `.yaml`/`.yml` files, `loadSemanticContext()` parses and injects into prompts
+- Provides business context (column meanings, relationships, domain knowledge)
+
+## MSSQL Connection Enhancements
+- Windows authentication via NTLM credentials and ODBC Driver 17 (msnodesqlv8)
+- Named instance port discovery with SQL Server Browser protocol
+- Server/database two-tier selector for quick connection setup
+- Connection test required before save, edit support via PATCH endpoint
+- Independent connection pools instead of global singleton (fixes Windows auth hang)
+
 ## Environment Variables
 - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` — public, used in browser + server auth client
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — private, used in admin client for DB writes
 - `DB_CONNECTIONS_ENCRYPTION_KEY` — symmetric key for encrypting API keys and DB passwords at rest
 - `DATABASE_URL` — Postgres connection string used by dbmate for migrations
 - `AGENT_STORE_API_URL` — server-only, base URL of HuggingFace Space API for agent store (e.g. `https://your-space.hf.space`)
+- `TAVILY_API_KEY` — server-only, API key for Tavily web search tool in chat
