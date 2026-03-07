@@ -101,6 +101,7 @@ export default function DataExplorer() {
   const [queryMode, setQueryMode] = useState<'quick' | 'agent'>(
     searchParams.get('mode') === 'agent' ? 'agent' : 'quick'
   );
+  const queryModeBeforeDashboardRef = useRef<'quick' | 'agent'>(queryMode);
 
   // SQL editor mode
   const [editorMode, setEditorMode] = useState<'chat' | 'sql'>('chat');
@@ -1775,6 +1776,7 @@ export default function DataExplorer() {
     if (!activeConnectionId) return;
     setIsBuildingDashboard(true);
     setBuildProgress('Planning...');
+    queryModeBeforeDashboardRef.current = queryMode;
     setViewMode('dashboard');
     setQueryMode('agent');
     setEditorMode('chat');
@@ -2203,7 +2205,7 @@ export default function DataExplorer() {
               {/* Query / Dashboard toggle */}
               <div className="flex items-center dark:bg-[#1e1f20] bg-gray-100 rounded-lg p-0.5">
                 <button
-                  onClick={() => setViewMode('query')}
+                  onClick={() => { setViewMode('query'); if (viewMode === 'dashboard') setQueryMode(queryModeBeforeDashboardRef.current); }}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer ${viewMode === 'query' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Query view"
                 >
@@ -2212,7 +2214,7 @@ export default function DataExplorer() {
                   </svg>
                 </button>
                 <button
-                  onClick={() => { setViewMode('dashboard'); setQueryMode('agent'); setEditorMode('chat'); }}
+                  onClick={() => { queryModeBeforeDashboardRef.current = queryMode; setViewMode('dashboard'); setQueryMode('agent'); setEditorMode('chat'); }}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer relative ${viewMode === 'dashboard' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Dashboard view"
                 >
