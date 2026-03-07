@@ -1807,14 +1807,23 @@ export default function DataExplorer() {
               case 'status':
                 setBuildProgress(data.message);
                 break;
-              case 'plan':
-                setBuildProgress(`Building ${data.queries} charts...`);
+              case 'agent_step':
+                if (data.type === 'tool_call') {
+                  setBuildProgress(`Using ${data.toolName}...`);
+                } else if (data.type === 'reasoning') {
+                  setBuildProgress(data.text?.slice(0, 80) || 'Thinking...');
+                } else if (data.type === 'error_recovery') {
+                  setBuildProgress(data.text?.slice(0, 80) || 'Fixing error...');
+                }
                 break;
               case 'chart_added':
-                setBuildProgress(`Chart ${data.index}/${data.total}: ${data.title}`);
+                setBuildProgress(`Chart ${data.index}: ${data.title}`);
                 fetchPinnedCharts();
                 break;
               case 'slicer_added':
+                fetchPinnedCharts();
+                break;
+              case 'layout_updated':
                 fetchPinnedCharts();
                 break;
               case 'complete':

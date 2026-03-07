@@ -1,8 +1,8 @@
-import { tool } from 'ai';
+import { tool, generateText, LanguageModel } from 'ai';
 import { z } from 'zod';
 import { executeQuery as executeMssql, fetchSampleRows as fetchMssqlSampleRows, schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
 import { executeQuery as executeSqlite, fetchSampleRows as fetchSqliteSampleRows } from '@/utils/sqlite/connection';
-import { categorizeError } from '@/utils/ai/data-explorer-prompts';
+import { categorizeError, buildMultiChartSuggestionSystemPrompt, buildChartSuggestionUserPrompt } from '@/utils/ai/data-explorer-prompts';
 import { CatalogEntry, searchCatalog } from '@/utils/ai/catalog-builder';
 import { FKGraph, findJoinPath } from '@/utils/ai/fk-graph';
 
@@ -231,4 +231,305 @@ function extractReferencedTableColumns(sql: string, schema: SchemaTable[]): stri
   }
 
   return lines.length > 0 ? lines.join('\n') : null;
+}
+
+// ═══════════════════════════════════════════════════
+// Dashboard Agent Tools
+// ═══════════════════════════════════════════════════
+
+export interface DashboardAgentToolContext extends DataExplorerToolContext {
+  dbAdmin: any;
+  userId: string;
+  connectionId: string;
+  dashboardId?: string | null;
+  model: LanguageModel;
+  sendEvent: (stage: string, data: any) => void;
+}
+
+function computeDefaultLayout(purpose: string, purposeIndex: number): { x: number; y: number; w: number; h: number } {
+  switch (purpose) {
+    case 'kpi':
+      return { x: (purposeIndex % 4) * 3, y: 0, w: 3, h: 2 };
+    case 'trend':
+      return { x: 0, y: 2 + purposeIndex * 3, w: 12, h: 3 };
+    case 'breakdown':
+      return { x: 0, y: 5 + purposeIndex * 3, w: 6, h: 3 };
+    case 'ranking':
+      return { x: 6, y: 5 + purposeIndex * 3, w: 6, h: 3 };
+    case 'correlation':
+    case 'detail':
+    default:
+      return { x: 0, y: 8 + purposeIndex * 3, w: 12, h: 3 };
+  }
+}
+
+function purposeToChartType(purpose: string): string {
+  switch (purpose) {
+    case 'kpi': return 'gauge';
+    case 'trend': return 'line';
+    case 'breakdown': return 'bar';
+    case 'ranking': return 'bar';
+    case 'correlation': return 'scatter';
+    case 'detail': return 'bar';
+    default: return 'bar';
+  }
+}
+
+function extractChartJsonArray(text: string): any[] | null {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+      try {
+        const parsed = JSON.parse(fenceMatch[1].trim());
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch { /* continue */ }
+    }
+    const start = text.indexOf('[');
+    if (start >= 0) {
+      let depth = 0;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '[') depth++;
+        else if (text[i] === ']') depth--;
+        if (depth === 0) {
+          try { return JSON.parse(text.slice(start, i + 1)); } catch { break; }
+        }
+      }
+    }
+    const objStart = text.indexOf('{');
+    if (objStart >= 0) {
+      let depth = 0;
+      for (let i = objStart; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') depth--;
+        if (depth === 0) {
+          try { return [JSON.parse(text.slice(objStart, i + 1))]; } catch { break; }
+        }
+      }
+    }
+    return null;
+  }
+}
+
+export function createDashboardAgentTools(ctx: DashboardAgentToolContext) {
+  const baseTools = createDataExplorerTools(ctx);
+  const purposeCounters = new Map<string, number>();
+  let totalChartIndex = 0;
+
+  return {
+    ...baseTools,
+
+    pin_chart: tool({
+      description: 'Pin a chart to the dashboard. Executes the SQL, generates a chart configuration, and saves it. Use this after verifying your SQL works with execute_sql.',
+      inputSchema: z.object({
+        sql: z.string().describe('The SQL SELECT query to execute for this chart'),
+        title: z.string().describe('Narrative, insight-driven chart title (e.g. "Revenue grew 23% YoY to $1.2M")'),
+        chartTypeHint: z.string().optional().describe('Preferred chart type: bar, line, pie, scatter, area, gauge, grouped_bar, stacked_bar'),
+        purpose: z.enum(['kpi', 'trend', 'breakdown', 'ranking', 'correlation', 'detail']).describe('The role this chart plays in the dashboard layout'),
+      }),
+      execute: async ({ sql, title, chartTypeHint, purpose }: { sql: string; title: string; chartTypeHint?: string; purpose: string }) => {
+        try {
+          // 1. Execute SQL
+          let queryResult: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
+          if (ctx.dialect === 'sqlite' && ctx.filePath) {
+            queryResult = executeSqlite(ctx.filePath, sql);
+          } else if (ctx.mssqlConfig) {
+            queryResult = await executeMssql(ctx.mssqlConfig, sql);
+          } else {
+            return { success: false, error: 'No database connection configured' };
+          }
+
+          if (queryResult.rows.length === 0) {
+            return { success: false, error: 'Query returned no rows', suggestion: 'Try a different query that returns data.' };
+          }
+
+          // 2. Generate chart config via LLM
+          let chartConfig: any = null;
+          try {
+            const chartResult = await generateText({
+              model: ctx.model,
+              system: buildMultiChartSuggestionSystemPrompt(),
+              prompt: buildChartSuggestionUserPrompt(
+                title,
+                queryResult.columns,
+                queryResult.types,
+                queryResult.rows.slice(0, 10),
+                queryResult.rowCount,
+              ),
+            });
+            const configs = extractChartJsonArray(chartResult.text);
+            if (configs && configs.length > 0) {
+              chartConfig = { ...configs[0], title: configs[0].title || title };
+            }
+          } catch {
+            // LLM chart gen failed — use fallback
+          }
+
+          // 3. Fallback: rule-based chart config
+          if (!chartConfig) {
+            const fallbackType = chartTypeHint || purposeToChartType(purpose);
+            chartConfig = {
+              chartType: fallbackType,
+              title,
+              xColumn: queryResult.columns[0],
+              yColumn: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
+              xLabel: queryResult.columns[0],
+              yLabel: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
+            };
+            if (purpose === 'ranking') {
+              chartConfig.orientation = 'h';
+            }
+          }
+
+          // 4. Compute layout
+          const purposeIdx = purposeCounters.get(purpose) || 0;
+          purposeCounters.set(purpose, purposeIdx + 1);
+          const layout = computeDefaultLayout(purpose, purposeIdx);
+
+          // 5. Get next display_order
+          const { data: existing } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .select('display_order')
+            .eq('user_id', ctx.userId)
+            .eq('connection_id', ctx.connectionId)
+            .order('display_order', { ascending: false })
+            .limit(1);
+
+          const nextOrder = existing && existing.length > 0 ? existing[0].display_order + 1 : 0;
+
+          // 6. Insert pinned chart
+          const insertData: Record<string, any> = {
+            user_id: ctx.userId,
+            connection_id: ctx.connectionId,
+            title: chartConfig.title || title,
+            chart_config: chartConfig,
+            results_snapshot: {
+              rows: queryResult.rows,
+              columns: queryResult.columns,
+              types: queryResult.types,
+            },
+            source_sql: sql,
+            source_question: title,
+            display_order: nextOrder,
+            layout,
+          };
+
+          if (ctx.dashboardId) {
+            insertData.dashboard_id = ctx.dashboardId;
+          }
+
+          const { data: pinned, error: pinError } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .insert(insertData)
+            .select()
+            .single();
+
+          if (pinError || !pinned) {
+            return { success: false, error: `Failed to pin chart: ${pinError?.message || 'Unknown error'}` };
+          }
+
+          // 7. Emit SSE event
+          totalChartIndex++;
+          ctx.sendEvent('chart_added', {
+            id: pinned.id,
+            title: chartConfig.title || title,
+            chartType: chartConfig.chartType,
+            purpose,
+            index: totalChartIndex,
+            rowCount: queryResult.rowCount,
+          });
+
+          return {
+            success: true,
+            chartId: pinned.id,
+            title: chartConfig.title || title,
+            chartType: chartConfig.chartType,
+            rowCount: queryResult.rowCount,
+            columns: queryResult.columns,
+            purpose,
+          };
+        } catch (err: any) {
+          const categorized = categorizeError(err);
+          return {
+            success: false,
+            error: err.message || categorized.message,
+            errorCategory: categorized.category,
+            suggestion: categorized.suggestion,
+          };
+        }
+      },
+    }),
+
+    add_slicer: tool({
+      description: 'Add a slicer filter panel to the dashboard. Use date_range for time-based filtering, multi_select for categorical filtering.',
+      inputSchema: z.object({
+        column: z.string().describe('The column name to filter on'),
+        filterType: z.enum(['multi_select', 'date_range']).describe('Type of filter: multi_select for categories, date_range for dates'),
+        label: z.string().optional().describe('Display label for the slicer (defaults to column name)'),
+      }),
+      execute: async ({ column, filterType, label }: { column: string; filterType: string; label?: string }) => {
+        try {
+          const displayLabel = label || column.replace(/_/g, ' ');
+
+          const { data: slicer, error: slicerError } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .insert({
+              user_id: ctx.userId,
+              connection_id: ctx.connectionId,
+              title: displayLabel,
+              item_type: 'slicer',
+              slicer_config: { column, filterType },
+              chart_config: {},
+              results_snapshot: { rows: [], columns: [] },
+              display_order: 100,
+              ...(ctx.dashboardId ? { dashboard_id: ctx.dashboardId } : {}),
+            })
+            .select()
+            .single();
+
+          if (slicerError || !slicer) {
+            return { success: false, error: `Failed to add slicer: ${slicerError?.message || 'Unknown error'}` };
+          }
+
+          ctx.sendEvent('slicer_added', { id: slicer.id, column, filterType, label: displayLabel });
+
+          return { success: true, slicerId: slicer.id, column, filterType, label: displayLabel };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to add slicer' };
+        }
+      },
+    }),
+
+    set_layout: tool({
+      description: 'Update the position and size of a chart on the dashboard grid. Coordinates are in grid units (12 columns wide).',
+      inputSchema: z.object({
+        chartId: z.string().describe('The ID of the pinned chart to reposition'),
+        x: z.number().describe('Grid column position (0-11)'),
+        y: z.number().describe('Grid row position'),
+        w: z.number().describe('Width in grid columns (1-12)'),
+        h: z.number().describe('Height in grid rows'),
+      }),
+      execute: async ({ chartId, x, y, w, h }: { chartId: string; x: number; y: number; w: number; h: number }) => {
+        try {
+          const { error: updateError } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .update({ layout: { x, y, w, h } })
+            .eq('id', chartId)
+            .eq('user_id', ctx.userId);
+
+          if (updateError) {
+            return { success: false, error: `Failed to update layout: ${updateError.message}` };
+          }
+
+          ctx.sendEvent('layout_updated', { chartId, x, y, w, h });
+
+          return { success: true, chartId, layout: { x, y, w, h } };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to update layout' };
+        }
+      },
+    }),
+  };
 }

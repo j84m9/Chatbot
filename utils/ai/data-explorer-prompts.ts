@@ -507,35 +507,98 @@ ${agentExplanation}
 Provide a structured data analysis.`;
 }
 
-export function buildDashboardPlannerPrompt(schemaText: string, dialect: 'tsql' | 'sqlite' = 'tsql'): string {
-  const limitSyntax = dialect === 'sqlite' ? 'LIMIT 1000' : 'TOP 1000';
-  return `You are a dashboard planning expert. Given a database schema and a user request, generate 4-6 diverse analytics queries that together form a comprehensive dashboard.
+export function buildDashboardAgentSystemPrompt(
+  dialect: 'tsql' | 'sqlite',
+  schemaText: string,
+  semanticContext: string | null,
+  catalogMode: boolean = false,
+): string {
+  const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL (SQL Server)';
 
-Output ONLY a valid JSON array (no markdown fences, no explanation). Each element:
-{
-  "title": "Descriptive chart title",
-  "sql": "SELECT query",
-  "chartHint": "bar" | "line" | "pie" | "scatter" | "area" | "gauge" | "grouped_bar" | "stacked_bar"
-}
+  const dialectRules = dialect === 'sqlite'
+    ? `- Use standard SQLite SQL syntax
+- Use double quotes for reserved words, NOT square brackets
+- Use LIMIT for row caps (do NOT use TOP)
+- Use SQLite date functions: date(), time(), datetime(), strftime() — NOT DATEADD, DATEDIFF, GETDATE
+- Use || for string concatenation, not +`
+    : `- Use T-SQL syntax (SQL Server / MSSQL)
+- Use square brackets for reserved words
+- Use TOP for row caps
+- Use T-SQL date functions: DATEADD, DATEDIFF, GETDATE, etc.`;
 
-## Rules
-- Generate diverse query types: at least 1 trend/time-series, 1 breakdown/composition, 1 ranking/top-N, and 1 KPI/aggregate
-- Use ${dialect === 'sqlite' ? 'SQLite' : 'T-SQL'} syntax
-- Only SELECT statements
-- Limit results appropriately (use ${limitSyntax})
-- Use meaningful aliases for computed columns
-- Queries should be self-contained and produce meaningful data for charting
-- If the user asks for a specific domain (e.g. "sales dashboard"), focus all queries on that domain
-- If the request is generic (e.g. "build me a dashboard"), pick the most interesting tables/metrics
+  const schemaSection = catalogMode
+    ? `## Table Catalog
+The catalog below lists all tables with descriptions and relationships. Use \`get_schema\` with specific table names to load full column details before writing SQL.
 
-## Chart Hint Guidelines
-- Time series data → "line" or "area"
-- Category breakdowns → "bar" or "pie" (pie only if ≤6 categories)
-- Top-N rankings → "bar"
-- Single aggregate values → "gauge"
-- Two numeric columns → "scatter"
-- Category + sub-category → "grouped_bar" or "stacked_bar"
-
-Database Schema:
+${schemaText}`
+    : `## Database Schema
 ${schemaText}`;
+
+  let prompt = `You are a PowerBI-caliber dashboard design expert and ${dialectLabel} data analyst. Your job is to build a comprehensive, visually stunning dashboard by exploring the data and pinning charts one by one.
+
+## Star Schema Awareness
+- Identify fact tables (transactions, events, logs with measures) vs dimension tables (categories, lookup, reference data)
+- ALWAYS aggregate fact table data by dimension attributes — never chart raw fact rows
+- Use appropriate granularity: daily for short ranges, monthly for multi-year data
+
+## Dashboard Layout Hierarchy
+Build the dashboard in this visual order:
+1. **KPI cards** (y=0, top row) — 2-4 headline metrics using gauge charts, each w=3
+2. **Primary trend** (y=2, middle) — Main time-series chart, full-width w=12, using line/area
+3. **Breakdowns** (y=5, bottom-left) — Category composition using bar/pie, w=6
+4. **Rankings** (y=5, bottom-right) — Top-N analysis using horizontal bar, w=6
+5. **Detail/correlation** (y=8) — Scatter plots, detailed tables, or secondary analyses
+
+## Chart Type Selection — STRICT Rules
+- **Time series** → ALWAYS use "line" or "area" chart. NEVER use bar for time data.
+- **KPIs (single values)** → Use "gauge" chart type
+- **Rankings / Top-N** → Use "bar" with orientation "h" (horizontal)
+- **Category breakdown** → Use "bar" (vertical) or "pie" ONLY if ≤6 categories
+- **Correlation** → Use "scatter" when comparing two numeric measures
+- **Composition over time** → Use "stacked_bar" or "area"
+
+## Slicer Design
+- Add a date_range slicer if ANY time-based column exists in the data
+- Add 1-2 multi_select slicers for the most important categorical dimensions
+- Maximum 3 slicers total — do not over-filter
+
+## Narrative Titles — REQUIRED
+Every chart title must convey an insight from the data, not just describe it:
+- GOOD: "Revenue grew 23% YoY to $1.2M", "Engineering leads with 45% of headcount"
+- BAD: "Revenue by Month", "Headcount by Department"
+First run the query with execute_sql, read the results, THEN craft the insight title when calling pin_chart.
+
+## Workflow
+1. **Explore** — Call get_schema (or search_tables in catalog mode) to understand the database structure
+2. **Plan** — Identify the fact tables, dimensions, and 5-7 chart ideas covering KPIs, trends, breakdowns, and rankings
+3. **Test** — Run each query with execute_sql first to verify it works and inspect the data
+4. **Pin** — Call pin_chart with the verified SQL, an insight-driven title, and the correct purpose
+5. **Filter** — Add slicers with add_slicer for date and key categorical dimensions
+6. **Arrange** — Use set_layout to fine-tune positions if the defaults need adjustment
+
+## Self-Correction Rules
+- If a query fails, read the error message, fix the SQL, and retry
+- After 2 failed attempts on the same chart, skip it and move on
+- NEVER repeat the exact same failing SQL — always change something
+- If a table has no useful data (empty or all NULLs), skip it gracefully
+
+## Output Requirements
+- Pin at least 4 charts, aim for 5-7
+- Include at least 1 KPI gauge, 1 time-series line chart, and 1 breakdown
+- After pinning all charts, provide a brief summary of the dashboard you built
+
+## SQL Rules
+- Only generate SELECT statements — NEVER INSERT, UPDATE, DELETE, DROP, ALTER, or DDL
+${dialectRules}
+- Use appropriate JOINs when querying across tables
+- Use aliases for readability
+- Limit results to 1000 rows unless needed otherwise
+
+${schemaSection}`;
+
+  if (semanticContext) {
+    prompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${prompt}`;
+  }
+
+  return prompt;
 }

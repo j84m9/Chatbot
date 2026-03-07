@@ -1,15 +1,15 @@
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { generateText, streamText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import { getModel } from '@/utils/ai/provider';
 import { schemaToPromptText, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
-import { fetchSchema as fetchSqliteSchema, executeQuery as executeSqlite } from '@/utils/sqlite/connection';
-import {
-  buildDashboardPlannerPrompt,
-  buildMultiChartSuggestionSystemPrompt,
-  buildChartSuggestionUserPrompt,
-} from '@/utils/ai/data-explorer-prompts';
-import { detectFilterableColumns } from '@/utils/dashboard-filters';
+import { fetchSchema as fetchSqliteSchema } from '@/utils/sqlite/connection';
+import { buildDashboardAgentSystemPrompt } from '@/utils/ai/data-explorer-prompts';
+import { createDashboardAgentTools } from '@/utils/ai/data-explorer-tools';
+import { routeTables } from '@/utils/ai/table-router';
+import { buildCatalog, buildCatalogText, buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
+import { buildFKGraph } from '@/utils/ai/fk-graph';
+import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -24,33 +24,6 @@ function startHeartbeat(controller: ReadableStreamDefaultController, intervalMs 
     try { controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')); } catch { clearInterval(id); }
   }, intervalMs);
   return () => clearInterval(id);
-}
-
-function extractJsonFromText(text: string): any[] | null {
-  try {
-    // Try direct parse
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    // Strip markdown fences
-    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) {
-      try { return JSON.parse(fenceMatch[1].trim()); } catch {}
-    }
-    // Find first [ bracket
-    const start = text.indexOf('[');
-    if (start >= 0) {
-      let depth = 0;
-      for (let i = start; i < text.length; i++) {
-        if (text[i] === '[') depth++;
-        else if (text[i] === ']') depth--;
-        if (depth === 0) {
-          try { return JSON.parse(text.slice(start, i + 1)); } catch { break; }
-        }
-      }
-    }
-    return null;
-  }
 }
 
 export async function POST(req: Request) {
@@ -167,177 +140,149 @@ export async function POST(req: Request) {
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
         const schemaText = schemaToPromptText(schema, dialect);
 
-        sendEvent(controller, 'status', { message: 'Planning dashboard...' });
+        // 3a. Load semantic context for SQLite connections
+        let semanticContext: string | null = null;
+        if (isSqlite && conn.file_path) {
+          const metadataPath = findMetadataPath(conn.file_path);
+          if (metadataPath) {
+            semanticContext = loadSemanticContext(metadataPath);
+          }
+        }
 
-        // 4. Generate query plan
-        const plannerPrompt = buildDashboardPlannerPrompt(schemaText, dialect);
-        const planResult = await generateText({
+        // 4. Catalog mode for large databases
+        sendEvent(controller, 'status', { message: 'Agent is exploring the database...' });
+
+        const { data: metadataRows } = await dbAdmin
+          .from('table_metadata')
+          .select('*')
+          .eq('connection_id', connectionId)
+          .eq('user_id', user.id);
+        const metadata: TableMetadataRow[] = metadataRows || [];
+
+        const catalogMode = schema.length > 30;
+        let catalogText = schemaText;
+        let catalog;
+        let fkGraph;
+
+        if (catalogMode) {
+          catalog = buildCatalog(schema, metadata);
+          fkGraph = buildFKGraph(schema);
+          catalogText = buildCatalogText(schema, metadata);
+        } else if (metadata.length > 0) {
+          const descBlock = buildDescriptionComments(metadata);
+          if (descBlock) {
+            catalogText = descBlock + '\n\n' + catalogText;
+          }
+        }
+
+        // 5. Create dashboard agent tools
+        const boundSendEvent = (stage: string, data: any) => sendEvent(controller, stage, data);
+        const tools = createDashboardAgentTools({
+          dialect,
+          schema,
+          mssqlConfig,
+          filePath: isSqlite ? conn.file_path : undefined,
+          catalogMode,
+          catalog,
+          fkGraph,
+          dbAdmin,
+          userId: user.id,
+          connectionId,
+          dashboardId,
           model,
-          system: plannerPrompt,
-          prompt: userRequest,
+          sendEvent: boundSendEvent,
         });
 
-        const plan = extractJsonFromText(planResult.text);
-        if (!plan || plan.length === 0) {
-          sendEvent(controller, 'error', { message: 'Failed to generate dashboard plan. Try a more specific request.' });
-          controller.close();
-          stopHeartbeat();
-          return;
-        }
+        // 6. Build system prompt and configure agent loop
+        const systemPrompt = buildDashboardAgentSystemPrompt(dialect, catalogText, semanticContext, catalogMode);
+        let maxSteps = 15;
+        let agentPrompt = userRequest;
 
-        sendEvent(controller, 'plan', { queries: plan.length });
+        // Pre-filter tables in catalog mode
+        if (catalogMode && catalog) {
+          sendEvent(controller, 'status', { message: 'Identifying relevant tables...' });
 
-        // 5. Execute each query and generate chart
-        const allResults: { rows: Record<string, any>[]; columns: string[] }[] = [];
+          const preFilterResult = await routeTables({
+            model,
+            question: userRequest,
+            catalogText,
+            schema,
+            catalog,
+            dialect,
+          });
 
-        for (let i = 0; i < plan.length; i++) {
-          const item = plan[i];
-          sendEvent(controller, 'status', { message: `Executing query ${i + 1}/${plan.length}: ${item.title}` });
-
-          try {
-            // Execute SQL
-            let queryResult: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number };
-            if (isSqlite) {
-              queryResult = executeSqlite(conn.file_path, item.sql);
-            } else {
-              const { executeQuery: executeMssql } = await import('@/utils/mssql/connection');
-              queryResult = await executeMssql(mssqlConfig!, item.sql);
-            }
-
-            if (queryResult.rows.length === 0) {
-              continue; // Skip empty results
-            }
-
-            allResults.push({ rows: queryResult.rows, columns: queryResult.columns });
-
-            // Generate chart config via LLM
-            const chartSystemPrompt = buildMultiChartSuggestionSystemPrompt();
-            const chartUserPrompt = buildChartSuggestionUserPrompt(
-              item.title,
-              queryResult.columns,
-              queryResult.types,
-              queryResult.rows.slice(0, 10),
-              queryResult.rowCount
-            );
-
-            const chartResult = await streamText({
-              model,
-              system: chartSystemPrompt,
-              prompt: chartUserPrompt,
-            });
-
-            let chartText = '';
-            for await (const chunk of chartResult.textStream) {
-              chartText += chunk;
-            }
-
-            let chartConfigs = extractJsonFromText(chartText);
-            if (!chartConfigs || chartConfigs.length === 0) {
-              // Fallback: use hint to build a basic config
-              chartConfigs = [{
-                chartType: item.chartHint || 'bar',
-                title: item.title,
-                xColumn: queryResult.columns[0],
-                yColumn: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
-                xLabel: queryResult.columns[0],
-                yLabel: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
-              }];
-            }
-
-            // Use the first chart config
-            const chartConfig = { ...chartConfigs[0], title: chartConfigs[0].title || item.title };
-
-            // Pin the chart to the dashboard
-            const { data: existing } = await dbAdmin
-              .from('pinned_charts')
-              .select('display_order')
-              .eq('user_id', user.id)
-              .eq('connection_id', connectionId)
-              .order('display_order', { ascending: false })
-              .limit(1);
-
-            const nextOrder = existing && existing.length > 0 ? existing[0].display_order + 1 : 0;
-
-            const insertData: Record<string, any> = {
-              user_id: user.id,
-              connection_id: connectionId,
-              title: chartConfig.title || item.title,
-              chart_config: chartConfig,
-              results_snapshot: {
-                rows: queryResult.rows,
-                columns: queryResult.columns,
-                types: queryResult.types,
-              },
-              source_sql: item.sql,
-              source_question: item.title,
-              display_order: nextOrder + i,
-            };
-
-            if (dashboardId) {
-              insertData.dashboard_id = dashboardId;
-            }
-
-            const { data: pinned } = await dbAdmin
-              .from('pinned_charts')
-              .insert(insertData)
-              .select()
-              .single();
-
-            if (pinned) {
-              sendEvent(controller, 'chart_added', { id: pinned.id, title: chartConfig.title, index: i + 1, total: plan.length });
-            }
-          } catch (err: any) {
-            sendEvent(controller, 'status', { message: `Query ${i + 1} failed: ${err.message?.slice(0, 100)}` });
-            // Continue to next query
+          if (preFilterResult.didRoute && preFilterResult.tableNames) {
+            const tableList = preFilterResult.tableNames.join(', ');
+            agentPrompt = `${userRequest}\n\n[Routing hint: The tables most likely relevant are: ${tableList}. Start by calling get_schema with these table names.]`;
           }
+          maxSteps = 18;
         }
 
-        // 6. Auto-add slicers from collected results
-        if (allResults.length > 0) {
-          sendEvent(controller, 'status', { message: 'Adding slicer filters...' });
+        // 7. Run agent loop
+        const agentSteps: any[] = [];
 
-          // Build mock PinnedChart array for detectFilterableColumns
-          const mockCharts = allResults.map((r, idx) => ({
-            id: `tmp-${idx}`,
-            results_snapshot: r,
-            chart_config: {},
-            item_type: 'chart',
-          }));
+        const result = await generateText({
+          model,
+          system: systemPrompt,
+          prompt: agentPrompt,
+          tools,
+          stopWhen: stepCountIs(maxSteps),
+          onStepFinish: (event) => {
+            const stepNumber = event.stepNumber;
 
-          const { dateColumns, categoricalColumns } = detectFilterableColumns(mockCharts as any);
-          const slicerColumns = [
-            ...dateColumns.slice(0, 1).map(c => ({ column: c, filterType: 'date_range' as const })),
-            ...categoricalColumns.slice(0, 1).map(c => ({ column: c, filterType: 'multi_select' as const })),
-          ];
+            // Process tool calls
+            for (const toolCall of event.toolCalls) {
+              const stepEvent = {
+                stepNumber,
+                type: 'tool_call' as const,
+                toolName: toolCall.toolName,
+                toolInput: (toolCall as any).input,
+              };
+              agentSteps.push(stepEvent);
+              sendEvent(controller, 'agent_step', stepEvent);
+            }
 
-          for (const slicer of slicerColumns) {
-            try {
-              const { data: slicerPin } = await dbAdmin
-                .from('pinned_charts')
-                .insert({
-                  user_id: user.id,
-                  connection_id: connectionId,
-                  title: slicer.column.replace(/_/g, ' '),
-                  item_type: 'slicer',
-                  slicer_config: { column: slicer.column, filterType: slicer.filterType },
-                  chart_config: {},
-                  results_snapshot: { rows: [], columns: [] },
-                  display_order: 100,
-                  ...(dashboardId ? { dashboard_id: dashboardId } : {}),
-                })
-                .select()
-                .single();
+            // Process tool results
+            for (const toolResult of event.toolResults) {
+              const resultData = (toolResult as any).output as any;
+              const stepEvent = {
+                stepNumber,
+                type: 'tool_result' as const,
+                toolName: toolResult.toolName,
+                toolResult: resultData,
+              };
+              agentSteps.push(stepEvent);
+              sendEvent(controller, 'agent_step', stepEvent);
 
-              if (slicerPin) {
-                sendEvent(controller, 'slicer_added', { id: slicerPin.id, column: slicer.column });
+              // Track error recovery
+              if (toolResult.toolName === 'execute_sql' && !resultData?.success) {
+                const errorStep = {
+                  stepNumber,
+                  type: 'error_recovery' as const,
+                  text: `Error: ${resultData?.error || 'Query failed'}. ${resultData?.suggestion || 'Retrying...'}`,
+                };
+                agentSteps.push(errorStep);
+                sendEvent(controller, 'agent_step', errorStep);
               }
-            } catch {
-              // Skip failed slicers
             }
-          }
-        }
 
-        sendEvent(controller, 'complete', {});
+            // Process reasoning text
+            if (event.text) {
+              const textStep = {
+                stepNumber,
+                type: 'reasoning' as const,
+                text: event.text,
+              };
+              agentSteps.push(textStep);
+              sendEvent(controller, 'agent_step', textStep);
+            }
+
+            sendEvent(controller, 'status', { message: `Agent step ${stepNumber + 1}...` });
+          },
+        });
+
+        // 8. Complete
+        sendEvent(controller, 'complete', { summary: result.text || 'Dashboard built successfully.' });
       } catch (err: any) {
         sendEvent(controller, 'error', { message: err.message || 'Dashboard build failed' });
       } finally {
