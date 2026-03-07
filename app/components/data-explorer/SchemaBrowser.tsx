@@ -235,6 +235,10 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
     catalogReaderRef.current = null;
   };
 
+  const handleEditCatalog = () => {
+    window.open(`/data-explorer/catalog?connectionId=${connectionId}`, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 px-2 py-1">
@@ -284,16 +288,27 @@ export default function SchemaBrowser({ connectionId, onInsertColumn, onQueryTab
                 ? `${metadata.length} table descriptions loaded.`
                 : 'Generate table descriptions for better AI accuracy.'}
           </p>
-          <button
-            onClick={handleGenerateCatalog}
-            className={`text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer ${
-              isLargeDb && !hasMetadata
-                ? 'dark:bg-red-500/20 bg-red-100 dark:text-red-300 text-red-600 dark:hover:bg-red-500/30 hover:bg-red-200'
-                : 'dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200'
-            }`}
-          >
-            {hasMetadata ? 'Regenerate Descriptions' : 'Generate Descriptions'}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleGenerateCatalog}
+              className={`text-[10px] px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                isLargeDb && !hasMetadata
+                  ? 'dark:bg-red-500/20 bg-red-100 dark:text-red-300 text-red-600 dark:hover:bg-red-500/30 hover:bg-red-200'
+                  : 'dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200'
+              }`}
+            >
+              {hasMetadata ? 'Regenerate Descriptions' : 'Generate Descriptions'}
+            </button>
+            {hasMetadata && (
+              <button
+                onClick={handleEditCatalog}
+                className="text-[10px] px-2 py-0.5 rounded dark:bg-indigo-500/20 bg-indigo-100 dark:text-indigo-300 text-indigo-600 dark:hover:bg-indigo-500/30 hover:bg-indigo-200 transition-colors cursor-pointer"
+                title="Edit catalogue in YAML editor"
+              >
+                Edit Catalogue
+              </button>
+            )}
+          </div>
         </div>
       )}
 
