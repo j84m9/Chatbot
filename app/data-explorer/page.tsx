@@ -85,7 +85,8 @@ export default function DataExplorer() {
   const queryAbortRef = useRef<AbortController | null>(null);
 
   // Draggable split pane
-  const [splitPosition, setSplitPosition] = useState(45); // percentage
+  const [splitPosition, setSplitPosition] = useState(45); // percentage (horizontal)
+  const [verticalSplitPosition, setVerticalSplitPosition] = useState(50); // percentage (vertical, for SQL mode)
   const isDragging = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -1423,17 +1424,26 @@ export default function DataExplorer() {
   };
 
   // Drag handle for split pane
-  const handleMouseDown = () => {
+  const dragAxis = useRef<'horizontal' | 'vertical'>('horizontal');
+
+  const handleMouseDown = (axis: 'horizontal' | 'vertical') => {
     isDragging.current = true;
+    dragAxis.current = axis;
   };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const pct = Math.min(Math.max((x / rect.width) * 100, 25), 75);
-      setSplitPosition(pct);
+      if (dragAxis.current === 'vertical') {
+        const y = e.clientY - rect.top;
+        const pct = Math.min(Math.max((y / rect.height) * 100, 20), 80);
+        setVerticalSplitPosition(pct);
+      } else {
+        const x = e.clientX - rect.left;
+        const pct = Math.min(Math.max((x / rect.width) * 100, 25), 75);
+        setSplitPosition(pct);
+      }
     };
 
     const handleMouseUp = () => {
@@ -1667,14 +1677,13 @@ export default function DataExplorer() {
               onToggleAnnotations={handleDashboardToggleAnnotations}
               connectionName={connections.find(c => c.id === activeConnectionId)?.name}
             />
-          ) : (
-          <>
-          {/* Left pane: SQL Editor or Query Chat */}
-          <div
-            className="flex flex-col transition-[width] duration-300"
-            style={{ width: showResults ? `${splitPosition}%` : '100%' }}
-          >
-            {editorMode === 'sql' ? (
+          ) : editorMode === 'sql' ? (
+          /* SQL mode: vertical split (editor top, results bottom) */
+          <div className="flex-1 flex flex-col min-h-0">
+            <div
+              className="flex flex-col"
+              style={{ height: showResults ? `${verticalSplitPosition}%` : '100%' }}
+            >
               <SqlEditor
                 ref={sqlEditorRef}
                 initialSql={editorSql}
@@ -1683,7 +1692,50 @@ export default function DataExplorer() {
                 darkMode={darkMode}
                 dbType={connections.find(c => c.id === activeConnectionId)?.db_type === 'sqlite' ? 'sqlite' : 'mssql'}
               />
-            ) : (
+            </div>
+
+            {showResults && (
+              <>
+                {/* Horizontal drag handle */}
+                <div
+                  onMouseDown={() => handleMouseDown('vertical')}
+                  className="h-1.5 flex-shrink-0 cursor-row-resize dark:bg-[#1e1f20] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
+                >
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-1 w-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
+                </div>
+
+                {/* Bottom pane: Results Panel */}
+                <div
+                  className="flex flex-col min-h-0"
+                  style={{ height: `${100 - verticalSplitPosition}%` }}
+                >
+                  <ResultsPanel
+                    exchange={selectedExchange}
+                    darkMode={darkMode}
+                    onClose={() => setSelectedExchangeIndex(-1)}
+                    onRefineSubmit={handleDirectChartRefine}
+                    onRefineSql={handleRefineSql}
+                    onOpenInEditor={(sql) => { setEditorSql(sql); setEditorMode('sql'); }}
+                    onRequestInsights={() => handleRequestInsights()}
+                    onSaveQuery={handleSaveQuery}
+                    onChangeChartType={handleChangeChartType}
+                    onAddAnnotation={handleAddAnnotation}
+                    onToggleAnnotations={handleToggleAnnotations}
+                    onPinChart={handlePinChart}
+                    onUnpinChart={handleUnpinChart}
+                    pinnedSourceMap={pinnedSourceMap}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          ) : (
+          /* Chat/Agent mode: horizontal split (chat left, results right) */
+          <>
+          <div
+            className="flex flex-col transition-[width] duration-300"
+            style={{ width: showResults ? `${splitPosition}%` : '100%' }}
+          >
               <QueryChat
                 exchanges={exchanges}
                 selectedIndex={selectedExchangeIndex}
@@ -1711,14 +1763,13 @@ export default function DataExplorer() {
                 onQuickModelSwitch={handleQuickModelSwitch}
                 queryMode={queryMode}
               />
-            )}
           </div>
 
           {showResults && (
             <>
-              {/* Drag handle */}
+              {/* Vertical drag handle */}
               <div
-                onMouseDown={handleMouseDown}
+                onMouseDown={() => handleMouseDown('horizontal')}
                 className="w-1.5 flex-shrink-0 cursor-col-resize dark:bg-[#1e1f20] bg-gray-200 hover:bg-indigo-500/50 active:bg-indigo-500 transition-colors relative group z-10"
               >
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-8 rounded-full dark:bg-gray-600 bg-gray-400 group-hover:bg-indigo-400 transition-colors" />
