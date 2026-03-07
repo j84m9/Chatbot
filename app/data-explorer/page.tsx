@@ -1776,6 +1776,8 @@ export default function DataExplorer() {
     setIsBuildingDashboard(true);
     setBuildProgress('Planning...');
     setViewMode('dashboard');
+    setQueryMode('agent');
+    setEditorMode('chat');
 
     try {
       const res = await fetch('/api/data-explorer/dashboard-builder-stream', {
@@ -2210,7 +2212,7 @@ export default function DataExplorer() {
                   </svg>
                 </button>
                 <button
-                  onClick={() => setViewMode('dashboard')}
+                  onClick={() => { setViewMode('dashboard'); setQueryMode('agent'); setEditorMode('chat'); }}
                   className={`p-1.5 rounded-md transition-colors cursor-pointer relative ${viewMode === 'dashboard' ? 'dark:bg-[#2a2b2d] bg-white dark:text-indigo-400 text-indigo-500 shadow-sm' : 'dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600'}`}
                   title="Dashboard view"
                 >
