@@ -6,8 +6,6 @@ import { executeQuery as executeMssql, schemaToPromptText, ConnectionConfig, Sch
 import { executeQuery as executeSqlite, fetchSchema as fetchSqliteSchema, fetchSampleRows as fetchSqliteSampleRows } from '@/utils/sqlite/connection';
 import {
   buildSqlGenerationSystemPromptWithContext,
-  buildMultiChartSuggestionSystemPrompt,
-  buildChartSuggestionUserPrompt,
   buildSessionTitlePrompt,
   buildConversationContext,
   categorizeError,
@@ -297,43 +295,15 @@ export async function POST(req: Request) {
           },
         });
 
-        // 7. Generate explanation + charts in parallel
-        sendEvent(controller, 'status', { step: 'analyzing', message: 'Analyzing results...' });
+        // 7. Generate explanation (chat mode skips charts for speed)
+        sendEvent(controller, 'status', { step: 'analyzing', message: 'Summarizing...' });
 
-        const stopAnalysisHeartbeat = startHeartbeat(controller);
-        const explPromise = Promise.resolve(streamText({
+        const explanation = await streamTextWithHeartbeat(controller, {
           model,
           prompt: `In one sentence, explain what this SQL query does:\n${sqlQuery}`,
-        }).text).then(t => t.trim()).catch(() => 'Query executed.');
-
-        let chartPromise: Promise<{ chartConfig: any; chartConfigs: any[] | null }> = Promise.resolve({ chartConfig: null, chartConfigs: null });
-        if (results.rows.length > 0) {
-          chartPromise = Promise.resolve(streamText({
-            model,
-            system: buildMultiChartSuggestionSystemPrompt(),
-            prompt: buildChartSuggestionUserPrompt(
-              question,
-              results.columns,
-              results.types,
-              results.rows,
-              results.rowCount,
-            ),
-          }).text).then(text => {
-            let chartText = text.trim();
-            chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-            const parsed = JSON.parse(chartText);
-            if (Array.isArray(parsed)) {
-              return { chartConfig: parsed[0] || null, chartConfigs: parsed };
-            }
-            return { chartConfig: parsed, chartConfigs: [parsed] };
-          }).catch(() => ({ chartConfig: null, chartConfigs: null }));
-        }
-
-        const [explanation, charts] = await Promise.all([explPromise, chartPromise]);
-        stopAnalysisHeartbeat();
+        }).then(t => t.trim()).catch(() => 'Query executed.');
 
         sendEvent(controller, 'explanation', { explanation });
-        sendEvent(controller, 'charts', { chartConfig: charts.chartConfig, chartConfigs: charts.chartConfigs });
 
         // 8. Save to database
         let activeSessionId = sessionId;
@@ -355,8 +325,6 @@ export async function POST(req: Request) {
             sql_query: sqlQuery,
             explanation,
             results: { rows: results.rows.slice(0, 100), columns: results.columns },
-            chart_config: charts.chartConfig,
-            chart_configs: charts.chartConfigs,
             execution_time_ms: results.executionTimeMs,
             row_count: results.rowCount,
             message_type: 'query',

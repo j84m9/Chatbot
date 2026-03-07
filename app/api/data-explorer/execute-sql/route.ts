@@ -1,25 +1,11 @@
 import { createClient as createAuthClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { streamText } from 'ai';
-import { getModel } from '@/utils/ai/provider';
-import { executeQuery as executeMssql, ConnectionConfig, SchemaTable } from '@/utils/mssql/connection';
+import { executeQuery as executeMssql, ConnectionConfig } from '@/utils/mssql/connection';
 import { executeQuery as executeSqlite } from '@/utils/sqlite/connection';
-import {
-  buildMultiChartSuggestionSystemPrompt,
-  buildChartSuggestionUserPrompt,
-  buildSessionTitlePrompt,
-} from '@/utils/ai/data-explorer-prompts';
 
 function sendEvent(controller: ReadableStreamDefaultController, stage: string, data: any) {
   const chunk = `data: ${JSON.stringify({ stage, data })}\n\n`;
   controller.enqueue(new TextEncoder().encode(chunk));
-}
-
-function startHeartbeat(controller: ReadableStreamDefaultController, intervalMs = 5000) {
-  const id = setInterval(() => {
-    try { controller.enqueue(new TextEncoder().encode(': heartbeat\n\n')); } catch { clearInterval(id); }
-  }, intervalMs);
-  return () => clearInterval(id);
 }
 
 export async function POST(req: Request) {
@@ -132,71 +118,7 @@ export async function POST(req: Request) {
           },
         });
 
-        // 3. Generate chart suggestions via AI
-        sendEvent(controller, 'status', { step: 'analyzing', message: 'Analyzing results...' });
-
-        // Resolve AI model
-        const { data: settings } = await dbAdmin
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-
-        const provider = settings?.selected_provider || 'ollama';
-        const modelId = settings?.selected_model || 'llama3.2:3b';
-
-        async function decryptApiKey(value: string | null): Promise<string | null> {
-          if (!value || !encryptionKey) return value;
-          try {
-            const { data } = await dbAdmin.rpc('decrypt_text', {
-              encrypted_text: value,
-              encryption_key: encryptionKey,
-            });
-            return data || value;
-          } catch {
-            return value;
-          }
-        }
-
-        const keyMap: Record<string, string | null> = {
-          openai: await decryptApiKey(settings?.openai_api_key),
-          anthropic: await decryptApiKey(settings?.anthropic_api_key),
-          google: await decryptApiKey(settings?.google_api_key),
-        };
-
-        const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
-
-        const stopHeartbeat = startHeartbeat(controller);
-
-        let chartPromise: Promise<{ chartConfig: any; chartConfigs: any[] | null }> = Promise.resolve({ chartConfig: null, chartConfigs: null });
-        if (results.rows.length > 0) {
-          chartPromise = Promise.resolve(streamText({
-            model,
-            system: buildMultiChartSuggestionSystemPrompt(),
-            prompt: buildChartSuggestionUserPrompt(
-              rawSql,
-              results.columns,
-              results.types,
-              results.rows,
-              results.rowCount,
-            ),
-          }).text).then(text => {
-            let chartText = text.trim();
-            chartText = chartText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-            const parsed = JSON.parse(chartText);
-            if (Array.isArray(parsed)) {
-              return { chartConfig: parsed[0] || null, chartConfigs: parsed };
-            }
-            return { chartConfig: parsed, chartConfigs: [parsed] };
-          }).catch(() => ({ chartConfig: null, chartConfigs: null }));
-        }
-
-        const charts = await chartPromise;
-        stopHeartbeat();
-
-        sendEvent(controller, 'charts', { chartConfig: charts.chartConfig, chartConfigs: charts.chartConfigs });
-
-        // 4. Save to database
+        // 3. Save to database (SQL mode skips charts for speed)
         let activeSessionId = sessionId;
         if (!activeSessionId) {
           const { data: newSession } = await dbAdmin
@@ -213,23 +135,10 @@ export async function POST(req: Request) {
             question: rawSql,
             sql_query: rawSql,
             results: { rows: results.rows.slice(0, 100), columns: results.columns },
-            chart_config: charts.chartConfig,
-            chart_configs: charts.chartConfigs,
             execution_time_ms: results.executionTimeMs,
             row_count: results.rowCount,
             message_type: 'direct_sql',
           });
-
-          // Generate AI title on 1st or 3rd message
-          const { count } = await dbAdmin
-            .from('data_explorer_messages')
-            .select('id', { count: 'exact', head: true })
-            .eq('session_id', activeSessionId);
-
-          const msgCount = count || 0;
-          if (msgCount === 1 || msgCount === 3) {
-            generateSessionTitle(model, activeSessionId, dbAdmin).catch(() => {});
-          }
         }
 
         sendEvent(controller, 'complete', { sessionId: activeSessionId });
@@ -250,27 +159,3 @@ export async function POST(req: Request) {
   });
 }
 
-async function generateSessionTitle(model: any, sessionId: string, dbAdmin: any) {
-  const { data: messages } = await dbAdmin
-    .from('data_explorer_messages')
-    .select('question')
-    .eq('session_id', sessionId)
-    .order('created_at', { ascending: true })
-    .limit(5);
-
-  if (!messages || messages.length === 0) return;
-  const questions = messages.map((m: any) => m.question);
-
-  const titleText = await streamText({
-    model,
-    prompt: buildSessionTitlePrompt(questions),
-  }).text;
-
-  const title = titleText.trim().replace(/^["']|["']$/g, '');
-  if (title && title.length > 0 && title.length <= 100) {
-    await dbAdmin
-      .from('data_explorer_sessions')
-      .update({ ai_title: title, title })
-      .eq('id', sessionId);
-  }
-}
