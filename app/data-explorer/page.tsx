@@ -1735,6 +1735,7 @@ export default function DataExplorer() {
                   onClose={() => setSelectedExchangeIndex(-1)}
                   onRefineSubmit={handleDirectChartRefine}
                   onRefineSql={handleRefineSql}
+                  onOpenInEditor={(sql) => { setEditorSql(sql); setEditorMode('sql'); }}
                   onRequestInsights={() => handleRequestInsights()}
                   onSaveQuery={handleSaveQuery}
                   onChangeChartType={handleChangeChartType}

@@ -13,6 +13,7 @@ interface ResultsPanelProps {
   onRefineSql?: () => void;
   onRequestInsights?: () => void;
   onSaveQuery?: (data: { question: string; sql: string; explanation: string | null; chartConfigs: any }) => void;
+  onOpenInEditor?: (sql: string) => void;
   onChangeChartType?: (chartIndex: number, newType: string) => void;
   onAddAnnotation?: (chartIndex: number, x: number | string, y: number | string, text: string) => void;
   onToggleAnnotations?: (chartIndex: number) => void;
@@ -28,7 +29,7 @@ const InsightsPanel = dynamic(() => import('./InsightsPanel'), { ssr: false });
 import KPICards from './KPICards';
 import DataTable from './DataTable';
 
-export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubmit, onRefineSql, onRequestInsights, onSaveQuery, onChangeChartType, onAddAnnotation, onToggleAnnotations, onPinChart, onUnpinChart, pinnedSourceMap }: ResultsPanelProps) {
+export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubmit, onRefineSql, onRequestInsights, onSaveQuery, onOpenInEditor, onChangeChartType, onAddAnnotation, onToggleAnnotations, onPinChart, onUnpinChart, pinnedSourceMap }: ResultsPanelProps) {
   const [activeTab, setActiveTab] = useState<'sql' | 'table' | 'chart' | 'insights'>('sql');
   const prevExchangeKey = useRef<string | null>(null);
   const [showSaveInput, setShowSaveInput] = useState(false);
@@ -169,6 +170,19 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
             <span className="text-xs text-red-400 truncate max-w-[200px]" title={exchange.error}>
               {exchange.error}
             </span>
+          )}
+
+          {/* Open in SQL Editor button */}
+          {activeTab === 'sql' && exchange.sql && onOpenInEditor && (
+            <button
+              onClick={() => onOpenInEditor(exchange.sql!)}
+              className="p-1.5 rounded-lg dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer"
+              title="Open in SQL Editor"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
+              </svg>
+            </button>
           )}
 
           {/* Refine SQL button */}
