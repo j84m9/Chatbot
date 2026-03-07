@@ -383,21 +383,10 @@ export default function DataExplorer() {
     setSelectedExchangeIndex(-1);
     setRefineContext(null);
 
-    // Immediately switch connection from session metadata (no async wait)
-    const session = sessions.find(s => s.id === id);
-    if (session?.connection_id) {
-      setActiveConnectionId(session.connection_id);
-    }
-
     try {
       const res = await fetch(`/api/data-explorer/messages?sessionId=${id}`);
       if (!res.ok) return;
       const data = await res.json();
-
-      // Also set from API response as fallback
-      if (data.connectionId) {
-        setActiveConnectionId(data.connectionId);
-      }
 
       // Restore agent if session has one
       if (data.agentId) {
