@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { connection_id, title, chart_config, results_snapshot, source_message_id } = body;
+  const { connection_id, title, chart_config, results_snapshot, source_message_id, source_sql, source_question } = body;
 
   if (!connection_id || !title || !chart_config || !results_snapshot) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -77,6 +77,8 @@ export async function POST(request: NextRequest) {
       chart_config,
       results_snapshot,
       source_message_id: source_message_id || null,
+      source_sql: source_sql || null,
+      source_question: source_question || null,
       display_order: nextOrder,
     })
     .select()
@@ -98,7 +100,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { id, layout } = body;
+  const { id } = body;
 
   if (!id) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 });
@@ -110,8 +112,12 @@ export async function PATCH(request: NextRequest) {
   );
 
   const updates: Record<string, any> = {};
-  if (layout !== undefined) updates.layout = layout;
+  if (body.layout !== undefined) updates.layout = body.layout;
   if (body.chart_config !== undefined) updates.chart_config = body.chart_config;
+  if (body.title !== undefined) updates.title = body.title;
+  if (body.auto_refresh_interval !== undefined) updates.auto_refresh_interval = body.auto_refresh_interval;
+  if (body.last_refreshed_at !== undefined) updates.last_refreshed_at = body.last_refreshed_at;
+  if (body.results_snapshot !== undefined) updates.results_snapshot = body.results_snapshot;
 
   const { error } = await dbAdmin
     .from('pinned_charts')

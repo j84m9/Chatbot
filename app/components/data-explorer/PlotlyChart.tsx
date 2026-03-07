@@ -46,6 +46,7 @@ interface PlotlyChartProps {
   rows: Record<string, any>[];
   darkMode: boolean;
   annotationMode?: boolean;
+  drillDownMode?: boolean;
   onChartClick?: (x: number | string, y: number | string) => void;
   hideTitle?: boolean;
 }
@@ -115,7 +116,7 @@ function formatNumber(val: number): string {
   return val.toLocaleString();
 }
 
-const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode, annotationMode, onChartClick, hideTitle }, ref) {
+const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function PlotlyChart({ chartConfig, rows, darkMode, annotationMode, drillDownMode, onChartClick, hideTitle }, ref) {
   const plotRef = useRef<any>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -624,17 +625,22 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
   }, [chartConfig, rows, darkMode, hideTitle]);
 
   const handlePlotClick = useCallback((event: any) => {
-    if (!annotationMode || !onChartClick) return;
+    if (!onChartClick) return;
+    // Allow click in annotationMode, drillDownMode, or default (cross-filter)
+    if (!annotationMode && !drillDownMode && !onChartClick) return;
     const point = event.points?.[0];
     if (point) {
-      onChartClick(point.x, point.y);
+      // For pie charts, use label instead of x
+      const x = point.label !== undefined ? point.label : point.x;
+      const y = point.y !== undefined ? point.y : point.value;
+      onChartClick(x, y);
     }
-  }, [annotationMode, onChartClick]);
+  }, [annotationMode, drillDownMode, onChartClick]);
 
   if (!mounted) return <div className="w-full h-full min-h-[300px]" />;
 
   return (
-    <div className={`w-full h-full min-h-[300px] ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : ''}`}>
+    <div className={`w-full h-full min-h-[300px] ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : drillDownMode ? 'ring-2 ring-blue-500 rounded-lg cursor-pointer' : ''}`}>
       <Plot
         data={data}
         layout={layout}

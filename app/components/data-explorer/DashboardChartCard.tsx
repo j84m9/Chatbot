@@ -1,0 +1,493 @@
+'use client';
+
+import { useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import type { PinnedChart } from './Dashboard';
+import type { CrossFilter, DrillDownState, DrillDownLevel } from '@/types/dashboard';
+import ChartTypeSwitcher from './ChartTypeSwitcher';
+import DashboardKPICard from './DashboardKPICard';
+
+const PlotlyChart = dynamic(() => import('./PlotlyChart'), { ssr: false });
+
+/** Detect if a chart is KPI-eligible: gauge type OR single row with 1-3 numeric columns */
+function isKPIChart(pin: PinnedChart): boolean {
+  if (pin.chart_config.chartType === 'gauge') return true;
+  const rows = pin.results_snapshot.rows;
+  if (rows.length !== 1) return false;
+  const cols = Object.keys(rows[0]);
+  if (cols.length < 1 || cols.length > 3) return false;
+  const numericCount = cols.filter(c => typeof rows[0][c] === 'number').length;
+  return numericCount >= 1;
+}
+
+/** Format relative time */
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const AUTO_REFRESH_OPTIONS = [
+  { label: 'Off', value: 0 },
+  { label: '30s', value: 30 },
+  { label: '1m', value: 60 },
+  { label: '5m', value: 300 },
+  { label: '15m', value: 900 },
+];
+
+interface DashboardChartCardProps {
+  pin: PinnedChart;
+  darkMode: boolean;
+  filteredRows: Record<string, any>[];
+  isRefreshing: boolean;
+  crossFilter: CrossFilter | null;
+  onUnpin: (id: string) => void;
+  onChangeChartType?: (id: string, newType: string) => void;
+  onAddAnnotation?: (id: string, x: number | string, y: number | string, text: string) => void;
+  onToggleAnnotations?: (id: string) => void;
+  onRefresh?: (id: string) => void;
+  onAutoRefreshChange?: (id: string, interval: number) => void;
+  onCrossFilter?: (sourceChartId: string, column: string, value: string | number) => void;
+  onExpand?: (pin: PinnedChart) => void;
+  onTitleChange?: (id: string, title: string) => void;
+}
+
+export default function DashboardChartCard({
+  pin, darkMode, filteredRows, isRefreshing, crossFilter,
+  onUnpin, onChangeChartType, onAddAnnotation, onToggleAnnotations,
+  onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange,
+}: DashboardChartCardProps) {
+  const [expandedCard, setExpandedCard] = useState(false);
+  const [annotatingCard, setAnnotatingCard] = useState(false);
+  const [pendingAnnotation, setPendingAnnotation] = useState<{ x: number | string; y: number | string } | null>(null);
+  const [annotationText, setAnnotationText] = useState('');
+  const [showRefreshMenu, setShowRefreshMenu] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [drillDown, setDrillDown] = useState<DrillDownState | null>(null);
+  const [drillMode, setDrillMode] = useState(false);
+
+  const columns = filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (pin.results_snapshot.columns || []);
+  const hasAnnotations = pin.chart_config.annotations && pin.chart_config.annotations.length > 0;
+  const isKPI = isKPIChart(pin);
+  const isSourceChart = crossFilter?.sourceChartId === pin.id;
+  const isFiltered = crossFilter && !isSourceChart && filteredRows.length < pin.results_snapshot.rows.length;
+  const canRefresh = !!pin.source_sql;
+
+  // Drill-down: get the effective rows (drilled or filtered)
+  const effectiveRows = drillDown ? drillDown.levels.reduce((rows, level) => {
+    return rows.filter(r => String(r[level.column]) === String(level.value));
+  }, [...filteredRows]) : filteredRows;
+
+  // Click handler: priority is annotate > drill > cross-filter
+  const handleChartClick = useCallback((x: number | string, y: number | string) => {
+    if (annotatingCard) {
+      setPendingAnnotation({ x, y });
+      setAnnotationText('');
+      return;
+    }
+
+    if (drillMode && pin.source_sql) {
+      // Determine column from chart type
+      const col = ['pie', 'funnel'].includes(pin.chart_config.chartType)
+        ? pin.chart_config.xColumn
+        : pin.chart_config.xColumn;
+
+      const newLevel: DrillDownLevel = { column: col, value: x, label: `${col}: ${x}` };
+
+      setDrillDown(prev => ({
+        levels: [...(prev?.levels || []), newLevel],
+        originalSnapshot: prev?.originalSnapshot || pin.results_snapshot,
+      }));
+      return;
+    }
+
+    // Default: cross-filter
+    if (onCrossFilter) {
+      const col = pin.chart_config.xColumn;
+      onCrossFilter(pin.id, col, x);
+    }
+  }, [annotatingCard, drillMode, pin, onCrossFilter]);
+
+  const handleDrillBack = () => {
+    if (!drillDown) return;
+    if (drillDown.levels.length <= 1) {
+      setDrillDown(null);
+    } else {
+      setDrillDown({ ...drillDown, levels: drillDown.levels.slice(0, -1) });
+    }
+  };
+
+  const handleDrillReset = () => {
+    setDrillDown(null);
+  };
+
+  const handleTitleDoubleClick = () => {
+    if (!onTitleChange) return;
+    setTitleDraft(pin.title);
+    setEditingTitle(true);
+  };
+
+  const handleTitleSave = () => {
+    setEditingTitle(false);
+    const trimmed = titleDraft.trim();
+    if (trimmed && trimmed !== pin.title && onTitleChange) {
+      onTitleChange(pin.id, trimmed);
+    }
+  };
+
+  return (
+    <div className={`group h-full border rounded-xl overflow-hidden flex flex-col ${
+      isSourceChart ? 'ring-2 ring-purple-500 dark:border-purple-500/50 border-purple-300' : 'dark:border-[#2a2b2d] border-gray-200'
+    } dark:bg-[#111213] bg-white`}>
+      {/* Loading overlay */}
+      {isRefreshing && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px] rounded-xl">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg dark:bg-[#1e1f20] bg-white shadow-lg">
+            <svg className="animate-spin w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-xs dark:text-gray-300 text-gray-600">Refreshing...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Card header */}
+      <div className="drag-handle flex items-center gap-2 px-3 py-1.5 cursor-grab active:cursor-grabbing border-b dark:border-[#2a2b2d]/50 border-gray-100 flex-shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 dark:text-gray-600 text-gray-300 flex-shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" />
+        </svg>
+
+        {/* Editable title */}
+        {editingTitle ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            onBlur={handleTitleSave}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleTitleSave();
+              if (e.key === 'Escape') setEditingTitle(false);
+            }}
+            onClick={e => e.stopPropagation()}
+            className="text-xs font-medium dark:text-gray-300 text-gray-700 flex-1 dark:bg-[#1e1f20] bg-gray-100 border dark:border-[#2a2b2d] border-gray-300 rounded px-1.5 py-0.5 outline-none focus:border-purple-500 transition-colors"
+          />
+        ) : (
+          <h3
+            className="text-xs font-medium dark:text-gray-300 text-gray-700 truncate flex-1 cursor-pointer"
+            onDoubleClick={handleTitleDoubleClick}
+            title={onTitleChange ? 'Double-click to edit' : pin.title}
+          >
+            {pin.title}
+          </h3>
+        )}
+
+        {/* Last refreshed timestamp */}
+        {pin.last_refreshed_at && (
+          <span className="text-[9px] dark:text-gray-600 text-gray-400 flex-shrink-0" title={new Date(pin.last_refreshed_at).toLocaleString()}>
+            {timeAgo(pin.last_refreshed_at)}
+          </span>
+        )}
+
+        {/* Refresh button */}
+        {onRefresh && canRefresh && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => onRefresh(pin.id)}
+              className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+              title="Refresh data"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Auto-refresh dropdown */}
+        {onAutoRefreshChange && canRefresh && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setShowRefreshMenu(!showRefreshMenu)}
+              className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+                pin.auto_refresh_interval ? 'text-green-400' : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+              }`}
+              title={pin.auto_refresh_interval ? `Auto-refresh: ${AUTO_REFRESH_OPTIONS.find(o => o.value === pin.auto_refresh_interval)?.label}` : 'Set auto-refresh'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </button>
+            {showRefreshMenu && (
+              <div className="absolute right-0 top-full mt-1 z-30 dark:bg-[#1e1f20] bg-white border dark:border-[#2a2b2d] border-gray-200 rounded-lg shadow-lg py-1 min-w-[80px]">
+                {AUTO_REFRESH_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      onAutoRefreshChange(pin.id, opt.value);
+                      setShowRefreshMenu(false);
+                    }}
+                    className={`w-full text-left px-3 py-1 text-xs hover:dark:bg-[#2a2b2d] hover:bg-gray-100 transition-colors cursor-pointer ${
+                      pin.auto_refresh_interval === opt.value ? 'text-purple-400 font-medium' : 'dark:text-gray-300 text-gray-600'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Drill-down toggle */}
+        {pin.source_sql && (
+          <button
+            onClick={() => setDrillMode(!drillMode)}
+            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+              drillMode
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+            }`}
+            title={drillMode ? 'Exit drill-down mode' : 'Drill down into data'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+            </svg>
+          </button>
+        )}
+
+        {/* Chart type switcher */}
+        {onChangeChartType && (
+          <button
+            onClick={() => setExpandedCard(!expandedCard)}
+            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+              expandedCard
+                ? 'bg-purple-500/20 text-purple-400'
+                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+            }`}
+            title="Change chart type"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 13h2v8H3zm6-4h2v12H9zm6-6h2v18h-2zm6 10h2v8h-2z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Annotate */}
+        {onAddAnnotation && (
+          <button
+            onClick={() => {
+              if (annotatingCard) {
+                setAnnotatingCard(false);
+                setPendingAnnotation(null);
+                setAnnotationText('');
+              } else {
+                setAnnotatingCard(true);
+                setDrillMode(false);
+              }
+            }}
+            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+              annotatingCard
+                ? 'bg-purple-500/20 text-purple-400'
+                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+            }`}
+            title={annotatingCard ? 'Exit annotate mode' : 'Annotate chart'}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+            </svg>
+          </button>
+        )}
+
+        {/* Toggle annotations */}
+        {hasAnnotations && onToggleAnnotations && (
+          <button
+            onClick={() => onToggleAnnotations(pin.id)}
+            className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer flex-shrink-0"
+            title={pin.chart_config.showAnnotations === false ? 'Show annotations' : 'Hide annotations'}
+          >
+            {pin.chart_config.showAnnotations === false ? (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+            )}
+          </button>
+        )}
+
+        {/* Fullscreen expand */}
+        {onExpand && (
+          <button
+            onClick={() => onExpand(pin)}
+            className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer flex-shrink-0"
+            title="View fullscreen"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+            </svg>
+          </button>
+        )}
+
+        {/* Unpin */}
+        <button
+          onClick={() => onUnpin(pin.id)}
+          className="p-0.5 rounded dark:text-gray-600 text-gray-300 dark:hover:text-red-400 hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100 flex-shrink-0"
+          title="Unpin chart"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Chart type switcher (expandable) */}
+      {expandedCard && onChangeChartType && (
+        <div className="px-3 py-1.5 border-b dark:border-[#2a2b2d]/50 border-gray-100">
+          <ChartTypeSwitcher
+            currentType={pin.chart_config.chartType}
+            rows={effectiveRows}
+            columns={columns}
+            onChangeType={(t) => onChangeChartType(pin.id, t)}
+          />
+        </div>
+      )}
+
+      {/* Cross-filter badge */}
+      {isFiltered && (
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-purple-500/5">
+          <span className="text-[10px] dark:text-purple-300 text-purple-600">
+            Filtered by: {crossFilter!.column} = {String(crossFilter!.value)}
+          </span>
+        </div>
+      )}
+
+      {/* Drill-down breadcrumb */}
+      {drillDown && drillDown.levels.length > 0 && (
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-blue-500/5">
+          <button
+            onClick={handleDrillReset}
+            className="text-[10px] dark:text-blue-300 text-blue-600 hover:underline cursor-pointer"
+          >
+            All
+          </button>
+          {drillDown.levels.map((level, i) => (
+            <span key={i} className="flex items-center gap-1 text-[10px] dark:text-blue-300 text-blue-600">
+              <span className="dark:text-gray-600 text-gray-400">&gt;</span>
+              {level.label}
+            </span>
+          ))}
+          <button
+            onClick={handleDrillBack}
+            className="ml-auto text-[10px] dark:text-blue-300 text-blue-600 hover:underline cursor-pointer"
+          >
+            Back
+          </button>
+        </div>
+      )}
+
+      {/* Annotate hint bar */}
+      {annotatingCard && !pendingAnnotation && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-purple-500/10">
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500" />
+          </span>
+          <span className="text-[11px] dark:text-purple-300 text-purple-600">Click a data point to annotate</span>
+        </div>
+      )}
+
+      {/* Annotation text input */}
+      {pendingAnnotation && (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b dark:border-[#2a2b2d]/50 border-gray-100">
+          <input
+            autoFocus
+            value={annotationText}
+            onChange={e => setAnnotationText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && annotationText.trim()) {
+                onAddAnnotation!(pin.id, pendingAnnotation.x, pendingAnnotation.y, annotationText.trim());
+                setPendingAnnotation(null);
+                setAnnotationText('');
+              }
+              if (e.key === 'Escape') {
+                setPendingAnnotation(null);
+                setAnnotationText('');
+              }
+            }}
+            placeholder="Annotation text..."
+            className="text-xs flex-1 dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-md px-2 py-1 outline-none focus:border-purple-500 transition-colors"
+          />
+          <button
+            onClick={() => {
+              if (annotationText.trim()) {
+                onAddAnnotation!(pin.id, pendingAnnotation.x, pendingAnnotation.y, annotationText.trim());
+                setPendingAnnotation(null);
+                setAnnotationText('');
+              }
+            }}
+            disabled={!annotationText.trim()}
+            className="px-2 py-1 text-xs rounded-md bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-30 cursor-pointer transition-colors"
+          >
+            Add
+          </button>
+          <button
+            onClick={() => { setPendingAnnotation(null); setAnnotationText(''); }}
+            className="px-2 py-1 text-xs rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Drill mode hint */}
+      {drillMode && !annotatingCard && (
+        <div className="flex items-center gap-2 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-blue-500/10">
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+          </span>
+          <span className="text-[11px] dark:text-blue-300 text-blue-600">Click a data point to drill down</span>
+        </div>
+      )}
+
+      {/* Chart or KPI card */}
+      <div className="flex-1 min-h-0 relative">
+        {!canRefresh && (
+          <div className="absolute top-1 right-1 z-10" title="Snapshot only — no source SQL stored">
+            <span className="text-[9px] px-1.5 py-0.5 rounded dark:bg-[#1e1f20] bg-gray-100 dark:text-gray-500 text-gray-400">
+              Snapshot
+            </span>
+          </div>
+        )}
+        {isKPI ? (
+          <DashboardKPICard
+            pin={pin}
+            darkMode={darkMode}
+            rows={effectiveRows}
+          />
+        ) : (
+          <PlotlyChart
+            chartConfig={pin.chart_config}
+            rows={effectiveRows}
+            darkMode={darkMode}
+            hideTitle
+            annotationMode={annotatingCard}
+            drillDownMode={drillMode}
+            onChartClick={handleChartClick}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

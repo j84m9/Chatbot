@@ -8,6 +8,8 @@ import QueryChat, { Exchange } from '@/app/components/data-explorer/QueryChat';
 import ResultsPanel from '@/app/components/data-explorer/ResultsPanel';
 import Dashboard, { PinnedChart } from '@/app/components/data-explorer/Dashboard';
 import type { ChartConfig } from '@/app/components/data-explorer/PlotlyChart';
+import type { GlobalFilter } from '@/types/dashboard';
+import { applyFiltersToSql } from '@/utils/dashboard-filters';
 import AgentBrowser from '@/app/components/AgentBrowser';
 import { useKeyboardShortcuts } from '@/app/hooks/useKeyboardShortcuts';
 import SqlEditor, { type SqlEditorHandle } from '@/app/components/data-explorer/SqlEditor';
@@ -63,6 +65,11 @@ export default function DataExplorer() {
   // Dashboard state
   const [pinnedCharts, setPinnedCharts] = useState<PinnedChart[]>([]);
   const [viewMode, setViewMode] = useState<'query' | 'dashboard'>('query');
+  const [dashboardTitle, setDashboardTitle] = useState('Dashboard');
+  const [dashboardId, setDashboardId] = useState<string | null>(null);
+  const [refreshingCharts, setRefreshingCharts] = useState<Set<string>>(new Set());
+  const [globalFilters, setGlobalFilters] = useState<GlobalFilter[]>([]);
+  const autoRefreshTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   // Query mode: quick (single-shot) vs agent (agentic loop)
   const [queryMode, setQueryMode] = useState<'quick' | 'agent'>('quick');
@@ -1350,6 +1357,8 @@ export default function DataExplorer() {
             types: exchange.results.types,
           },
           source_message_id: null,
+          source_sql: exchange.sql || null,
+          source_question: exchange.question || null,
         }),
       });
       if (res.ok) {
@@ -1432,6 +1441,153 @@ export default function DataExplorer() {
       body: JSON.stringify({ id, chart_config: updatedConfig }),
     }).catch(err => console.error('Failed to toggle dashboard annotations:', err));
   };
+
+  // Dashboard title handlers
+  const handleDashboardTitleChange = async (title: string) => {
+    setDashboardTitle(title);
+    if (dashboardId) {
+      fetch('/api/data-explorer/dashboards', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboardId, title }),
+      }).catch(err => console.error('Failed to save dashboard title:', err));
+    }
+  };
+
+  const handleChartTitleChange = (id: string, title: string) => {
+    setPinnedCharts(prev => prev.map(p => p.id === id ? { ...p, title } : p));
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, title }),
+    }).catch(err => console.error('Failed to save chart title:', err));
+  };
+
+  // Refresh handlers
+  const handleRefreshChart = async (id: string) => {
+    setRefreshingCharts(prev => new Set(prev).add(id));
+    try {
+      const res = await fetch('/api/data-explorer/pinned-charts/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chartId: id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPinnedCharts(prev => prev.map(p =>
+          p.id === id ? { ...p, results_snapshot: data.results_snapshot, last_refreshed_at: data.last_refreshed_at } : p
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to refresh chart:', err);
+    } finally {
+      setRefreshingCharts(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleRefreshAll = async () => {
+    const refreshable = pinnedCharts.filter(p => p.source_sql);
+    for (const chart of refreshable) {
+      handleRefreshChart(chart.id);
+    }
+  };
+
+  const handleAutoRefreshChange = (id: string, interval: number) => {
+    setPinnedCharts(prev => prev.map(p => p.id === id ? { ...p, auto_refresh_interval: interval } : p));
+    fetch('/api/data-explorer/pinned-charts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, auto_refresh_interval: interval }),
+    }).catch(err => console.error('Failed to save auto-refresh interval:', err));
+  };
+
+  // Auto-refresh timers
+  useEffect(() => {
+    // Clear all existing timers
+    for (const [, timer] of autoRefreshTimers.current) {
+      clearInterval(timer);
+    }
+    autoRefreshTimers.current.clear();
+
+    // Set up timers for charts with auto_refresh_interval
+    for (const chart of pinnedCharts) {
+      if (chart.auto_refresh_interval && chart.auto_refresh_interval > 0 && chart.source_sql) {
+        const timer = setInterval(() => {
+          handleRefreshChart(chart.id);
+        }, chart.auto_refresh_interval * 1000);
+        autoRefreshTimers.current.set(chart.id, timer);
+      }
+    }
+
+    return () => {
+      for (const [, timer] of autoRefreshTimers.current) {
+        clearInterval(timer);
+      }
+    };
+  }, [pinnedCharts.map(c => `${c.id}:${c.auto_refresh_interval}`).join(',')]);
+
+  // Global filter handlers
+  const handleGlobalFiltersChange = (filters: GlobalFilter[]) => {
+    setGlobalFilters(filters);
+  };
+
+  const handleApplyAndRefresh = async (filters: GlobalFilter[]) => {
+    setGlobalFilters(filters);
+    // Persist filters
+    if (dashboardId) {
+      fetch('/api/data-explorer/dashboards', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: dashboardId, global_filters: filters }),
+      }).catch(err => console.error('Failed to save global filters:', err));
+    }
+    // Refresh all charts with filtered SQL
+    const refreshable = pinnedCharts.filter(p => p.source_sql);
+    for (const chart of refreshable) {
+      const filteredSql = applyFiltersToSql(chart.source_sql!, filters);
+      setRefreshingCharts(prev => new Set(prev).add(chart.id));
+      try {
+        const res = await fetch('/api/data-explorer/pinned-charts/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chartId: chart.id, overrideSql: filteredSql }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setPinnedCharts(prev => prev.map(p =>
+            p.id === chart.id ? { ...p, results_snapshot: data.results_snapshot, last_refreshed_at: data.last_refreshed_at } : p
+          ));
+        }
+      } catch (err) {
+        console.error('Failed to refresh chart with filters:', err);
+      } finally {
+        setRefreshingCharts(prev => {
+          const next = new Set(prev);
+          next.delete(chart.id);
+          return next;
+        });
+      }
+    }
+  };
+
+  // Fetch dashboard record on connection change
+  useEffect(() => {
+    if (!activeConnectionId) return;
+    fetch(`/api/data-explorer/dashboards?connectionId=${activeConnectionId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setDashboardId(data.id);
+          setDashboardTitle(data.title || 'Dashboard');
+          setGlobalFilters(data.global_filters || []);
+        }
+      })
+      .catch(err => console.error('Failed to fetch dashboard:', err));
+  }, [activeConnectionId]);
 
   // Drag handle for split pane
   const dragAxis = useRef<'horizontal' | 'vertical'>('horizontal');
@@ -1687,6 +1843,17 @@ export default function DataExplorer() {
               onAddAnnotation={handleDashboardAddAnnotation}
               onToggleAnnotations={handleDashboardToggleAnnotations}
               connectionName={connections.find(c => c.id === activeConnectionId)?.name}
+              dashboardTitle={dashboardTitle}
+              dashboardId={dashboardId}
+              onDashboardTitleChange={handleDashboardTitleChange}
+              onRefreshChart={handleRefreshChart}
+              onRefreshAll={handleRefreshAll}
+              refreshingCharts={refreshingCharts}
+              onAutoRefreshChange={handleAutoRefreshChange}
+              onChartTitleChange={handleChartTitleChange}
+              globalFilters={globalFilters}
+              onGlobalFiltersChange={handleGlobalFiltersChange}
+              onApplyAndRefresh={handleApplyAndRefresh}
             />
           ) : editorMode === 'sql' ? (
           /* SQL mode: vertical split (editor top, results bottom) */
