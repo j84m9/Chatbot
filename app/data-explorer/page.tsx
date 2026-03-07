@@ -425,6 +425,7 @@ export default function DataExplorer() {
     setSelectedExchangeIndex(-1);
     setRefineContext(null);
     setActiveAgent(null);
+    setViewMode('query');
   };
 
   const handleSelectSession = async (id: string) => {
