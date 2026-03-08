@@ -45,6 +45,14 @@ A full-stack AI chatbot and data exploration platform built with Next.js, Supaba
 - Enhanced data table with sorting, number formatting, conditional coloring
 - Chart type switcher, chart annotations, chart refinement via natural language
 - Pinned chart dashboard with drag-and-resize grid layout
+- Dashboard chart refinement via natural language (sparkle button on each card)
+- Dashboard inline SQL editor for pinned charts
+- AI-powered dashboard builder (natural language → full dashboard)
+- Dashboard tabs, cross-filtering, slicer widgets, global filters
+- Dashboard KPI cards, fullscreen chart view, editable titles
+- Dashboard auto-refresh with configurable intervals
+- Dashboard anomaly detection and PDF export
+- AI-generated insights card on dashboard
 - AI-generated data insights with agent-powered deep analysis
 - Interactive follow-up suggestions in Agent mode
 - Table descriptions for all database sizes (AI-generated via catalog system)
@@ -56,6 +64,7 @@ A full-stack AI chatbot and data exploration platform built with Next.js, Supaba
 - PDF export (landscape A4 with KPIs, charts, table, SQL, insights)
 - CSV export for table results
 - Pop-out report window with print support
+- YAML catalogue editor for semantic context
 - SSE streaming with progressive status updates
 
 ### Model Support
@@ -149,6 +158,9 @@ app/
       sessions/route.ts             Data explorer session management
       saved-queries/route.ts        Saved queries per connection
       pinned-charts/route.ts        Pinned chart dashboard CRUD
+      pinned-charts/refresh/route.ts Re-execute source SQL for chart refresh
+      dashboards/route.ts           Dashboard metadata CRUD (title, filters)
+      dashboard-builder-stream/route.ts SSE agent for AI dashboard building
   components/
     data-explorer/
       ResultsPanel.tsx              SQL/Table/Chart/Insights tabs, export
@@ -157,7 +169,12 @@ app/
       PlotlyChart.tsx               13 chart types, annotations, color grouping
       ChartGallery.tsx              Carousel with navigation, pin/refine
       AgentStepsTimeline.tsx        Agent tool call timeline
-      Dashboard.tsx                 Pinned chart grid dashboard
+      Dashboard.tsx                 Pinned chart grid dashboard with tabs, cross-filter, slicers
+      DashboardChartCard.tsx        Individual chart card with refine, SQL edit, annotations
+      DashboardKPICard.tsx          Auto-detected KPI metric card for dashboard
+      DashboardSlicerCard.tsx       Slicer filter widget card for dashboard
+      DashboardInsightsCard.tsx     AI insights card for dashboard
+      FullscreenChartModal.tsx      Fullscreen chart overlay
       SchemaBrowser.tsx             Schema tree with descriptions, catalog generation
       KPICards.tsx                  Auto-detected summary metrics
       DataTable.tsx                 Enhanced table with sorting/formatting
@@ -189,7 +206,8 @@ data/demo.db                        Pre-seeded SQLite demo database
 - **`data_explorer_sessions`** / **`data_explorer_messages`** — Data explorer history with agent steps (RLS)
 - **`table_metadata`** — AI-generated table descriptions, tags, categories for all DB sizes (RLS)
 - **`saved_queries`** — Pinned queries per connection (RLS)
-- **`pinned_charts`** — Dashboard chart snapshots with grid layout (RLS)
+- **`dashboards`** — Dashboard metadata with global filters (one per user per connection, RLS)
+- **`pinned_charts`** — Dashboard chart/slicer/insights items with grid layout, source SQL, auto-refresh (RLS)
 
 ## Scripts
 

@@ -9,14 +9,13 @@ Everything listed in `.claude/docs/features.md` is implemented and working. No k
 
 ## Where You Left Off
 The most recent work focused on:
-- Table descriptions for all DB sizes: descriptions injected into prompts even for small databases, with catalog generation UI improvements (stop button, regenerate, red warning for large DBs)
-- Catalog schema matching fix for SQLite databases (name-only fallback)
-- SQL Editor mode: direct SQL editing in Data Explorer, three query modes (Chat, SQL, Agent)
-- Follow-up suggestions in Agent mode with interactive buttons
-- Web search tool in chat (Tavily API)
-- Enterprise-grade chart overhaul with smart data analysis
-- MSSQL connection improvements: Windows auth, server/database selector, connection test before save
-- Model selector redesign as accordion, GPT-5 series models added
+- Dashboard chart refinement via natural language (sparkle button on each card, inline text input, uses existing chart_refinement API)
+- Dashboard inline SQL editor on chart cards (CodeMirror with run/cancel)
+- Dashboard vertical compaction, improved resize handles, distinct trendline/reference colors
+- AI-powered dashboard builder via PowerBI expert agent loop
+- Dashboard enhancements: cross-filtering, slicers, tabs, KPI cards, fullscreen, auto-refresh, anomaly detection, PDF export, AI insights card
+- YAML catalogue editor inline in Data Explorer
+- Connection persistence across page refreshes, auto-switch to agent mode on dashboard view
 
 ## Key Files to Start With
 - `app/page.tsx` — Chat UI, all chat state lives here (~2000+ lines, single-page architecture)
@@ -34,7 +33,7 @@ The most recent work focused on:
 - **All state in page.tsx**: Both pages use a single-component architecture with hooks. No global state library.
 - **Two Supabase clients per route**: Auth client (cookie-based, for user verification) + Admin client (service role, for DB writes bypassing RLS)
 - **Agents are just system prompts**: The `tools`/`skills` fields on `installed_agents` are stored but NOT executed. Agents only customize the system prompt.
-- **Chart data is frozen**: Pinned charts store a `results_snapshot` — they don't re-query the database on load.
+- **Chart data is snapshot-based with optional refresh**: Pinned charts store a `results_snapshot`. They can be refreshed manually or via auto-refresh intervals that re-execute source SQL. Chart configs can be refined via natural language or inline SQL editing.
 - **Streaming uses SSE, not WebSockets**: Data Explorer query-stream returns `ReadableStream` with named events.
 - **Three query modes**: Chat mode (direct answers, no charts), SQL Editor mode (direct SQL editing + execution), and Agent mode (multi-step tool loop with charts + insights). Agent mode uses `generateText()` with tools, not `streamText()`.
 - **Insight generation is mode-aware**: Quick mode uses simple `/api/data-explorer/query` endpoint; Agent mode uses `/api/data-explorer/insights-agent-stream` SSE endpoint with follow-up queries.
@@ -51,13 +50,13 @@ The most recent work focused on:
 - [x] ~~**Agent tools/skills execution** — Data Explorer agent mode now uses tools (execute_sql, get_schema, get_sample_data) via `generateText()` with `stopWhen: stepCountIs(5)`~~
 - [ ] **Chat agent tools execution** — Chat-side agents still only customize the system prompt. Extend to allow tool execution in chat (not just Data Explorer).
 - [ ] **PostgreSQL support in Data Explorer** — Only MSSQL and SQLite are supported. Adding Postgres would use the existing Supabase connection or a new `pg` driver.
-- [ ] **Interactive drill-down** — Click a chart segment to filter and re-query. Would tie Plotly click events to SQL WHERE clause generation.
-- [ ] **Dashboard auto-refresh** — Pinned charts are static snapshots. Add a refresh button and optional auto-refresh interval that re-executes the source query.
-- [ ] **Dashboard filters** — Global date range / category selectors that filter all pinned charts. Would require re-running each chart's source SQL with added WHERE clauses.
+- [x] ~~**Interactive drill-down / cross-filtering** — Click a data point on one chart to filter all other charts by that value (client-side cross-filtering)~~
+- [x] ~~**Dashboard auto-refresh** — Per-chart configurable refresh intervals (30s, 1m, 5m, 15m) that re-execute source SQL~~
+- [x] ~~**Dashboard filters** — Global filters via slicer widgets (multi-select, date range) that filter all pinned charts client-side~~
 
 ### Medium Impact
 - [ ] **MySQL support in Data Explorer** — Similar to Postgres support, add a `mysql2` driver.
-- [ ] **Natural language chart refinement with streaming** — Currently chart refinement is non-streaming. Add SSE like query-stream.
+- [ ] **Natural language chart refinement with streaming** — Currently chart refinement is non-streaming. Add SSE like query-stream. (Dashboard refinement also non-streaming.)
 - [ ] **Agent version sync** — Detect when a store agent has been updated, prompt user to reinstall.
 - [ ] **Query result comparison** — Diff two queries side by side.
 - [ ] **Sparkline mini-charts in data table cells** — Small inline charts for numeric columns.
@@ -70,7 +69,7 @@ The most recent work focused on:
 - [ ] **Webhook integrations** — Slack/email notifications for query results.
 - [ ] **API access for programmatic querying** — External clients hitting the data explorer API.
 - [ ] **SQL autocomplete** — Schema-aware autocomplete in a manual SQL editor (would need CodeMirror or Monaco).
-- [ ] **Agent-driven anomaly detection** — Agents that proactively flag outliers in query results.
+- [x] ~~**Agent-driven anomaly detection** — Dashboard anomaly detection button flags statistical outliers across pinned charts~~
 
 ## Gotchas & Things to Watch
 1. **`page.tsx` is huge** — Both main pages have all state in one component. If refactoring, extract state into custom hooks (e.g., `useChatState`, `useDataExplorerState`) rather than adding a state library.

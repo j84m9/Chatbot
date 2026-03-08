@@ -124,3 +124,20 @@
 - [x] Connection manager redesign: list + add form, edit support, test before save
 - [x] MSSQL Windows auth support (NTLM, ODBC Driver 17, msnodesqlv8)
 - [x] Named instance port discovery and default trust cert
+- [x] Dashboard enhancements: auto-refresh with configurable intervals, cross-filtering between charts, KPI cards, fullscreen chart view, editable chart and dashboard titles
+- [x] Dashboard global filters and slicer widgets (multi-select and date range)
+- [x] Dashboard tabs: create, rename, delete, switch between multiple dashboard views
+- [x] AI-powered dashboard builder: natural language → full dashboard via PowerBI expert agent loop
+- [x] Dashboard anomaly detection (statistical outlier flagging)
+- [x] Dashboard PDF export (landscape A4 with all charts)
+- [x] Dashboard AI insights card with regenerate support
+- [x] Dashboard staggered chart entrance animations and live refresh indicators
+- [x] Inline SQL editor on dashboard chart cards (CodeMirror, run/cancel)
+- [x] Dashboard chart refinement via natural language (sparkle button, inline input, persisted to DB)
+- [x] Dashboard vertical compaction and improved resize handles (full edge handles)
+- [x] YAML catalogue editor: inline editor in Data Explorer for semantic context files
+- [x] Persist active connection selection across page refreshes
+- [x] Auto-switch to agent mode when entering dashboard view
+- [x] New Query button on dashboard navigates back to query view
+- [x] Smart chart hover templates, legend clipping fix, prompt-driven SQL aliasing
+- [x] Distinct colors for trendline vs reference line vs secondary Y axis

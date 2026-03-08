@@ -49,7 +49,16 @@ All API routes use a two-client pattern:
 - **Chart axis formatting**: Auto-detect dates -> `tickformat: '%b %Y'`, currency -> `tickprefix: '$'`, animated chart transitions
 - **Print styles**: `@media print` rules in globals.css: `.no-print` hides interactive elements, force light colors, page breaks
 - **Chart annotations**: `ChartAnnotation` interface (`{ id, x, y, text }`), added to `ChartConfig`. Annotation mode: click "Annotate" -> click data point -> enter text -> saved to DB via PATCH. Persisted across sessions
-- **Pinned chart dashboard**: `Dashboard.tsx` uses `react-grid-layout` for drag-and-resize. 12-column grid, 80px row height, breakpoints at 996/768/480px. Layout positions persisted to `pinned_charts.layout` JSONB (debounced 500ms)
+- **Pinned chart dashboard**: `Dashboard.tsx` uses `react-grid-layout` (plain `ReactGridLayout`, not `Responsive`) for drag-and-resize. 12-column grid, 80px row height. Layout persisted via `onDragStop`/`onResizeStop` callbacks (not `onLayoutChange`, which fires on mount). Vertical compaction enabled. Width measured via `ResizeObserver` callback ref
+- **Dashboard chart cards**: `DashboardChartCard.tsx` — each card has header with drag handle, editable title, refresh, auto-refresh timer, SQL editor toggle, chart type switcher, refine via chat (sparkle), annotate, fullscreen expand, unpin. Inline expandable panels for SQL editing (CodeMirror) and chart refinement (text input)
+- **Dashboard chart refinement**: Sparkle button opens inline text input. Calls `POST /api/data-explorer/query` with `messageType: 'chart_refinement'`, passing current `chart_config` and `results_snapshot`. Updated config applied optimistically then persisted via `PATCH /api/data-explorer/pinned-charts`
+- **Dashboard cross-filtering**: Clicking a data point on one chart filters all other charts by that value (client-side). Source chart gets a purple ring. Clear via pill in header
+- **Dashboard slicers**: `DashboardSlicerCard.tsx` — filter widgets (multi-select or date range) that update `globalFilters` state. `applyClientFilters()` utility filters rows client-side across all charts
+- **Dashboard tabs**: Multiple dashboards per connection via `dashboards` table. Tab bar with rename (double-click), delete, create. `activeDashboardId` controls which charts are shown
+- **Dashboard builder**: AI-powered natural language → full dashboard. Uses agent loop to analyze schema, generate SQL queries, suggest chart configs, and pin results. Progress streamed via SSE
+- **Dashboard KPI cards**: `DashboardKPICard.tsx` — auto-detected when result has single row with 1-3 numeric columns, or gauge chart type. Smart formatting ($, %, K/M)
+- **Dashboard auto-refresh**: Per-chart configurable interval (30s, 1m, 5m, 15m). Green pulse dot indicator. Re-executes source SQL and updates results snapshot
+- **Dashboard insights card**: `DashboardInsightsCard.tsx` — AI-generated insights pinned as a dashboard item. Refresh triggers insight agent re-analysis
 - **Data Explorer agent integration**: `wrapWithDomainContext()` prepends agent's system_prompt as `## Domain Context` before SQL instructions. Agent dropdown in header (teal badge), persisted per-session
 - **Morphing orb loading**: SQL generation and insights loading use morphing orb animation (`animate-orb`) instead of spinner
 - **Radar pulse easter egg**: Clicking the database icon emits expanding indigo radar rings
@@ -234,6 +243,11 @@ All API routes use a two-client pattern:
 - SQLite connections auto-load semantic context from YAML metadata files adjacent to the database
 - `findMetadataPath()` discovers `.yaml`/`.yml` files, `loadSemanticContext()` parses and injects into prompts
 - Provides business context (column meanings, relationships, domain knowledge)
+
+## Catalogue Editor
+- YAML catalogue editor rendered inline in Data Explorer (same position as SQL editor)
+- `CatalogueEditor` component with CodeMirror YAML editing, download/upload, save
+- Edits semantic context YAML files for SQLite databases
 
 ## MSSQL Connection Enhancements
 - Windows authentication via NTLM credentials and ODBC Driver 17 (msnodesqlv8)

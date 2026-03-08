@@ -50,12 +50,28 @@
 - `agent_id`: links session to an installed agent for domain-specific SQL generation (null = no agent)
 - RLS enabled
 
+## `dashboards`
+- `id` UUID PK, `user_id` UUID (FK to auth.users, CASCADE), `connection_id` UUID (FK to db_connections, CASCADE)
+- `title` TEXT NOT NULL DEFAULT 'Dashboard'
+- `global_filters` JSONB DEFAULT '[]' — persisted global filter state
+- `created_at`, `updated_at` TIMESTAMPTZ
+- `UNIQUE(user_id, connection_id)` — one dashboard per user per connection
+- RLS enabled: all operations gated on `auth.uid() = user_id`
+
 ## `pinned_charts`
 - `id` UUID PK, `user_id` UUID (FK to auth.users, CASCADE), `connection_id` UUID (FK to db_connections, CASCADE), `source_message_id` UUID nullable (FK to data_explorer_messages, SET NULL)
 - `title` TEXT NOT NULL, `chart_config` JSONB NOT NULL, `results_snapshot` JSONB NOT NULL (frozen `{ rows, columns, types }`)
 - `display_order` INTEGER NOT NULL DEFAULT 0, `layout` JSONB nullable (`{ x, y, w, h }` for grid position)
+- `source_sql` TEXT nullable — original SQL query for refresh/re-execution
+- `source_question` TEXT nullable — original natural language question
+- `auto_refresh_interval` INTEGER nullable — seconds between auto-refresh (0 = off)
+- `last_refreshed_at` TIMESTAMPTZ nullable
+- `item_type` TEXT nullable — 'chart' (default), 'slicer', 'insights'
+- `slicer_config` JSONB nullable — slicer widget config (column, filter type)
+- `dashboard_id` UUID nullable — FK to dashboards table for tab assignment
 - `created_at` TIMESTAMPTZ
-- Charts are frozen snapshots — data does not update when underlying tables change
+- Charts are snapshot-based with optional refresh via source SQL re-execution
+- Chart configs can be refined via natural language or inline SQL editing
 - RLS enabled: all operations gated on `auth.uid() = user_id`
 
 ## `data_explorer_messages`

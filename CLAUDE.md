@@ -36,7 +36,7 @@ Detailed docs are split into focused files under `.claude/docs/`:
 
 ### Key Entry Points
 - `app/page.tsx` — Chat UI (all chat state lives here)
-- `app/data-explorer/page.tsx` — Data Explorer UI (quick mode + agent mode)
+- `app/data-explorer/page.tsx` — Data Explorer UI (three query modes + dashboard)
 - `app/api/chat/route.ts` — Chat streaming endpoint
 - `app/api/data-explorer/query-stream/route.ts` — SSE streaming SQL generation (quick mode)
 - `app/api/data-explorer/agent-query-stream/route.ts` — SSE agent loop with tools (agent mode)

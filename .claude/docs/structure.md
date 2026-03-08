@@ -30,10 +30,17 @@ app/
       insights-agent-stream/route.ts — POST: SSE agent loop for deep insight generation on existing results (follow-up queries + synthesis)
       catalog/route.ts      — GET/PATCH/DELETE: table metadata CRUD per connection
       catalog/generate/route.ts — POST: SSE auto-catalog generation (batch LLM descriptions, tags, categories)
+      catalog/import/route.ts — POST: import catalog data
       pinned-charts/route.ts — GET/POST/PATCH/DELETE: pinned chart dashboard CRUD with layout persistence
+      pinned-charts/refresh/route.ts — POST: re-execute source SQL and update chart results snapshot
+      dashboards/route.ts   — GET/POST/PATCH/DELETE: dashboard metadata (title, global filters) per connection
+      dashboard-builder-stream/route.ts — POST: SSE agent loop for AI-powered dashboard building
       saved-queries/route.ts — GET/POST/DELETE: saved/pinned queries per connection
+      execute-sql/route.ts  — POST: direct SQL execution (for SQL Editor mode)
+      generate-metadata/route.ts — POST: generate metadata for databases
       connections/route.ts — CRUD for database connections (MSSQL + SQLite)
       connections/test/route.ts — POST: test a database connection
+      connections/databases/route.ts — GET: list databases on an MSSQL server (two-tier selector)
       schema/route.ts   — GET: fetch and cache database schema
       sessions/route.ts — GET/PATCH/DELETE: data explorer session management (includes agent_id)
       messages/route.ts — GET/PATCH: fetch messages, update chart_configs (annotations)
@@ -45,8 +52,14 @@ app/
       PlotlyChart.tsx   — Plotly chart wrapper (13 chart types, color grouping, orientation, annotations, forwardRef for PDF)
       ChartGallery.tsx  — Carousel gallery with prev/next navigation, dot indicators, pin/annotate/refine buttons, smooth fade transitions
       AgentStepsTimeline.tsx — Timeline visualization of agent tool calls, results, reasoning, and error recovery steps
-      Dashboard.tsx     — Pinned chart dashboard with react-grid-layout drag-and-resize grid
+      Dashboard.tsx     — Pinned chart dashboard with react-grid-layout, tabs, cross-filter, slicers, builder
+      DashboardChartCard.tsx — Individual chart card with drag handle, refine, SQL edit, annotations, refresh
+      DashboardKPICard.tsx — Auto-detected KPI metric card for single-row numeric results
+      DashboardSlicerCard.tsx — Slicer filter widget (multi-select, date range) for global filtering
+      DashboardInsightsCard.tsx — AI-generated insights card pinned to dashboard
+      FullscreenChartModal.tsx — Fullscreen chart overlay modal
       ChartTypeSwitcher.tsx — Horizontal strip of chart type icon buttons for local type switching
+      CatalogueEditor.tsx — Inline YAML catalogue editor for semantic context files
       KPICards.tsx       — Auto-detected summary metric cards with smart formatting and staggered entrance
       DataTable.tsx     — Enhanced table with sorting, number formatting, conditional coloring, text truncation
       InsightsPanel.tsx — AI-generated data insights with regenerate
@@ -75,6 +88,8 @@ utils/
   ai/fk-graph.ts            — FK graph builder (bidirectional adjacency list, BFS join path, reachable tables)
   ai/catalog-builder.ts     — Table catalog builder (merge schema + metadata, compact text for prompts, description comments for small DBs, search)
   ai/semantic-context.ts    — Semantic YAML context loader for SQLite databases
+  dashboard-filters.ts      — Client-side filter utilities (applyClientFilters, detectFilterableColumns)
+  dashboard-export.ts       — Dashboard PDF export utilities
   supabase/
     server.ts           — Server-side Supabase client (cookie-based)
     client.ts           — Browser-side Supabase client
@@ -85,6 +100,7 @@ data/
 scripts/
   seed-demo-db.ts      — Script to regenerate demo.db (`npx tsx scripts/seed-demo-db.ts`)
 types/
+  dashboard.ts         — Dashboard types (CrossFilter, GlobalFilter, SlicerConfig, DashboardTab)
   plotly.d.ts          — Plotly type declarations
   react-plotly.d.ts    — React-Plotly type declarations
   speech-recognition.d.ts — Web Speech API type augmentation
