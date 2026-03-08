@@ -148,7 +148,7 @@ export default function DashboardChartCard({
         </svg>
 
         {/* Green pulse dot for auto-refresh */}
-        {pin.auto_refresh_interval && pin.auto_refresh_interval > 0 && (
+        {(pin.auto_refresh_interval ?? 0) > 0 && (
           <span className="relative flex h-2 w-2 flex-shrink-0" title={`Auto-refreshing every ${pin.auto_refresh_interval}s`}>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
