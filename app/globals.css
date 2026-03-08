@@ -42,7 +42,8 @@
   left: 50%;
   bottom: 1px;
   transform: translateX(-50%);
-  width: 32px;
+  width: 60%;
+  max-width: 120px;
   height: 3px;
 }
 .react-resizable-handle-e::after {
@@ -50,7 +51,8 @@
   right: 1px;
   transform: translateY(-50%);
   width: 3px;
-  height: 32px;
+  height: 60%;
+  max-height: 120px;
 }
 .react-resizable-handle-s:hover::after,
 .react-resizable-handle-e:hover::after {
