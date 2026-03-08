@@ -2390,7 +2390,7 @@ export default function DataExplorer() {
               insightsData={insightsData}
             />
           </div>
-          {viewMode === 'query' && editorMode === 'catalogue' ? (
+          {viewMode === 'query' && (editorMode === 'catalogue' ? (
           /* Catalogue mode: full-height YAML editor */
           <div className="flex-1 flex flex-col min-h-0">
             <CatalogueEditor
@@ -2522,7 +2522,7 @@ export default function DataExplorer() {
             </>
           )}
           </>
-          )}
+          ))}
         </div>
 
         {/* Full-page radar pulse — rings expand from icon position to window edges */}
