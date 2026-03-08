@@ -94,12 +94,17 @@ export async function POST(request: NextRequest) {
       types: results.types,
     };
 
+    const updatePayload: Record<string, any> = {
+      results_snapshot: newSnapshot,
+      last_refreshed_at: now,
+    };
+    if (overrideSql) {
+      updatePayload.source_sql = overrideSql;
+    }
+
     const { error: updateError } = await dbAdmin
       .from('pinned_charts')
-      .update({
-        results_snapshot: newSnapshot,
-        last_refreshed_at: now,
-      })
+      .update(updatePayload)
       .eq('id', chartId)
       .eq('user_id', user.id);
 

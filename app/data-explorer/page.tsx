@@ -1530,6 +1530,31 @@ export default function DataExplorer() {
     }
   };
 
+  const handleUpdateSql = async (id: string, sql: string) => {
+    setRefreshingCharts(prev => new Set(prev).add(id));
+    try {
+      const res = await fetch('/api/data-explorer/pinned-charts/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chartId: id, overrideSql: sql }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPinnedCharts(prev => prev.map(p =>
+          p.id === id ? { ...p, source_sql: sql, results_snapshot: data.results_snapshot, last_refreshed_at: data.last_refreshed_at } : p
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to update chart SQL:', err);
+    } finally {
+      setRefreshingCharts(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   const handleRefreshAll = async () => {
     const refreshable = pinnedCharts.filter(p => p.source_sql);
     for (const chart of refreshable) {
@@ -2337,6 +2362,7 @@ export default function DataExplorer() {
               dashboardId={dashboardId}
               onDashboardTitleChange={handleDashboardTitleChange}
               onRefreshChart={handleRefreshChart}
+              onUpdateSql={handleUpdateSql}
               onRefreshAll={handleRefreshAll}
               refreshingCharts={refreshingCharts}
               onAutoRefreshChange={handleAutoRefreshChange}

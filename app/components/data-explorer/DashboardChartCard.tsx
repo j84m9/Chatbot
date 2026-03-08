@@ -56,12 +56,13 @@ interface DashboardChartCardProps {
   onCrossFilter?: (sourceChartId: string, column: string, value: string | number) => void;
   onExpand?: (pin: PinnedChart) => void;
   onTitleChange?: (id: string, title: string) => void;
+  onUpdateSql?: (id: string, sql: string) => void;
 }
 
 export default function DashboardChartCard({
   pin, darkMode, filteredRows, isRefreshing, crossFilter,
   onUnpin, onChangeChartType, onAddAnnotation, onToggleAnnotations,
-  onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange,
+  onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange, onUpdateSql,
 }: DashboardChartCardProps) {
   const [expandedCard, setExpandedCard] = useState(false);
   const [annotatingCard, setAnnotatingCard] = useState(false);
@@ -71,6 +72,8 @@ export default function DashboardChartCard({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [justRefreshed, setJustRefreshed] = useState(false);
+  const [showSqlEditor, setShowSqlEditor] = useState(false);
+  const [sqlDraft, setSqlDraft] = useState('');
   const wasRefreshing = useRef(false);
 
   // Glow on refresh completion
@@ -231,6 +234,23 @@ export default function DashboardChartCard({
           </div>
         )}
 
+        {/* View/Edit SQL */}
+        {canRefresh && onUpdateSql && (
+          <button
+            onClick={() => { setShowSqlEditor(!showSqlEditor); if (!showSqlEditor) setSqlDraft(pin.source_sql || ''); }}
+            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+              showSqlEditor
+                ? 'bg-purple-500/20 text-purple-400'
+                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+            }`}
+            title="View/Edit SQL"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
+            </svg>
+          </button>
+        )}
+
         {/* Chart type switcher */}
         {onChangeChartType && (
           <button
@@ -327,6 +347,33 @@ export default function DashboardChartCard({
             columns={columns}
             onChangeType={(t) => onChangeChartType(pin.id, t)}
           />
+        </div>
+      )}
+
+      {/* SQL editor (expandable) */}
+      {showSqlEditor && (
+        <div className="px-3 py-2 border-b dark:border-[#2a2b2d]/50 border-gray-100">
+          <textarea
+            value={sqlDraft}
+            onChange={e => setSqlDraft(e.target.value)}
+            spellCheck={false}
+            className="w-full h-24 text-[11px] font-mono dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-purple-500 transition-colors resize-none"
+          />
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <button
+              onClick={() => { onUpdateSql!(pin.id, sqlDraft); setShowSqlEditor(false); }}
+              disabled={!sqlDraft.trim() || sqlDraft === pin.source_sql}
+              className="px-2 py-1 text-[11px] font-medium rounded-md bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 cursor-pointer transition-colors"
+            >
+              Run
+            </button>
+            <button
+              onClick={() => setShowSqlEditor(false)}
+              className="px-2 py-1 text-[11px] rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

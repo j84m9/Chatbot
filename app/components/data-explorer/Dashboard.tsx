@@ -63,6 +63,7 @@ interface DashboardProps {
   dashboardId?: string | null;
   onDashboardTitleChange?: (title: string) => void;
   onRefreshChart?: (id: string) => void;
+  onUpdateSql?: (id: string, sql: string) => void;
   onRefreshAll?: () => void;
   refreshingCharts?: Set<string>;
   onAutoRefreshChange?: (id: string, interval: number) => void;
@@ -95,7 +96,7 @@ interface DashboardProps {
 export default function Dashboard({
   pinnedCharts, darkMode, onUnpin, onLayoutChange, onChangeChartType, onAddAnnotation,
   onToggleAnnotations, connectionName, dashboardTitle, dashboardId, onDashboardTitleChange,
-  onRefreshChart, onRefreshAll, refreshingCharts, onAutoRefreshChange, onChartTitleChange,
+  onRefreshChart, onUpdateSql, onRefreshAll, refreshingCharts, onAutoRefreshChange, onChartTitleChange,
   globalFilters, onGlobalFiltersChange, onApplyAndRefresh,
   onAddSlicer, dashboards, activeDashboardId, onSwitchTab, onCreateTab, onDeleteTab, onRenameTab, onAutoOrganize,
   onBuildDashboard, isBuildingDashboard, buildProgress,
@@ -634,6 +635,7 @@ export default function Dashboard({
                 onAddAnnotation={onAddAnnotation}
                 onToggleAnnotations={onToggleAnnotations}
                 onRefresh={onRefreshChart}
+                onUpdateSql={onUpdateSql}
                 onAutoRefreshChange={onAutoRefreshChange}
                 onCrossFilter={handleCrossFilter}
                 onExpand={setFullscreenChart}
