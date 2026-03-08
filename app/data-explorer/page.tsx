@@ -1509,6 +1509,44 @@ export default function DataExplorer() {
     }).catch(err => console.error('Failed to save chart title:', err));
   };
 
+  // Refine chart on dashboard via AI
+  const handleRefineChartOnDashboard = async (id: string, instruction: string) => {
+    const pin = pinnedCharts.find(p => p.id === id);
+    if (!pin || !activeConnectionId) return;
+
+    const res = await fetch('/api/data-explorer/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: instruction,
+        connectionId: activeConnectionId,
+        sessionId,
+        messageType: 'chart_refinement',
+        chartConfigs: [pin.chart_config],
+        exchangeData: {
+          results: pin.results_snapshot,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Chart refinement failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+    const newConfig = data.chartConfigs?.[0] || data.chartConfig;
+    if (newConfig) {
+      setPinnedCharts(prev => prev.map(p =>
+        p.id === id ? { ...p, chart_config: newConfig } : p
+      ));
+      fetch('/api/data-explorer/pinned-charts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, chart_config: newConfig }),
+      }).catch(err => console.error('Failed to persist refined chart:', err));
+    }
+  };
+
   // Refresh handlers
   const handleRefreshChart = async (id: string) => {
     setRefreshingCharts(prev => new Set(prev).add(id));
@@ -2392,6 +2430,7 @@ export default function DataExplorer() {
               onAddInsightsCard={handleAddInsightsCard}
               onRefreshInsights={handleRefreshInsights}
               insightsData={insightsData}
+              onRefineChart={handleRefineChartOnDashboard}
             />
           ) : editorMode === 'catalogue' ? (
           /* Catalogue mode: full-height YAML editor */

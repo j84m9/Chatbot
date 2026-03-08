@@ -57,12 +57,13 @@ interface DashboardChartCardProps {
   onExpand?: (pin: PinnedChart) => void;
   onTitleChange?: (id: string, title: string) => void;
   onUpdateSql?: (id: string, sql: string) => void;
+  onRefineChart?: (id: string, instruction: string) => Promise<void>;
 }
 
 export default function DashboardChartCard({
   pin, darkMode, filteredRows, isRefreshing, crossFilter,
   onUnpin, onChangeChartType, onAddAnnotation, onToggleAnnotations,
-  onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange, onUpdateSql,
+  onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange, onUpdateSql, onRefineChart,
 }: DashboardChartCardProps) {
   const [expandedCard, setExpandedCard] = useState(false);
   const [annotatingCard, setAnnotatingCard] = useState(false);
@@ -74,6 +75,9 @@ export default function DashboardChartCard({
   const [justRefreshed, setJustRefreshed] = useState(false);
   const [showSqlEditor, setShowSqlEditor] = useState(false);
   const [sqlDraft, setSqlDraft] = useState('');
+  const [refiningChart, setRefiningChart] = useState(false);
+  const [refineInstruction, setRefineInstruction] = useState('');
+  const [isRefineLoading, setIsRefineLoading] = useState(false);
   const sqlContainerRef = useRef<HTMLDivElement>(null);
   const sqlViewRef = useRef<any>(null);
   const wasRefreshing = useRef(false);
@@ -270,6 +274,23 @@ export default function DashboardChartCard({
           </button>
         )}
 
+        {/* Refine via chat */}
+        {onRefineChart && (
+          <button
+            onClick={() => { setRefiningChart(!refiningChart); if (!refiningChart) setRefineInstruction(''); }}
+            className={`p-0.5 rounded transition-colors cursor-pointer flex-shrink-0 ${
+              refiningChart
+                ? 'bg-purple-500/20 text-purple-400'
+                : 'dark:text-gray-600 text-gray-300 dark:hover:text-gray-300 hover:text-gray-600'
+            }`}
+            title="Refine chart via chat"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+            </svg>
+          </button>
+        )}
+
         {/* Annotate */}
         {onAddAnnotation && (
           <button
@@ -364,6 +385,56 @@ export default function DashboardChartCard({
           onCancel={() => setShowSqlEditor(false)}
           canRun={!!sqlDraft.trim() && sqlDraft !== pin.source_sql}
         />
+      )}
+
+      {/* Refine chart input */}
+      {refiningChart && (
+        <div className="flex items-center gap-1 px-3 py-1.5 border-b dark:border-[#2a2b2d]/50 border-gray-100">
+          <input
+            autoFocus
+            value={refineInstruction}
+            onChange={e => setRefineInstruction(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && refineInstruction.trim() && !isRefineLoading) {
+                setIsRefineLoading(true);
+                onRefineChart!(pin.id, refineInstruction.trim())
+                  .then(() => { setRefiningChart(false); setRefineInstruction(''); })
+                  .finally(() => setIsRefineLoading(false));
+              }
+              if (e.key === 'Escape') { setRefiningChart(false); setRefineInstruction(''); }
+            }}
+            disabled={isRefineLoading}
+            placeholder="e.g. Add a trendline, make it horizontal..."
+            className="text-xs flex-1 dark:bg-[#111213] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-md px-2 py-1 outline-none focus:border-purple-500 transition-colors disabled:opacity-50"
+          />
+          <button
+            onClick={() => {
+              if (refineInstruction.trim() && !isRefineLoading) {
+                setIsRefineLoading(true);
+                onRefineChart!(pin.id, refineInstruction.trim())
+                  .then(() => { setRefiningChart(false); setRefineInstruction(''); })
+                  .finally(() => setIsRefineLoading(false));
+              }
+            }}
+            disabled={!refineInstruction.trim() || isRefineLoading}
+            className="px-2 py-1 text-xs rounded-md bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-30 cursor-pointer transition-colors flex items-center gap-1"
+          >
+            {isRefineLoading && (
+              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
+            Refine
+          </button>
+          <button
+            onClick={() => { setRefiningChart(false); setRefineInstruction(''); }}
+            disabled={isRefineLoading}
+            className="px-2 py-1 text-xs rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
       )}
 
       {/* Cross-filter badge */}

@@ -90,6 +90,7 @@ interface DashboardProps {
   onAddInsightsCard?: () => void;
   onRefreshInsights?: (id: string) => void;
   insightsData?: Map<string, { text: string | null; loading: boolean }>;
+  onRefineChart?: (id: string, instruction: string) => Promise<void>;
 }
 
 export default function Dashboard({
@@ -101,6 +102,7 @@ export default function Dashboard({
   onBuildDashboard, isBuildingDashboard, buildProgress,
   onDetectAnomalies, onExportPdf, isExportingPdf,
   onAddInsightsCard, onRefreshInsights, insightsData,
+  onRefineChart,
 }: DashboardProps) {
   const [gridWidth, setGridWidth] = useState(0);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -658,6 +660,7 @@ export default function Dashboard({
                 onCrossFilter={handleCrossFilter}
                 onExpand={setFullscreenChart}
                 onTitleChange={onChartTitleChange}
+                onRefineChart={onRefineChart}
               />
             )}
           </div>
