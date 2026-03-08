@@ -102,24 +102,18 @@ export default function Dashboard({
   onDetectAnomalies, onExportPdf, isExportingPdf,
   onAddInsightsCard, onRefreshInsights, insightsData,
 }: DashboardProps) {
-  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
-  const hasMountedRef = useRef(false);
   const observerRef = useRef<ResizeObserver | null>(null);
-  const observedNodeRef = useRef<HTMLDivElement | null>(null);
 
-  // Callback ref: measures width synchronously on mount, tracks resizes
+  // Callback ref: measures width synchronously on commit, tracks resizes
   const gridContainerCallbackRef = useCallback((node: HTMLDivElement | null) => {
-    // Cleanup previous observer
     if (observerRef.current) {
       observerRef.current.disconnect();
       observerRef.current = null;
     }
-    observedNodeRef.current = node;
     if (node) {
-      // Synchronous width measurement — no 0→actual transition
       setGridWidth(node.clientWidth);
       const observer = new ResizeObserver((entries) => {
         for (const entry of entries) {
@@ -129,17 +123,6 @@ export default function Dashboard({
       observer.observe(node);
       observerRef.current = observer;
     }
-  }, []);
-
-  // Fix 3: Skip mount-triggered onLayoutChange
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => {
-      hasMountedRef.current = true;
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      hasMountedRef.current = false;
-    };
   }, []);
 
   // Animated intro: staggered fade+scale on first render
@@ -190,20 +173,16 @@ export default function Dashboard({
     ];
   }, [dateColumns, categoricalColumns, slicerItems]);
 
-  const handleLayoutChange = useCallback((layout: Layout[], _allLayouts: any) => {
-    // Skip the onLayoutChange fired by react-grid-layout on mount
-    if (!hasMountedRef.current) return;
-    if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => {
-      for (const item of layout) {
-        const pin = pinnedCharts.find(p => p.id === item.i);
-        if (!pin) continue;
-        const saved = pin.layout;
-        if (!saved || saved.x !== item.x || saved.y !== item.y || saved.w !== item.w || saved.h !== item.h) {
-          onLayoutChange(item.i, { x: item.x, y: item.y, w: item.w, h: item.h });
-        }
+  // Save layout changes only on actual user drag/resize — never on mount
+  const handleUserLayoutChange = useCallback((layout: Layout[]) => {
+    for (const item of layout) {
+      const pin = pinnedCharts.find(p => p.id === item.i);
+      if (!pin) continue;
+      const saved = pin.layout;
+      if (!saved || saved.x !== item.x || saved.y !== item.y || saved.w !== item.w || saved.h !== item.h) {
+        onLayoutChange(item.i, { x: item.x, y: item.y, w: item.w, h: item.h });
       }
-    }, 500);
+    }
   }, [pinnedCharts, onLayoutChange]);
 
   // Cross-filter + global filters: filter rows client-side for each chart
@@ -633,7 +612,8 @@ export default function Dashboard({
         cols={12}
         width={gridWidth}
         rowHeight={80}
-        onLayoutChange={(layout: Layout[]) => handleLayoutChange(layout, null)}
+        onDragStop={(layout: Layout[]) => handleUserLayoutChange(layout)}
+        onResizeStop={(layout: Layout[]) => handleUserLayoutChange(layout)}
         draggableHandle=".drag-handle"
         isResizable
         resizeHandles={['s', 'e', 'se']}
