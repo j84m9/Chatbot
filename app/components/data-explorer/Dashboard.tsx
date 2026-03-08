@@ -599,6 +599,7 @@ export default function Dashboard({
         onLayoutChange={handleLayoutChange}
         draggableHandle=".drag-handle"
         isResizable
+        resizeHandles={['s', 'e', 'se']}
         isDraggable
         compactType="vertical"
         margin={[16, 16]}

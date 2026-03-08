@@ -2348,8 +2348,7 @@ export default function DataExplorer() {
 
         {/* Pane row */}
         <div className="flex-1 flex min-h-0">
-          {/* Dashboard — always mounted, hidden when not active */}
-          <div className={`flex-1 ${viewMode === 'dashboard' ? 'flex' : 'hidden'}`}>
+          {viewMode === 'dashboard' ? (
             <Dashboard
               pinnedCharts={pinnedCharts}
               darkMode={darkMode}
@@ -2389,8 +2388,7 @@ export default function DataExplorer() {
               onRefreshInsights={handleRefreshInsights}
               insightsData={insightsData}
             />
-          </div>
-          {viewMode === 'query' && (editorMode === 'catalogue' ? (
+          ) : editorMode === 'catalogue' ? (
           /* Catalogue mode: full-height YAML editor */
           <div className="flex-1 flex flex-col min-h-0">
             <CatalogueEditor
@@ -2522,7 +2520,7 @@ export default function DataExplorer() {
             </>
           )}
           </>
-          ))}
+          )}
         </div>
 
         {/* Full-page radar pulse — rings expand from icon position to window edges */}

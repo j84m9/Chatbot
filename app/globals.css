@@ -2,6 +2,52 @@
 @import "react-grid-layout/css/styles.css";
 @import "react-resizable/css/styles.css";
 
+/* Resize handles for grid layout: south, east, and southeast */
+.react-resizable-handle-s {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 6px;
+  cursor: s-resize;
+  background: none;
+}
+.react-resizable-handle-e {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 40px;
+  cursor: e-resize;
+  background: none;
+}
+.react-resizable-handle-s::after,
+.react-resizable-handle-e::after {
+  content: '';
+  position: absolute;
+  border-radius: 2px;
+  background: rgba(99, 102, 241, 0.3);
+  transition: background 0.15s;
+}
+.react-resizable-handle-s::after {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 3px;
+}
+.react-resizable-handle-e::after {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 24px;
+}
+.react-resizable-handle-s:hover::after,
+.react-resizable-handle-e:hover::after {
+  background: rgba(99, 102, 241, 0.6);
+}
+
 @variant dark (&:where(.dark, .dark *));
 
 :root {
