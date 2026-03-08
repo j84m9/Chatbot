@@ -104,6 +104,7 @@ export default function Dashboard({
   onAddInsightsCard, onRefreshInsights, insightsData,
 }: DashboardProps) {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
 
@@ -156,6 +157,12 @@ export default function Dashboard({
   }, [dateColumns, categoricalColumns, slicerItems]);
 
   const handleLayoutChange = useCallback((layout: Layout[], _allLayouts: any) => {
+    // Skip the layout change fired on initial mount — it compacts items
+    // and overwrites saved positions
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
       for (const item of layout) {
