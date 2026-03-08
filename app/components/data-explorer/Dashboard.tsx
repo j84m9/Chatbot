@@ -103,23 +103,43 @@ export default function Dashboard({
   onAddInsightsCard, onRefreshInsights, insightsData,
 }: DashboardProps) {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gridContainerRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState(0);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  const hasMountedRef = useRef(false);
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const observedNodeRef = useRef<HTMLDivElement | null>(null);
 
-  // Measure container width for grid layout
+  // Callback ref: measures width synchronously on mount, tracks resizes
+  const gridContainerCallbackRef = useCallback((node: HTMLDivElement | null) => {
+    // Cleanup previous observer
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+    observedNodeRef.current = node;
+    if (node) {
+      // Synchronous width measurement — no 0→actual transition
+      setGridWidth(node.clientWidth);
+      const observer = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setGridWidth(entry.contentRect.width);
+        }
+      });
+      observer.observe(node);
+      observerRef.current = observer;
+    }
+  }, []);
+
+  // Fix 3: Skip mount-triggered onLayoutChange
   useEffect(() => {
-    const el = gridContainerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setGridWidth(entry.contentRect.width);
-      }
+    const raf = requestAnimationFrame(() => {
+      hasMountedRef.current = true;
     });
-    observer.observe(el);
-    setGridWidth(el.clientWidth);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      hasMountedRef.current = false;
+    };
   }, []);
 
   // Animated intro: staggered fade+scale on first render
@@ -171,6 +191,8 @@ export default function Dashboard({
   }, [dateColumns, categoricalColumns, slicerItems]);
 
   const handleLayoutChange = useCallback((layout: Layout[], _allLayouts: any) => {
+    // Skip the onLayoutChange fired by react-grid-layout on mount
+    if (!hasMountedRef.current) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
       for (const item of layout) {
@@ -258,6 +280,24 @@ export default function Dashboard({
     }));
   }, [chartItems, getFilteredRows]);
 
+  // Memoize layout so react-grid-layout sees a stable reference
+  const layout = useMemo((): Layout[] => {
+    return pinnedCharts.map((pin, i) => {
+      const isSlicer = pin.item_type === 'slicer';
+      const isKPI = !isSlicer && isKPIChart(pin);
+      if (pin.layout) {
+        return { i: pin.id, x: pin.layout.x, y: pin.layout.y, w: pin.layout.w, h: pin.layout.h, minW: 2, minH: 2 };
+      }
+      if (isSlicer) {
+        return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 3, w: 3, h: 3, minW: 2, minH: 2 };
+      }
+      if (isKPI) {
+        return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 2, w: 3, h: 2, minW: 2, minH: 2 };
+      }
+      return { i: pin.id, x: (i % 2) * 6, y: Math.floor(i / 2) * 4, w: 6, h: 4, minW: 2, minH: 2 };
+    });
+  }, [pinnedCharts]);
+
   if (pinnedCharts.length === 0) {
     return (
       <div className="h-full w-full overflow-y-auto p-4">
@@ -344,26 +384,8 @@ export default function Dashboard({
     );
   }
 
-  // Build layout from saved positions or auto-arrange
-  const buildLayout = (): Layout[] => {
-    return pinnedCharts.map((pin, i) => {
-      const isSlicer = pin.item_type === 'slicer';
-      const isKPI = !isSlicer && isKPIChart(pin);
-      if (pin.layout) {
-        return { i: pin.id, x: pin.layout.x, y: pin.layout.y, w: pin.layout.w, h: pin.layout.h, minW: 2, minH: 2 };
-      }
-      if (isSlicer) {
-        return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 3, w: 3, h: 3, minW: 2, minH: 2 };
-      }
-      if (isKPI) {
-        return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 2, w: 3, h: 2, minW: 2, minH: 2 };
-      }
-      return { i: pin.id, x: (i % 2) * 6, y: Math.floor(i / 2) * 4, w: 6, h: 4, minW: 2, minH: 2 };
-    });
-  };
-
   return (
-    <div ref={gridContainerRef} className="h-full w-full overflow-y-auto p-4">
+    <div ref={gridContainerCallbackRef} className="h-full w-full overflow-y-auto p-4">
       {connectionName && (
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -607,7 +629,7 @@ export default function Dashboard({
 
       {gridWidth > 0 && <ReactGridLayout
         className="layout"
-        layout={buildLayout()}
+        layout={layout}
         cols={12}
         width={gridWidth}
         rowHeight={80}

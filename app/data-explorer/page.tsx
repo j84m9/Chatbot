@@ -1423,6 +1423,11 @@ export default function DataExplorer() {
   };
 
   const handleLayoutChange = async (id: string, layout: { x: number; y: number; w: number; h: number }) => {
+    // No-op guard: skip if layout is identical to what's already saved
+    const existing = pinnedCharts.find(p => p.id === id)?.layout;
+    if (existing && existing.x === layout.x && existing.y === layout.y && existing.w === layout.w && existing.h === layout.h) {
+      return;
+    }
     // Optimistic update
     setPinnedCharts(prev => prev.map(p => p.id === id ? { ...p, layout } : p));
     // Persist
