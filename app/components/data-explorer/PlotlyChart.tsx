@@ -189,7 +189,8 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     // Helper: group rows by colorColumn and create one trace per group
     function buildGroupedTraces(type: string, mode?: string) {
       if (!chartConfig.colorColumn) {
-        const trace: any = { type: type === 'grouped_bar' || type === 'stacked_bar' ? 'bar' : type };
+        const traceName = chartConfig.yLabel || yCol;
+        const trace: any = { type: type === 'grouped_bar' || type === 'stacked_bar' ? 'bar' : type, name: traceName };
         if (mode) trace.mode = mode;
         if (chartConfig.orientation === 'h') {
           trace.x = yValues;
@@ -207,7 +208,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           };
         }
         if (type === 'scatter' && !mode) trace.mode = 'markers';
-        trace.hovertemplate = buildHoverTemplate(xCol, yCol, null, xIsDate, chartConfig.orientation === 'h');
+        trace.hovertemplate = buildHoverTemplate(xCol, yCol, traceName, xIsDate, chartConfig.orientation === 'h');
         traces.push(trace);
         return;
       }
@@ -247,6 +248,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       case 'pie':
         traces.push({
           type: 'pie',
+          name: chartConfig.yLabel || yCol,
           labels: xValues,
           values: yValues,
           marker: { colors: CHART_COLORS },
@@ -263,6 +265,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       case 'histogram':
         traces.push({
           type: 'histogram',
+          name: chartConfig.xLabel || xCol,
           x: xValues,
           marker: { color: colors.primary, line: { color: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 0.5 } },
           nbinsx: Math.min(50, Math.max(10, Math.ceil(Math.sqrt(xValues.length)))),
@@ -287,6 +290,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
 
         traces.push({
           type: 'heatmap',
+          name: chartConfig.colorColumn || yCol,
           x: xCats,
           y: yCats,
           z: zMatrix,
@@ -299,15 +303,17 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
 
       case 'area':
         if (!chartConfig.colorColumn) {
+          const areaName = chartConfig.yLabel || yCol;
           traces.push({
             type: 'scatter',
             mode: 'lines',
+            name: areaName,
             x: xValues,
             y: yValues,
             fill: 'tozeroy',
             fillcolor: 'rgba(99, 102, 241, 0.12)',
             line: { color: colors.primary, width: 2, shape: 'spline' },
-            hovertemplate: buildHoverTemplate(xCol, yCol, null, xIsDate, false),
+            hovertemplate: buildHoverTemplate(xCol, yCol, areaName, xIsDate, false),
           });
         } else {
           const groups = new Map<string, { x: any[]; y: any[] }>();
@@ -372,6 +378,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       case 'funnel':
         traces.push({
           type: 'funnel',
+          name: chartConfig.yLabel || yCol,
           y: xValues.map(String),
           x: yValues,
           textinfo: 'value+percent initial',
@@ -388,6 +395,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       case 'waterfall':
         traces.push({
           type: 'waterfall',
+          name: chartConfig.yLabel || yCol,
           x: xValues.map(String),
           y: yValues,
           measure: xValues.map((_: any, i: number) =>
