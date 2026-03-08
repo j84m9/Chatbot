@@ -5,47 +5,56 @@
 /* Resize handles for grid layout: south, east, and southeast */
 .react-resizable-handle-s {
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40px;
-  height: 6px;
+  left: 0;
+  width: 100%;
+  height: 8px;
   cursor: s-resize;
   background: none;
 }
 .react-resizable-handle-e {
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 6px;
-  height: 40px;
+  top: 0;
+  width: 8px;
+  height: 100%;
   cursor: e-resize;
   background: none;
+}
+.react-resizable-handle-s:hover,
+.react-resizable-handle-e:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+.react-resizable-handle-se {
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
 }
 .react-resizable-handle-s::after,
 .react-resizable-handle-e::after {
   content: '';
   position: absolute;
   border-radius: 2px;
-  background: rgba(99, 102, 241, 0.3);
+  background: transparent;
   transition: background 0.15s;
 }
 .react-resizable-handle-s::after {
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 24px;
+  bottom: 1px;
+  transform: translateX(-50%);
+  width: 32px;
   height: 3px;
 }
 .react-resizable-handle-e::after {
-  left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%);
+  right: 1px;
+  transform: translateY(-50%);
   width: 3px;
-  height: 24px;
+  height: 32px;
 }
 .react-resizable-handle-s:hover::after,
 .react-resizable-handle-e:hover::after {
-  background: rgba(99, 102, 241, 0.6);
+  background: rgba(99, 102, 241, 0.5);
 }
 
 @variant dark (&:where(.dark, .dark *));
