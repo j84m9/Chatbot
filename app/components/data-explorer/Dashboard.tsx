@@ -12,10 +12,9 @@ import { applyClientFilters, detectFilterableColumns } from '@/utils/dashboard-f
 // CSS imported in globals.css
 type Layout = { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number };
 
-const GridLayout = dynamic(
+const ReactGridLayout = dynamic(
   () => import('react-grid-layout/legacy').then(mod => {
-    const RGL = mod as any;
-    return { default: RGL.WidthProvider(RGL.Responsive) };
+    return { default: (mod as any).default || mod };
   }),
   { ssr: false }
 ) as any;
@@ -104,8 +103,24 @@ export default function Dashboard({
   onAddInsightsCard, onRefreshInsights, insightsData,
 }: DashboardProps) {
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState(0);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+
+  // Measure container width for grid layout
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setGridWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    setGridWidth(el.clientWidth);
+    return () => observer.disconnect();
+  }, []);
 
   // Animated intro: staggered fade+scale on first render
   const hasAnimated = useRef(false);
@@ -348,7 +363,7 @@ export default function Dashboard({
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto p-4">
+    <div ref={gridContainerRef} className="h-full w-full overflow-y-auto p-4">
       {connectionName && (
         <div className="mb-4 flex items-start justify-between">
           <div>
@@ -590,19 +605,19 @@ export default function Dashboard({
         />
       )}
 
-      <GridLayout
+      {gridWidth > 0 && <ReactGridLayout
         className="layout"
-        layouts={{ lg: buildLayout() }}
-        breakpoints={{ lg: 996, md: 768, sm: 480 }}
-        cols={{ lg: 12, md: 8, sm: 4 }}
+        layout={buildLayout()}
+        cols={12}
+        width={gridWidth}
         rowHeight={80}
-        onLayoutChange={handleLayoutChange}
+        onLayoutChange={(layout: Layout[]) => handleLayoutChange(layout, null)}
         draggableHandle=".drag-handle"
         isResizable
         resizeHandles={['s', 'e', 'se']}
         isDraggable
         compactType={null}
-        margin={[16, 16]}
+        margin={[16, 16] as [number, number]}
       >
         {pinnedCharts.map((pin, i) => (
           <div key={pin.id} className={!hasAnimated.current ? 'animate-chart-enter' : ''} style={!hasAnimated.current ? { animationDelay: `${i * 80}ms` } : undefined}>
@@ -645,7 +660,7 @@ export default function Dashboard({
             )}
           </div>
         ))}
-      </GridLayout>
+      </ReactGridLayout>}
 
       {/* Fullscreen modal */}
       {fullscreenChart && (
