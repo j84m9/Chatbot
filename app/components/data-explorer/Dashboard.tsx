@@ -618,7 +618,7 @@ export default function Dashboard({
         isResizable
         resizeHandles={['s', 'e', 'se']}
         isDraggable
-        compactType={null}
+        compactType="vertical"
         margin={[16, 16] as [number, number]}
       >
         {pinnedCharts.map((pin, i) => (
