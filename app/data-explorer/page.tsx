@@ -2348,7 +2348,8 @@ export default function DataExplorer() {
 
         {/* Pane row */}
         <div className="flex-1 flex min-h-0">
-          {viewMode === 'dashboard' ? (
+          {/* Dashboard — always mounted, hidden when not active */}
+          <div className={`flex-1 ${viewMode === 'dashboard' ? 'flex' : 'hidden'}`}>
             <Dashboard
               pinnedCharts={pinnedCharts}
               darkMode={darkMode}
@@ -2388,7 +2389,8 @@ export default function DataExplorer() {
               onRefreshInsights={handleRefreshInsights}
               insightsData={insightsData}
             />
-          ) : editorMode === 'catalogue' ? (
+          </div>
+          {viewMode === 'query' && editorMode === 'catalogue' ? (
           /* Catalogue mode: full-height YAML editor */
           <div className="flex-1 flex flex-col min-h-0">
             <CatalogueEditor

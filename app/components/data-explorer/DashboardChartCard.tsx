@@ -74,6 +74,8 @@ export default function DashboardChartCard({
   const [justRefreshed, setJustRefreshed] = useState(false);
   const [showSqlEditor, setShowSqlEditor] = useState(false);
   const [sqlDraft, setSqlDraft] = useState('');
+  const sqlContainerRef = useRef<HTMLDivElement>(null);
+  const sqlViewRef = useRef<any>(null);
   const wasRefreshing = useRef(false);
 
   // Glow on refresh completion
@@ -352,29 +354,16 @@ export default function DashboardChartCard({
 
       {/* SQL editor (expandable) */}
       {showSqlEditor && (
-        <div className="px-3 py-2 border-b dark:border-[#2a2b2d]/50 border-gray-100">
-          <textarea
-            value={sqlDraft}
-            onChange={e => setSqlDraft(e.target.value)}
-            spellCheck={false}
-            className="w-full h-24 text-[11px] font-mono dark:bg-[#0d0d0e] bg-gray-50 dark:text-gray-200 text-gray-800 border dark:border-[#2a2b2d] border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-purple-500 transition-colors resize-none"
-          />
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <button
-              onClick={() => { onUpdateSql!(pin.id, sqlDraft); setShowSqlEditor(false); }}
-              disabled={!sqlDraft.trim() || sqlDraft === pin.source_sql}
-              className="px-2 py-1 text-[11px] font-medium rounded-md bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 cursor-pointer transition-colors"
-            >
-              Run
-            </button>
-            <button
-              onClick={() => setShowSqlEditor(false)}
-              className="px-2 py-1 text-[11px] rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <InlineSqlEditor
+          sql={sqlDraft}
+          darkMode={darkMode}
+          containerRef={sqlContainerRef}
+          viewRef={sqlViewRef}
+          onChangeSql={setSqlDraft}
+          onRun={() => { onUpdateSql!(pin.id, sqlDraft); setShowSqlEditor(false); }}
+          onCancel={() => setShowSqlEditor(false)}
+          canRun={!!sqlDraft.trim() && sqlDraft !== pin.source_sql}
+        />
       )}
 
       {/* Cross-filter badge */}
@@ -465,6 +454,124 @@ export default function DashboardChartCard({
             onChartClick={handleChartClick}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Inline CodeMirror SQL editor for chart cards */
+function InlineSqlEditor({
+  sql, darkMode, containerRef, viewRef, onChangeSql, onRun, onCancel, canRun,
+}: {
+  sql: string;
+  darkMode: boolean;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  viewRef: React.MutableRefObject<any>;
+  onChangeSql: (sql: string) => void;
+  onRun: () => void;
+  onCancel: () => void;
+  canRun: boolean;
+}) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    let destroyed = false;
+
+    (async () => {
+      const { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+      const { EditorState, Compartment } = await import('@codemirror/state');
+      const { defaultKeymap, history, historyKeymap } = await import('@codemirror/commands');
+      const { sql: sqlLang, SQLite } = await import('@codemirror/lang-sql');
+      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching } = await import('@codemirror/language');
+      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+      const { oneDark } = await import('@codemirror/theme-one-dark');
+
+      if (destroyed || !containerRef.current) return;
+
+      const themeCompartment = new Compartment();
+
+      const lightTheme = EditorView.theme({
+        '&': { backgroundColor: '#ffffff', color: '#1e293b', fontSize: '11px' },
+        '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+        '.cm-activeLineGutter': { backgroundColor: '#f1f5f9' },
+        '.cm-activeLine': { backgroundColor: '#f8fafc' },
+        '.cm-cursor': { borderLeftColor: '#6366f1' },
+        '.cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
+        '&.cm-focused .cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
+      });
+
+      const darkThemeCustom = [
+        oneDark,
+        EditorView.theme({ '&': { fontSize: '11px' } }),
+      ];
+
+      const updateListener = EditorView.updateListener.of((update: any) => {
+        if (update.docChanged) {
+          onChangeSql(update.state.doc.toString());
+        }
+      });
+
+      const state = EditorState.create({
+        doc: sql,
+        extensions: [
+          lineNumbers(),
+          drawSelection(),
+          history(),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          bracketMatching(),
+          closeBrackets(),
+          highlightActiveLine(),
+          keymap.of([
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
+          sqlLang({ dialect: SQLite }),
+          themeCompartment.of(darkMode ? darkThemeCustom : lightTheme),
+          updateListener,
+          EditorView.lineWrapping,
+        ],
+      });
+
+      const view = new EditorView({
+        state,
+        parent: containerRef.current!,
+      });
+
+      viewRef.current = view;
+      setReady(true);
+    })();
+
+    return () => {
+      destroyed = true;
+      viewRef.current?.destroy();
+      viewRef.current = null;
+      setReady(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="px-3 py-2 border-b dark:border-[#2a2b2d]/50 border-gray-100">
+      <div
+        ref={containerRef}
+        className="h-24 overflow-auto rounded-md border dark:border-[#2a2b2d] border-gray-200 [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
+      />
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <button
+          onClick={onRun}
+          disabled={!canRun}
+          className="px-2 py-1 text-[11px] font-medium rounded-md bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-30 cursor-pointer transition-colors"
+        >
+          Run
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-2 py-1 text-[11px] rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
