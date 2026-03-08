@@ -493,7 +493,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           x: xValues.slice(0, numericY.length),
           y: trendY,
           name: 'Trend',
-          line: { color: '#f97316', dash: 'dash', width: 2 },
+          line: { color: '#14b8a6', dash: 'dash', width: 2 },
           showlegend: true,
           hoverinfo: 'skip',
         });
@@ -663,7 +663,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           xref: 'paper',
           y0: chartConfig.referenceLine.value,
           y1: chartConfig.referenceLine.value,
-          line: { color: '#f97316', width: 2, dash: 'dash' },
+          line: { color: '#f43f5e', width: 2, dash: 'dot' },
         },
       ];
       plotLayout.annotations = [
@@ -675,7 +675,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
           text: chartConfig.referenceLine.label,
           showarrow: false,
           xanchor: 'left',
-          font: { color: '#f97316', size: 11 },
+          font: { color: '#f43f5e', size: 11 },
         },
       ];
     }
