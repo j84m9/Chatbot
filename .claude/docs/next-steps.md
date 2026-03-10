@@ -40,36 +40,65 @@ The most recent work focused on:
 
 ## Future Improvements (Prioritized)
 
-### High Impact / Low Effort
+### SQL Accuracy & Reliability (High Priority)
+- [ ] **Few-shot example library** — Per-database exemplar Q→SQL pairs stored in `table_metadata` or a new `query_examples` table. Inject the 3-5 most relevant examples (by embedding similarity or keyword match) into the SQL generation prompt. This is the single biggest accuracy booster — [research shows](https://cloud.google.com/blog/products/databases/techniques-for-improving-text-to-sql) few-shot examples dramatically reduce hallucinated column names and wrong JOINs.
+- [ ] **Execution-based validation** — After executing SQL, run sanity checks: if the user asked for "top 10" but got 0 rows, auto-retry with relaxed filters. If results have unexpected NULLs in key columns, flag it. Only ~3% of SQL errors are syntax errors caught at parse time; the rest are semantic errors that only show up as wrong results.
+- [ ] **Query decomposition for complex questions** — When the user asks a compound question ("show me revenue by region and compare it to last quarter"), decompose into sub-queries, execute each, then synthesize. The agent mode partially does this, but a structured decomposition step before SQL generation would improve quick mode too.
+- [ ] **Confidence scoring** — After generating SQL, have the LLM rate its confidence (high/medium/low) based on schema match and question complexity. Show this to the user. Low-confidence queries could auto-trigger agent mode for verification.
+- [ ] **Query result caching** — Cache SQL→results for identical queries within a session. Avoid re-executing the same SQL when switching tabs or toggling chart/table views. Also enables instant back-navigation to previous results.
+
+### Analytics & Visualization (High Priority)
+- [ ] **Click-to-drill-down on charts** — Click a bar segment or data point to auto-generate a filtered follow-up query. E.g., clicking "Q3" on a quarterly revenue chart generates "show me Q3 revenue broken down by product." This is the most requested feature in modern BI tools.
+- [ ] **Dashboard cross-filtering** — Clicking a value on one dashboard chart filters all other charts by that dimension. Requires a shared filter state across pinned charts and re-execution of source SQL with injected WHERE clauses.
+- [ ] **Comparison mode** — Side-by-side period comparison (this month vs last month, this year vs last year). The agent can generate comparison queries, but a dedicated UI showing two result sets with delta highlighting would be much more useful.
+- [ ] **Calculated columns / derived metrics** — Let users define computed fields (e.g., `profit = revenue - cost`) that are applied client-side to query results. Stored per-connection so they persist across sessions.
+- [ ] **Smart auto-suggestions after results** — After query results arrive, analyze the data shape and proactively suggest drill-downs: "This data has 5 regions — want to see a breakdown by region?" Currently suggestions come from the LLM text; this would be deterministic and data-driven.
+- [ ] **Threshold alerts on dashboard** — Let users set alert rules on pinned charts (e.g., "notify me if avg response time > 500ms"). Checks run on auto-refresh. Visual indicator on the chart when threshold is breached.
+
+### Agent Intelligence (Medium-High Priority)
+- [ ] **Multi-query narrative synthesis** — After the agent runs 3-5 queries, generate a structured executive summary that weaves findings from ALL queries into a coherent narrative with section headers, not just the last query's results. Think "analyst memo" format.
+- [ ] **Automatic data profiling in agent mode** — Before writing SQL, have the agent run a quick profile query (row counts, date ranges, NULL rates) on relevant tables. This prevents queries that return empty results because of wrong date filters or missing data.
+- [ ] **Query plan explanation** — Show users a plain-English breakdown of what the SQL does and why each JOIN/filter was chosen. Helps build trust and lets users catch mistakes before execution.
+- [ ] **Learning from corrections** — When a user refines a query ("no, I meant by fiscal quarter not calendar quarter"), store the correction as a few-shot example for future similar questions on that database.
+
+### Data Connectivity (Medium Priority)
+- [ ] **Snowflake connector** — Add Snowflake as a connection type. Could optionally use Cortex Analyst as a backend for SQL generation while keeping the visualization layer. Use the `snowflake-sdk` npm package.
+- [ ] **PostgreSQL support** — Only MSSQL and SQLite are supported. Adding Postgres would use a `pg` driver. High value since many teams use Postgres.
+- [ ] **MySQL support** — Similar to Postgres, add a `mysql2` driver.
+- [ ] **Query federation** — Query across multiple connected databases in a single session. The agent could run queries on DB-A and DB-B, then join the results client-side.
+
+### UI & Experience (Medium Priority)
 - [ ] **Responsive mobile layout** — Both pages are desktop-only. The sidebar, split pane, and floating input need mobile breakpoints.
 - [ ] **Error boundaries and loading states** — No React error boundaries exist. A crash in any component takes down the whole page.
-- [ ] **Rate limiting on API routes** — Currently wide open. Add middleware-level rate limiting (especially for chat and query endpoints).
-- [ ] **Custom local-only agents** — Let users create agents without needing the external store. Just a name + system prompt.
-
-### High Impact / Medium Effort
-- [x] ~~**Agent tools/skills execution** — Data Explorer agent mode now uses tools (execute_sql, get_schema, get_sample_data) via `generateText()` with `stopWhen: stepCountIs(5)`~~
-- [ ] **Chat agent tools execution** — Chat-side agents still only customize the system prompt. Extend to allow tool execution in chat (not just Data Explorer).
-- [ ] **PostgreSQL support in Data Explorer** — Only MSSQL and SQLite are supported. Adding Postgres would use the existing Supabase connection or a new `pg` driver.
-- [x] ~~**Interactive drill-down / cross-filtering** — Click a data point on one chart to filter all other charts by that value (client-side cross-filtering)~~
-- [x] ~~**Dashboard auto-refresh** — Per-chart configurable refresh intervals (30s, 1m, 5m, 15m) that re-execute source SQL~~
-- [x] ~~**Dashboard filters** — Global filters via slicer widgets (multi-select, date range) that filter all pinned charts client-side~~
-
-### Medium Impact
-- [ ] **MySQL support in Data Explorer** — Similar to Postgres support, add a `mysql2` driver.
-- [ ] **Natural language chart refinement with streaming** — Currently chart refinement is non-streaming. Add SSE like query-stream. (Dashboard refinement also non-streaming.)
-- [ ] **Agent version sync** — Detect when a store agent has been updated, prompt user to reinstall.
-- [ ] **Query result comparison** — Diff two queries side by side.
-- [ ] **Sparkline mini-charts in data table cells** — Small inline charts for numeric columns.
+- [ ] **Natural language chart refinement with streaming** — Currently chart refinement is non-streaming. Add SSE like query-stream for real-time feedback.
+- [ ] **SQL autocomplete in editor** — Schema-aware autocomplete in the SQL editor mode using CodeMirror's completion API. Table/column names, SQL keywords.
+- [ ] **Query result comparison** — Diff two queries side by side with highlighted deltas.
+- [ ] **Sparkline mini-charts in data table cells** — Small inline charts for numeric columns in the table view.
 - [ ] **Geographic/map chart type** — Choropleth for regional data using Plotly's map traces.
+- [ ] **Export to Excel/PowerPoint** — Beyond CSV/PDF, export chart + data as .xlsx or .pptx for enterprise sharing.
 
-### Lower Priority / Higher Effort
-- [ ] **Multi-agent pipeline** — Chain agents (e.g., SQL agent -> analysis agent -> report agent). Partially realized: insight agent already chains after query agent.
+### Infrastructure (Lower Priority)
+- [ ] **Rate limiting on API routes** — Currently wide open. Add middleware-level rate limiting.
+- [ ] **Custom local-only agents** — Let users create agents without the external store. Just a name + system prompt.
+- [ ] **Chat agent tools execution** — Chat-side agents still only customize the system prompt. Extend to allow tool execution.
+- [ ] **Multi-agent pipeline** — Chain agents (e.g., SQL agent -> analysis agent -> report agent).
 - [ ] **Scheduled/recurring queries with alerting** — Needs a job scheduler (cron or similar).
-- [ ] **Conversation memory / context window management** — Currently only last 5 messages used for context.
 - [ ] **Webhook integrations** — Slack/email notifications for query results.
 - [ ] **API access for programmatic querying** — External clients hitting the data explorer API.
-- [ ] **SQL autocomplete** — Schema-aware autocomplete in a manual SQL editor (would need CodeMirror or Monaco).
-- [x] ~~**Agent-driven anomaly detection** — Dashboard anomaly detection button flags statistical outliers across pinned charts~~
+
+### Completed
+- [x] ~~Agent tools/skills execution — Data Explorer agent mode uses tools via `generateText()` with `stopWhen: stepCountIs(5)`~~
+- [x] ~~Interactive drill-down / cross-filtering on dashboard~~
+- [x] ~~Dashboard auto-refresh — Per-chart configurable refresh intervals~~
+- [x] ~~Dashboard filters — Global filters via slicer widgets~~
+- [x] ~~Agent-driven anomaly detection on dashboard~~
+- [x] ~~SQL retry loop with pre-validation (up to 3 attempts)~~
+- [x] ~~Deterministic fallback chart detection~~
+- [x] ~~Column profiling and schema enrichment~~
+- [x] ~~Compute statistics agent tool~~
+- [x] ~~Smarter conversation context with keyword relevance~~
+- [x] ~~Adaptive dashboard layout~~
+- [x] ~~Semantic YAML context for MSSQL~~
 
 ## Gotchas & Things to Watch
 1. **`page.tsx` is huge** — Both main pages have all state in one component. If refactoring, extract state into custom hooks (e.g., `useChatState`, `useDataExplorerState`) rather than adding a state library.
