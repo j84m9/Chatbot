@@ -9,7 +9,7 @@ import { createDashboardAgentTools } from '@/utils/ai/data-explorer-tools';
 import { routeTables } from '@/utils/ai/table-router';
 import { buildCatalog, buildCatalogText, buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
 import { buildFKGraph } from '@/utils/ai/fk-graph';
-import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath, formatFewShotExamples } from '@/utils/ai/semantic-context';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -140,13 +140,22 @@ export async function POST(req: Request) {
         const model = getModel({ provider, model: modelId, apiKey: keyMap[provider] });
         const schemaText = schemaToPromptText(schema, dialect);
 
-        // 3a. Load semantic context for SQLite connections
+        // 3a. Load semantic context for any connection type
         let semanticContext: string | null = null;
         if (isSqlite && conn.file_path) {
           const metadataPath = findMetadataPath(conn.file_path);
           if (metadataPath) {
             semanticContext = loadSemanticContext(metadataPath);
           }
+        }
+        if (!semanticContext && conn.semantic_context) {
+          semanticContext = loadSemanticContextFromString(conn.semantic_context);
+        }
+
+        // 3b. Load few-shot examples
+        let fewShotBlock: string | null = null;
+        if (conn.few_shot_examples) {
+          fewShotBlock = formatFewShotExamples(conn.few_shot_examples);
         }
 
         // 4. Catalog mode for large databases
@@ -194,7 +203,10 @@ export async function POST(req: Request) {
         });
 
         // 6. Build system prompt and configure agent loop
-        const systemPrompt = buildDashboardAgentSystemPrompt(dialect, catalogText, semanticContext, catalogMode);
+        let systemPrompt = buildDashboardAgentSystemPrompt(dialect, catalogText, semanticContext, catalogMode);
+        if (fewShotBlock) {
+          systemPrompt = `${fewShotBlock}\n\n---\n\n${systemPrompt}`;
+        }
         let maxSteps = 15;
         let agentPrompt = userRequest;
 

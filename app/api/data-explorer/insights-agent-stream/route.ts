@@ -10,6 +10,7 @@ import {
   buildEnhancedInsightUserPrompt,
 } from '@/utils/ai/data-explorer-prompts';
 import { createDataExplorerTools } from '@/utils/ai/data-explorer-tools';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath, formatFewShotExamples } from '@/utils/ai/semantic-context';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -148,7 +149,31 @@ export async function POST(req: Request) {
           filePath: isSqlite ? conn.file_path : undefined,
         });
 
-        const systemPrompt = buildInsightAgentSystemPrompt(dialect, schemaText, existingResults);
+        // Load semantic context
+        let semanticContext: string | null = null;
+        if (isSqlite && conn.file_path) {
+          const metadataPath = findMetadataPath(conn.file_path);
+          if (metadataPath) {
+            semanticContext = loadSemanticContext(metadataPath);
+          }
+        }
+        if (!semanticContext && conn.semantic_context) {
+          semanticContext = loadSemanticContextFromString(conn.semantic_context);
+        }
+
+        // Load few-shot examples
+        let fewShotBlock: string | null = null;
+        if (conn.few_shot_examples) {
+          fewShotBlock = formatFewShotExamples(conn.few_shot_examples);
+        }
+
+        let systemPrompt = buildInsightAgentSystemPrompt(dialect, schemaText, existingResults);
+        if (fewShotBlock) {
+          systemPrompt = `${fewShotBlock}\n\n---\n\n${systemPrompt}`;
+        }
+        if (semanticContext) {
+          systemPrompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${systemPrompt}`;
+        }
 
         const agentPrompt = existingExplanation
           ? `The user asked: "${question}"\n\nPrevious analysis:\n${existingExplanation}\n\nRun follow-up queries to produce deeper, more detailed insights about this data.`
