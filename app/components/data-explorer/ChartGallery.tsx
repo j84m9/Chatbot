@@ -144,7 +144,7 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
   const alreadyPinned = pinnedId !== null;
 
   return (
-    <div className="h-full flex flex-col animate-chart-enter">
+    <div className="h-full flex flex-col animate-chart-enter min-w-0 overflow-hidden">
       {/* Header row: title + action buttons */}
       <div className="flex items-center justify-between px-1 mb-1 min-h-[32px]">
         {/* Chart title */}

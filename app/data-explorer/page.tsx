@@ -2398,7 +2398,7 @@ function DataExplorerContent() {
         </header>
 
         {/* Pane row */}
-        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 flex min-h-0 overflow-hidden">
           {viewMode === 'dashboard' ? (
             <Dashboard
               pinnedCharts={pinnedCharts}

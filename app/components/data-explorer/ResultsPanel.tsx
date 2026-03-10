@@ -298,7 +298,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-4 min-w-0">
         {activeTab === 'sql' && exchange.sql && (
           <CodeBlock code={exchange.sql} language="sql" onOpenInEditor={onOpenInEditor} />
         )}
@@ -315,7 +315,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
         )}
 
         {activeTab === 'chart' && hasCharts && exchange.results && (
-          <div>
+          <div className="w-full min-w-0 overflow-hidden">
             <KPICards results={exchange.results} darkMode={darkMode} />
             <ChartGallery
               chartConfigs={resolvedChartConfigs}

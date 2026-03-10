@@ -750,7 +750,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
   if (!mounted) return <div className="w-full h-full min-h-[300px]" />;
 
   return (
-    <div className={`w-full h-full min-h-[300px] ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : ''}`}>
+    <div className={`w-full h-full min-h-[300px] min-w-0 overflow-hidden ${annotationMode ? 'ring-2 ring-indigo-500 rounded-lg' : ''}`}>
       <Plot
         data={data}
         layout={layout}
