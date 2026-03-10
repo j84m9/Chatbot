@@ -169,8 +169,47 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     const xIsDate = isDateColumn(chartConfig.xColumn, rows.map(r => r[chartConfig.xColumn]));
     const sortedRows = xIsDate ? sortByDate(rows, chartConfig.xColumn) : rows;
 
-    const xValues = sortedRows.map(r => r[chartConfig.xColumn]);
-    const yValues = sortedRows.map(r => r[chartConfig.yColumn]);
+    let effectiveRows = sortedRows;
+
+    // Client-side aggregation: group by x-value and apply aggregation
+    if (chartConfig.aggregation && chartConfig.aggregation !== 'none') {
+      const xCol = chartConfig.xColumn;
+      const yCol = chartConfig.yColumn;
+      // Check if duplicate x-values exist
+      const xSet = new Set(sortedRows.map(r => String(r[xCol])));
+      if (xSet.size < sortedRows.length) {
+        const groups = new Map<string, number[]>();
+        for (const row of sortedRows) {
+          const key = String(row[xCol]);
+          if (!groups.has(key)) groups.set(key, []);
+          const val = typeof row[yCol] === 'number' ? row[yCol] : Number(row[yCol]);
+          if (!isNaN(val)) groups.get(key)!.push(val);
+        }
+
+        const aggregated: Record<string, any>[] = [];
+        for (const [key, vals] of groups) {
+          let aggVal: number;
+          switch (chartConfig.aggregation) {
+            case 'sum':
+              aggVal = vals.reduce((a, b) => a + b, 0);
+              break;
+            case 'avg':
+              aggVal = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+              break;
+            case 'count':
+              aggVal = vals.length;
+              break;
+            default:
+              aggVal = vals.reduce((a, b) => a + b, 0);
+          }
+          aggregated.push({ ...sortedRows.find(r => String(r[xCol]) === key), [yCol]: aggVal });
+        }
+        effectiveRows = aggregated;
+      }
+    }
+
+    const xValues = effectiveRows.map(r => r[chartConfig.xColumn]);
+    const yValues = effectiveRows.map(r => r[chartConfig.yColumn]);
 
     const colors = {
       primary: '#6366f1',
@@ -214,7 +253,7 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
       }
 
       const groups = new Map<string, { x: any[]; y: any[] }>();
-      for (const row of sortedRows) {
+      for (const row of effectiveRows) {
         const group = String(row[chartConfig.colorColumn] ?? 'Unknown');
         if (!groups.has(group)) groups.set(group, { x: [], y: [] });
         const g = groups.get(group)!;
@@ -501,8 +540,8 @@ const PlotlyChart = forwardRef<PlotlyChartHandle, PlotlyChartProps>(function Plo
     }
 
     // Secondary Y-axis
-    if (chartConfig.secondaryY?.column && sortedRows.length > 0 && sortedRows[0][chartConfig.secondaryY.column] !== undefined) {
-      const secondaryValues = sortedRows.map(r => r[chartConfig.secondaryY!.column]);
+    if (chartConfig.secondaryY?.column && effectiveRows.length > 0 && effectiveRows[0][chartConfig.secondaryY.column] !== undefined) {
+      const secondaryValues = effectiveRows.map(r => r[chartConfig.secondaryY!.column]);
       traces.push({
         type: 'scatter',
         mode: 'lines+markers',

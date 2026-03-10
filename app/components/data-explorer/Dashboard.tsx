@@ -263,6 +263,12 @@ export default function Dashboard({
 
   // Memoize layout so react-grid-layout sees a stable reference
   const layout = useMemo((): Layout[] => {
+    // Count non-KPI, non-slicer charts for adaptive sizing
+    const mainCharts = pinnedCharts.filter(p => p.item_type !== 'slicer' && !isKPIChart(p));
+    const mainChartCount = mainCharts.length;
+
+    let mainChartIndex = 0;
+
     return pinnedCharts.map((pin, i) => {
       const isSlicer = pin.item_type === 'slicer';
       const isKPI = !isSlicer && isKPIChart(pin);
@@ -275,7 +281,27 @@ export default function Dashboard({
       if (isKPI) {
         return { i: pin.id, x: (i % 4) * 3, y: Math.floor(i / 4) * 2, w: 3, h: 2, minW: 2, minH: 2 };
       }
-      return { i: pin.id, x: (i % 2) * 6, y: Math.floor(i / 2) * 4, w: 6, h: 4, minW: 2, minH: 2 };
+
+      // Adaptive layout for main charts
+      let w: number;
+      if (mainChartCount === 1) {
+        w = 12; // Full width
+      } else if (mainChartCount === 2) {
+        w = 6; // Half width each
+      } else {
+        // 3+ charts: first 2 at half, rest at third
+        w = mainChartIndex < 2 ? 6 : 4;
+      }
+
+      const x = mainChartIndex < 2
+        ? (mainChartIndex % 2) * 6
+        : ((mainChartIndex - 2) % 3) * 4;
+      const y = mainChartIndex < 2
+        ? Math.floor(mainChartIndex / 2) * 4
+        : 4 + Math.floor((mainChartIndex - 2) / 3) * 4;
+
+      mainChartIndex++;
+      return { i: pin.id, x, y, w, h: 4, minW: 2, minH: 2 };
     });
   }, [pinnedCharts]);
 

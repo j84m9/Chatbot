@@ -5,6 +5,9 @@ import { executeQuery as executeSqlite, fetchSampleRows as fetchSqliteSampleRows
 import { categorizeError, buildMultiChartSuggestionSystemPrompt, buildChartSuggestionUserPrompt } from '@/utils/ai/data-explorer-prompts';
 import { CatalogEntry, searchCatalog } from '@/utils/ai/catalog-builder';
 import { FKGraph, findJoinPath } from '@/utils/ai/fk-graph';
+import { validateSqlSyntax } from '@/utils/ai/sql-validator';
+import { detectChartType } from '@/utils/ai/chart-detector';
+import { computeColumnStats, ColumnStats } from '@/utils/ai/statistics';
 
 export interface DataExplorerToolContext {
   dialect: 'tsql' | 'sqlite';
@@ -17,10 +20,12 @@ export interface DataExplorerToolContext {
   catalogMode?: boolean;
   catalog?: CatalogEntry[];
   fkGraph?: FKGraph;
+  // For compute_statistics tool — returns last successful query result
+  getLastResult?: () => { rows: Record<string, any>[]; columns: string[]; types: Record<string, string> } | null;
 }
 
 export function createDataExplorerTools(ctx: DataExplorerToolContext) {
-  const baseTools = {
+  let baseTools: Record<string, any> = {
     execute_sql: tool({
       description: 'Execute a read-only SQL query against the database and return the results. Use this to test queries and get data.',
       inputSchema: z.object({
@@ -29,6 +34,19 @@ export function createDataExplorerTools(ctx: DataExplorerToolContext) {
       }),
       execute: async ({ sql }: { sql: string; purpose: string }) => {
         const startTime = Date.now();
+
+        // Pre-validate SQL syntax before hitting the database
+        const validation = validateSqlSyntax(sql, ctx.dialect);
+        if (!validation.valid) {
+          return {
+            success: false,
+            error: `SQL syntax error: ${validation.error}`,
+            errorCategory: 'syntax',
+            suggestion: 'Fix the SQL syntax and try again.',
+            executionTimeMs: Date.now() - startTime,
+          };
+        }
+
         try {
           let result: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
           if (ctx.dialect === 'sqlite' && ctx.filePath) {
@@ -137,6 +155,42 @@ export function createDataExplorerTools(ctx: DataExplorerToolContext) {
       },
     }),
   };
+
+  // Add compute_statistics tool when getLastResult is available
+  if (ctx.getLastResult) {
+    const getLastResult = ctx.getLastResult;
+    baseTools = {
+      ...baseTools,
+      compute_statistics: tool({
+        description: 'Compute statistical summary (min, max, mean, median, stdev, percentiles) for columns in the last successful query result. Use this to provide precise statistics instead of estimating.',
+        inputSchema: z.object({
+          columns: z.array(z.string()).describe('Column names to compute statistics for. Use "*" for all columns.'),
+        }),
+        execute: async ({ columns: requestedCols }: { columns: string[] }) => {
+          const lastResult = getLastResult();
+          if (!lastResult || lastResult.rows.length === 0) {
+            return { success: false, error: 'No query results available. Run execute_sql first.' };
+          }
+
+          const colsToAnalyze = requestedCols.includes('*')
+            ? lastResult.columns
+            : requestedCols.filter(c => lastResult.columns.includes(c));
+
+          if (colsToAnalyze.length === 0) {
+            return { success: false, error: `None of the requested columns found. Available: ${lastResult.columns.join(', ')}` };
+          }
+
+          const stats: Record<string, ColumnStats> = {};
+          for (const col of colsToAnalyze) {
+            const values = lastResult.rows.map(r => r[col]);
+            stats[col] = computeColumnStats(values);
+          }
+
+          return { success: true, statistics: stats, rowCount: lastResult.rows.length };
+        },
+      }),
+    } as typeof baseTools;
+  }
 
   // Add catalog-mode-only tools
   if (ctx.catalogMode && ctx.catalog && ctx.fkGraph) {
@@ -367,17 +421,22 @@ export function createDashboardAgentTools(ctx: DashboardAgentToolContext) {
             // LLM chart gen failed — use fallback
           }
 
-          // 3. Fallback: rule-based chart config
+          // 3. Fallback: deterministic chart detection
           if (!chartConfig) {
-            const fallbackType = chartTypeHint || purposeToChartType(purpose);
+            const detected = detectChartType(
+              queryResult.columns,
+              queryResult.types,
+              queryResult.rows,
+              queryResult.rowCount,
+            );
             chartConfig = {
-              chartType: fallbackType,
+              ...detected,
               title,
-              xColumn: queryResult.columns[0],
-              yColumn: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
-              xLabel: queryResult.columns[0],
-              yLabel: queryResult.columns.length > 1 ? queryResult.columns[1] : queryResult.columns[0],
             };
+            // Override with hint/purpose if provided
+            if (chartTypeHint) {
+              chartConfig.chartType = chartTypeHint;
+            }
             if (purpose === 'ranking') {
               chartConfig.orientation = 'h';
             }

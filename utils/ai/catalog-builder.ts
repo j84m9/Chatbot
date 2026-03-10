@@ -135,6 +135,69 @@ export function buildDescriptionComments(metadataRows: TableMetadataRow[]): stri
   return `## Table Descriptions\n${lines.join('\n')}`;
 }
 
+/**
+ * Enrich schema text with column-level profile stats as inline comments.
+ * Makes LLM prompts data-aware without additional queries.
+ */
+export function enrichSchemaWithProfiles(
+  schemaText: string,
+  profileMap: Record<string, Record<string, any>>,
+): string {
+  if (Object.keys(profileMap).length === 0) return schemaText;
+
+  const lines = schemaText.split('\n');
+  const enrichedLines: string[] = [];
+
+  let currentTable: string | null = null;
+
+  for (const line of lines) {
+    // Detect table header lines: "CREATE TABLE [schema].[table]" or "CREATE TABLE "table""
+    const tableMatch = line.match(/CREATE TABLE\s+(?:\[?\w+\]?\.)?\[?"?(\w+)"?\]?\s*/i)
+      || line.match(/^-- Table: (\w+)/i)
+      || line.match(/^(\w+)\s*\(/);
+
+    if (tableMatch) {
+      currentTable = tableMatch[1];
+    }
+
+    // If we're inside a table and the line defines a column, append profile stats
+    if (currentTable && profileMap[currentTable]) {
+      const colMatch = line.match(/^\s+\[?"?(\w+)"?\]?\s+([\w()]+)/);
+      if (colMatch) {
+        const colName = colMatch[1];
+        const profile = profileMap[currentTable][colName];
+        if (profile) {
+          const stats: string[] = [];
+
+          if (profile.min != null && profile.max != null && profile.avg != null) {
+            stats.push(`min: ${profile.min}, max: ${profile.max}, avg: ${profile.avg}`);
+          }
+          if (profile.null_rate != null && profile.null_rate > 0) {
+            stats.push(`nulls: ${Math.round(profile.null_rate * 100)}%`);
+          }
+          if (profile.sample_values && profile.sample_values.length > 0) {
+            stats.push(`${profile.distinct_count} values: ${profile.sample_values.join(', ')}`);
+          } else if (profile.distinct_count != null && !profile.sample_values) {
+            stats.push(`${profile.distinct_count} distinct`);
+          }
+          if (profile.date_range) {
+            stats.push(`range: ${profile.date_range.min} to ${profile.date_range.max}`);
+          }
+
+          if (stats.length > 0) {
+            enrichedLines.push(`${line}  -- ${stats.join(', ')}`);
+            continue;
+          }
+        }
+      }
+    }
+
+    enrichedLines.push(line);
+  }
+
+  return enrichedLines.join('\n');
+}
+
 function formatRowCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;

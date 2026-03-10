@@ -7,13 +7,22 @@ interface CatalogueEditorProps {
   connectionId: string;
   darkMode: boolean;
   onClose: () => void;
+  connectionType?: string;
+  semanticContext?: string | null;
+  onSaveSemanticContext?: (yaml: string) => void;
 }
 
-export default function CatalogueEditor({ connectionId, darkMode, onClose }: CatalogueEditorProps) {
+export default function CatalogueEditor({ connectionId, darkMode, onClose, connectionType, semanticContext: initialSemanticContext, onSaveSemanticContext }: CatalogueEditorProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [yamlContent, setYamlContent] = useState('');
+  const [profiling, setProfiling] = useState(false);
+  const [profileProgress, setProfileProgress] = useState('');
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'semantic'>('catalogue');
+  const [semanticYaml, setSemanticYaml] = useState(initialSemanticContext || '');
+  const semanticContainerRef = useRef<HTMLDivElement>(null);
+  const semanticViewRef = useRef<any>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
@@ -156,6 +165,78 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose }: Cat
     })();
   }, [darkMode, editorReady]);
 
+  const handleProfile = useCallback(async () => {
+    if (!connectionId || profiling) return;
+    setProfiling(true);
+    setProfileProgress('Starting...');
+    try {
+      const res = await fetch('/api/data-explorer/catalog/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId }),
+      });
+      if (!res.ok || !res.body) {
+        setSaveStatus({ type: 'error', message: 'Profile request failed' });
+        setProfiling(false);
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.stage === 'progress') {
+              setProfileProgress(evt.data?.message || 'Profiling...');
+            } else if (evt.stage === 'complete') {
+              setSaveStatus({ type: 'success', message: evt.data?.message || 'Profiling complete' });
+            } else if (evt.stage === 'error') {
+              setSaveStatus({ type: 'error', message: evt.data?.message || 'Profiling failed' });
+            }
+          } catch { /* skip parse errors */ }
+        }
+      }
+    } catch {
+      setSaveStatus({ type: 'error', message: 'Profile request failed' });
+    } finally {
+      setProfiling(false);
+      setProfileProgress('');
+      setTimeout(() => setSaveStatus(null), 5000);
+    }
+  }, [connectionId, profiling]);
+
+  const handleSaveSemanticContext = useCallback(async () => {
+    const view = semanticViewRef.current;
+    if (!view || !connectionId) return;
+    const content = view.state.doc.toString();
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/data-explorer/connections?id=${connectionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ semantic_context: content, dbType: connectionType || 'mssql' }),
+      });
+      if (res.ok) {
+        setSaveStatus({ type: 'success', message: 'Semantic context saved' });
+        onSaveSemanticContext?.(content);
+      } else {
+        setSaveStatus({ type: 'error', message: 'Failed to save semantic context' });
+      }
+    } catch {
+      setSaveStatus({ type: 'error', message: 'Network error' });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  }, [connectionId, connectionType, onSaveSemanticContext]);
+
   const handleSave = useCallback(async () => {
     const view = viewRef.current;
     if (!view || !connectionId) return;
@@ -200,24 +281,135 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose }: Cat
     }
   }, [connectionId]);
 
+  // Initialize semantic context editor
+  useEffect(() => {
+    if (activeTab !== 'semantic' || !semanticContainerRef.current) return;
+    let destroyed = false;
+
+    (async () => {
+      const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+      const { EditorState } = await import('@codemirror/state');
+      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
+      const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
+      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
+      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+      const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
+      const { oneDark } = await import('@codemirror/theme-one-dark');
+
+      if (destroyed || !semanticContainerRef.current) return;
+
+      const defaultYaml = semanticYaml || `# Semantic Context (YAML)
+# Define business rules, key metrics, and column descriptions.
+# This context is included in AI prompts for better SQL generation.
+
+database:
+  name: ""
+  description: ""
+
+tables: {}
+
+key_metrics: []
+
+example_queries: []
+`;
+
+      const state = EditorState.create({
+        doc: defaultYaml,
+        extensions: [
+          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
+          history(), foldGutter(), drawSelection(),
+          EditorState.allowMultipleSelections.of(true),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
+          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+          yamlLang(),
+          darkMode ? oneDark : EditorView.theme({
+            '&': { backgroundColor: '#ffffff', color: '#1e293b' },
+            '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+          }),
+          EditorView.lineWrapping,
+        ],
+      });
+
+      const view = new EditorView({ state, parent: semanticContainerRef.current! });
+      semanticViewRef.current = view;
+    })();
+
+    return () => {
+      destroyed = true;
+      semanticViewRef.current?.destroy();
+      semanticViewRef.current = null;
+    };
+  }, [activeTab, semanticYaml, darkMode]);
+
+  const showSemanticTab = onSaveSemanticContext != null;
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b dark:border-[#2a2b2d] border-gray-200 dark:bg-[#1a1b1c] bg-gray-50 flex-shrink-0">
-        <span className="text-xs font-semibold dark:text-gray-300 text-gray-600 mr-1">Catalogue Editor</span>
+        {showSemanticTab ? (
+          <div className="flex items-center gap-0.5 mr-2">
+            <button
+              onClick={() => setActiveTab('catalogue')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${activeTab === 'catalogue' ? 'bg-indigo-500/15 text-indigo-400' : 'dark:text-gray-500 text-gray-400 hover:dark:text-gray-300 hover:text-gray-600'}`}
+            >
+              Catalogue
+            </button>
+            <button
+              onClick={() => setActiveTab('semantic')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${activeTab === 'semantic' ? 'bg-indigo-500/15 text-indigo-400' : 'dark:text-gray-500 text-gray-400 hover:dark:text-gray-300 hover:text-gray-600'}`}
+            >
+              Semantic Context
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs font-semibold dark:text-gray-300 text-gray-600 mr-1">Catalogue Editor</span>
+        )}
+        {activeTab === 'catalogue' ? (
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+          >
+            {saving ? (
+              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              </svg>
+            )}
+            Save
+          </button>
+        ) : (
+          <button
+            onClick={handleSaveSemanticContext}
+            disabled={saving}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+          >
+            {saving ? (
+              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              </svg>
+            )}
+            Save Context
+          </button>
+        )}
         <button
-          onClick={handleSave}
-          disabled={saving || loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+          onClick={handleProfile}
+          disabled={profiling || loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
         >
-          {saving ? (
+          {profiling ? (
             <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           ) : (
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
             </svg>
           )}
-          Save
+          {profiling ? profileProgress || 'Profiling...' : 'Profile Database'}
         </button>
 
         {saveStatus && (
@@ -241,17 +433,24 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose }: Cat
         </button>
       </div>
 
-      {/* Editor container */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-            <span className="text-sm dark:text-gray-400 text-gray-500">Loading catalogue...</span>
+      {/* Editor containers */}
+      {activeTab === 'catalogue' ? (
+        loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+              <span className="text-sm dark:text-gray-400 text-gray-500">Loading catalogue...</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div
+            ref={containerRef}
+            className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
+          />
+        )
       ) : (
         <div
-          ref={containerRef}
+          ref={semanticContainerRef}
           className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
         />
       )}

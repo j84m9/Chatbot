@@ -276,9 +276,33 @@ Rules:
 - Examples: "Employee Salary Analysis", "Monthly Order Trends", "Customer Distribution by Region"`;
 }
 
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'of', 'by', 'for', 'to', 'in', 'and', 'or', 'on', 'at',
+  'it', 'its', 'this', 'that', 'with', 'from', 'as', 'are', 'was', 'were', 'be',
+  'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could',
+  'should', 'may', 'might', 'not', 'no', 'me', 'my', 'we', 'our', 'you', 'your',
+  'what', 'which', 'who', 'how', 'when', 'where', 'why', 'show', 'get', 'find',
+]);
+
+function extractKeywords(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase().split(/\s+/).filter(w => w.length > 1 && !STOP_WORDS.has(w))
+  );
+}
+
+function scoreRelevance(messageText: string, keywords: Set<string>): number {
+  const msgWords = extractKeywords(messageText);
+  let overlap = 0;
+  for (const word of msgWords) {
+    if (keywords.has(word)) overlap++;
+  }
+  return keywords.size > 0 ? overlap / keywords.size : 0;
+}
+
 export function buildConversationContext(
   messages: { question: string; sql_query: string | null; row_count: number | null }[],
-  maxChars: number = 4000
+  maxChars: number = 4000,
+  currentQuestion?: string,
 ): string {
   if (messages.length === 0) return '';
 
@@ -289,7 +313,34 @@ export function buildConversationContext(
     return parts.join('\n');
   });
 
-  // Build context from most recent messages first, staying under maxChars
+  // If current question provided, use relevance scoring
+  if (currentQuestion && messages.length > 2) {
+    const keywords = extractKeywords(currentQuestion);
+
+    // Score each message by keyword overlap
+    const scored = messages.map((msg, i) => ({
+      index: i,
+      score: scoreRelevance(msg.question + ' ' + (msg.sql_query || ''), keywords),
+      block: blocks[i],
+    }));
+
+    // Always include the most recent message + top 2 by relevance
+    const mostRecent = scored[scored.length - 1];
+    const rest = scored.slice(0, -1).sort((a, b) => b.score - a.score).slice(0, 2);
+
+    // Combine and re-order chronologically
+    const selected = [...rest, mostRecent].sort((a, b) => a.index - b.index);
+
+    let result = '';
+    for (const item of selected) {
+      const candidate = result ? result + '\n\n' + item.block : item.block;
+      if (candidate.length > maxChars) break;
+      result = candidate;
+    }
+    return result;
+  }
+
+  // Default: most recent messages first, staying under maxChars
   let result = '';
   for (let i = blocks.length - 1; i >= 0; i--) {
     const candidate = i < blocks.length - 1
@@ -369,6 +420,27 @@ ${originalSql}
 User wants to modify the query: "${instruction}"
 
 Generate the updated ${dialectLabel} SELECT query. Output ONLY the SQL query, no explanations, no markdown fences.`;
+}
+
+export function buildSqlRetryPrompt(
+  originalQuestion: string,
+  failedSql: string,
+  errorMessage: string,
+  attempt: number,
+  dialect: 'tsql' | 'sqlite',
+): string {
+  const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
+  return `The previous ${dialectLabel} query failed. Fix it and try again.
+
+Original question: "${originalQuestion}"
+
+Failed SQL (attempt ${attempt}):
+${failedSql}
+
+Error: ${errorMessage}
+
+Generate a corrected ${dialectLabel} SELECT query that fixes the error above.
+Output ONLY the SQL query, no explanations, no markdown fences.`;
 }
 
 export function categorizeError(err: any): { category: string; message: string; suggestion: string } {

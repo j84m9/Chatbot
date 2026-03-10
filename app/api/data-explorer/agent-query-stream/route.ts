@@ -12,12 +12,13 @@ import {
   buildEnhancedInsightSystemPrompt,
   buildEnhancedInsightUserPrompt,
 } from '@/utils/ai/data-explorer-prompts';
-import { createDataExplorerTools } from '@/utils/ai/data-explorer-tools';
+import { createDataExplorerTools, DataExplorerToolContext } from '@/utils/ai/data-explorer-tools';
 import { buildAgentSystemPrompt } from '@/utils/ai/data-explorer-agent-prompt';
 import { routeTables } from '@/utils/ai/table-router';
-import { buildCatalog, buildCatalogText, buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
+import { buildCatalog, buildCatalogText, buildDescriptionComments, enrichSchemaWithProfiles, TableMetadataRow } from '@/utils/ai/catalog-builder';
 import { buildFKGraph } from '@/utils/ai/fk-graph';
-import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath } from '@/utils/ai/semantic-context';
+import { detectChartType, isSimpleQuery } from '@/utils/ai/chart-detector';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -147,13 +148,16 @@ export async function POST(req: Request) {
 
         const schemaText = schemaToPromptText(schema, dialect);
 
-        // 3a. Load semantic context for SQLite connections
+        // 3a. Load semantic context for any connection type
         let semanticContext: string | null = null;
         if (isSqlite && conn.file_path) {
           const metadataPath = findMetadataPath(conn.file_path);
           if (metadataPath) {
             semanticContext = loadSemanticContext(metadataPath);
           }
+        }
+        if (!semanticContext && conn.semantic_context) {
+          semanticContext = loadSemanticContextFromString(conn.semantic_context);
         }
 
         // 3b. Fetch agent domain context
@@ -187,7 +191,7 @@ export async function POST(req: Request) {
             .limit(5);
 
           if (prevMessages && prevMessages.length > 0) {
-            conversationContext = buildConversationContext(prevMessages.reverse());
+            conversationContext = buildConversationContext(prevMessages.reverse(), 4000, question);
           }
         }
 
@@ -207,6 +211,14 @@ export async function POST(req: Request) {
         let catalog;
         let fkGraph;
 
+        // Enrich schema with column profile stats if available
+        const profileMap: Record<string, Record<string, any>> = {};
+        for (const row of metadata) {
+          if ((row as any).column_profiles && typeof (row as any).column_profiles === 'object') {
+            profileMap[row.table_name] = (row as any).column_profiles as Record<string, any>;
+          }
+        }
+
         if (catalogMode) {
           // Large DB: use compact catalog + table router + on-demand schema
           catalog = buildCatalog(schema, metadata);
@@ -220,6 +232,13 @@ export async function POST(req: Request) {
           }
         }
 
+        if (Object.keys(profileMap).length > 0) {
+          catalogText = enrichSchemaWithProfiles(catalogText, profileMap);
+        }
+
+        // Pre-declare lastSuccessfulResult so getLastResult can reference it
+        let lastSuccessfulResult: any = null;
+
         const tools = createDataExplorerTools({
           dialect,
           schema,
@@ -228,6 +247,7 @@ export async function POST(req: Request) {
           catalogMode,
           catalog,
           fkGraph,
+          getLastResult: () => lastSuccessfulResult,
         });
 
         // Pre-filter: identify relevant tables upfront in catalog mode
@@ -279,7 +299,6 @@ export async function POST(req: Request) {
         }
 
         const agentSteps: any[] = [];
-        let lastSuccessfulResult: any = null;
         let lastSuccessfulSql: string | null = null;
         const allSuccessfulSqls: string[] = [];
 
@@ -430,32 +449,62 @@ export async function POST(req: Request) {
         let chartConfigs: any[] | null = null;
 
         if (lastSuccessfulResult && lastSuccessfulResult.rows.length > 0) {
-          try {
-            const stopChartHeartbeat = startHeartbeat(controller);
-            const chartText_ = await streamText({
-              model,
-              system: buildMultiChartSuggestionSystemPrompt(),
-              prompt: buildChartSuggestionUserPrompt(
-                question,
-                lastSuccessfulResult.columns,
-                lastSuccessfulResult.types,
-                lastSuccessfulResult.rows,
-                lastSuccessfulResult.rowCount,
-              ),
-            }).text;
-            stopChartHeartbeat();
-            const parsed = extractJsonFromText(chartText_);
-            if (parsed) {
-              if (Array.isArray(parsed)) {
-                chartConfig = parsed[0] || null;
-                chartConfigs = parsed;
-              } else {
-                chartConfig = parsed;
-                chartConfigs = [parsed];
+          // Fast path: skip LLM for simple queries
+          const useDetector = isSimpleQuery(
+            lastSuccessfulResult.columns,
+            lastSuccessfulResult.types,
+            lastSuccessfulResult.rows,
+          );
+
+          if (useDetector) {
+            const detected = detectChartType(
+              lastSuccessfulResult.columns,
+              lastSuccessfulResult.types,
+              lastSuccessfulResult.rows,
+              lastSuccessfulResult.rowCount,
+            );
+            chartConfig = { ...detected };
+            chartConfigs = [chartConfig];
+          } else {
+            try {
+              const stopChartHeartbeat = startHeartbeat(controller);
+              const chartText_ = await streamText({
+                model,
+                system: buildMultiChartSuggestionSystemPrompt(),
+                prompt: buildChartSuggestionUserPrompt(
+                  question,
+                  lastSuccessfulResult.columns,
+                  lastSuccessfulResult.types,
+                  lastSuccessfulResult.rows,
+                  lastSuccessfulResult.rowCount,
+                ),
+              }).text;
+              stopChartHeartbeat();
+              const parsed = extractJsonFromText(chartText_);
+              if (parsed) {
+                if (Array.isArray(parsed)) {
+                  chartConfig = parsed[0] || null;
+                  chartConfigs = parsed;
+                } else {
+                  chartConfig = parsed;
+                  chartConfigs = [parsed];
+                }
               }
+            } catch (chartErr: any) {
+              console.error('[agent-query-stream] Chart generation failed:', chartErr?.message || chartErr);
             }
-          } catch (chartErr: any) {
-            console.error('[agent-query-stream] Chart generation failed:', chartErr?.message || chartErr);
+          }
+
+          // Fallback: if LLM chart gen failed or returned nothing, use deterministic detector
+          if (!chartConfig && lastSuccessfulResult.rows.length > 0) {
+            const detected = detectChartType(
+              lastSuccessfulResult.columns,
+              lastSuccessfulResult.types,
+              lastSuccessfulResult.rows,
+              lastSuccessfulResult.rowCount,
+            );
+            chartConfig = { ...detected };
+            chartConfigs = [chartConfig];
           }
         }
 

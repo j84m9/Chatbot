@@ -8,11 +8,14 @@ import {
   buildSqlGenerationSystemPromptWithContext,
   buildSessionTitlePrompt,
   buildConversationContext,
+  buildSqlRetryPrompt,
   categorizeError,
   wrapWithDomainContext,
 } from '@/utils/ai/data-explorer-prompts';
-import { loadSemanticContext, findMetadataPath } from '@/utils/ai/semantic-context';
-import { buildDescriptionComments, TableMetadataRow } from '@/utils/ai/catalog-builder';
+import { validateSqlSyntax } from '@/utils/ai/sql-validator';
+import { detectChartType, isSimpleQuery } from '@/utils/ai/chart-detector';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath } from '@/utils/ai/semantic-context';
+import { buildDescriptionComments, enrichSchemaWithProfiles, TableMetadataRow } from '@/utils/ai/catalog-builder';
 
 // Reuse the schema cache
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
@@ -157,27 +160,42 @@ export async function POST(req: Request) {
 
         let schemaText = schemaToPromptText(schema, dialect);
 
-        // 3a-bis. Fetch table descriptions
+        // 3a-bis. Fetch table descriptions and column profiles
         const { data: metadataRows } = await dbAdmin
           .from('table_metadata')
-          .select('table_schema, table_name, auto_description, user_description')
+          .select('table_schema, table_name, auto_description, user_description, column_profiles')
           .eq('connection_id', connectionId)
           .eq('user_id', user.id);
 
         if (metadataRows && metadataRows.length > 0) {
-          const descBlock = buildDescriptionComments(metadataRows as TableMetadataRow[]);
+          const descBlock = buildDescriptionComments(metadataRows as unknown as TableMetadataRow[]);
           if (descBlock) {
             schemaText = descBlock + '\n\n' + schemaText;
           }
+
+          // Enrich schema with column profile stats
+          const profileMap: Record<string, Record<string, any>> = {};
+          for (const row of metadataRows) {
+            if (row.column_profiles && typeof row.column_profiles === 'object') {
+              profileMap[row.table_name] = row.column_profiles as Record<string, any>;
+            }
+          }
+          if (Object.keys(profileMap).length > 0) {
+            schemaText = enrichSchemaWithProfiles(schemaText, profileMap);
+          }
         }
 
-        // 3a. Load semantic context for SQLite connections
+        // 3a. Load semantic context for any connection type
         let semanticContext: string | null = null;
         if (isSqlite && conn.file_path) {
           const metadataPath = findMetadataPath(conn.file_path);
           if (metadataPath) {
             semanticContext = loadSemanticContext(metadataPath);
           }
+        }
+        // Also check DB-stored semantic context (works for MSSQL and SQLite)
+        if (!semanticContext && conn.semantic_context) {
+          semanticContext = loadSemanticContextFromString(conn.semantic_context);
         }
 
         // 3b. Fetch sample rows (capped at 15 tables)
@@ -234,68 +252,100 @@ export async function POST(req: Request) {
             .limit(5);
 
           if (prevMessages && prevMessages.length > 0) {
-            conversationContext = buildConversationContext(prevMessages.reverse());
+            conversationContext = buildConversationContext(prevMessages.reverse(), 4000, question);
           }
         }
 
-        // 5. Generate SQL
-        sendEvent(controller, 'status', { step: 'generating_sql', message: 'Generating SQL...' });
-
+        // 5. Generate SQL with retry loop (up to 3 attempts)
         const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
         let sqlSystemPrompt = wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext);
         if (semanticContext) {
           sqlSystemPrompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${sqlSystemPrompt}`;
         }
-        const sqlText = await streamTextWithHeartbeat(controller, {
-          model,
-          system: sqlSystemPrompt,
-          prompt: `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`,
-        });
 
-        let sqlQuery = sqlText.trim();
-        sqlQuery = sqlQuery.replace(/^```(?:sql)?\s*/i, '').replace(/\s*```$/i, '').trim();
+        const MAX_RETRIES = 3;
+        let sqlQuery = '';
+        let results: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number } | null = null;
+        let lastError: string | null = null;
 
-        sendEvent(controller, 'sql', { sql: sqlQuery });
-
-        // 6. Execute SQL
-        sendEvent(controller, 'status', { step: 'executing', message: 'Running query...' });
-
-        let results: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
-        try {
-          if (isSqlite) {
-            results = executeSqlite(conn.file_path, sqlQuery);
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          // Generate SQL
+          if (attempt === 1) {
+            sendEvent(controller, 'status', { step: 'generating_sql', message: 'Generating SQL...' });
           } else {
-            results = await executeMssql(mssqlConfig!, sqlQuery);
+            sendEvent(controller, 'status', { step: 'retrying', message: `Fixing SQL (attempt ${attempt})...` });
           }
-        } catch (err: any) {
-          const categorized = categorizeError(err);
-          sendEvent(controller, 'error', {
-            message: `Query execution failed: ${categorized.message}`,
-            suggestion: categorized.suggestion,
-            sql: sqlQuery,
+
+          const prompt = attempt === 1
+            ? `Generate a ${dialectLabel} query for: ${question}\n\nRespond with ONLY the SQL query, nothing else.`
+            : buildSqlRetryPrompt(question, sqlQuery, lastError!, attempt, dialect);
+
+          const sqlText = await streamTextWithHeartbeat(controller, {
+            model,
+            system: sqlSystemPrompt,
+            prompt,
           });
-          // Still save the message
-          let activeSessionId = sessionId;
-          if (!activeSessionId) {
-            const sessionInsert: any = { user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) };
-            if (resolvedAgentId) sessionInsert.agent_id = resolvedAgentId;
-            const { data: newSession } = await dbAdmin
-              .from('data_explorer_sessions')
-              .insert(sessionInsert)
-              .select('id')
-              .single();
-            if (newSession) activeSessionId = newSession.id;
+
+          sqlQuery = sqlText.trim().replace(/^```(?:sql)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          sendEvent(controller, 'sql', { sql: sqlQuery });
+
+          // Pre-validate syntax
+          const validation = validateSqlSyntax(sqlQuery, dialect);
+          if (!validation.valid) {
+            lastError = `SQL syntax error: ${validation.error}`;
+            sendEvent(controller, 'status', { step: 'retrying', message: `Syntax error detected, retrying...` });
+            continue;
           }
-          if (activeSessionId) {
-            await dbAdmin.from('data_explorer_messages').insert({
-              session_id: activeSessionId,
-              question,
-              sql_query: sqlQuery,
-              error: `Query execution failed: ${categorized.message}`,
-              message_type: 'query',
-            });
+
+          // Execute SQL
+          sendEvent(controller, 'status', { step: 'executing', message: 'Running query...' });
+          try {
+            if (isSqlite) {
+              results = executeSqlite(conn.file_path, sqlQuery);
+            } else {
+              results = await executeMssql(mssqlConfig!, sqlQuery);
+            }
+            break; // Success — exit retry loop
+          } catch (err: any) {
+            const categorized = categorizeError(err);
+            lastError = categorized.message;
+
+            if (attempt === MAX_RETRIES) {
+              // Final attempt failed
+              sendEvent(controller, 'error', {
+                message: `Query execution failed: ${categorized.message}`,
+                suggestion: categorized.suggestion,
+                sql: sqlQuery,
+              });
+              let activeSessionId = sessionId;
+              if (!activeSessionId) {
+                const sessionInsert: any = { user_id: user.id, connection_id: connectionId, title: question.substring(0, 50) };
+                if (resolvedAgentId) sessionInsert.agent_id = resolvedAgentId;
+                const { data: newSession } = await dbAdmin
+                  .from('data_explorer_sessions')
+                  .insert(sessionInsert)
+                  .select('id')
+                  .single();
+                if (newSession) activeSessionId = newSession.id;
+              }
+              if (activeSessionId) {
+                await dbAdmin.from('data_explorer_messages').insert({
+                  session_id: activeSessionId,
+                  question,
+                  sql_query: sqlQuery,
+                  error: `Query execution failed: ${categorized.message}`,
+                  message_type: 'query',
+                });
+              }
+              sendEvent(controller, 'complete', { sessionId: activeSessionId });
+              controller.close();
+              return;
+            }
           }
-          sendEvent(controller, 'complete', { sessionId: activeSessionId });
+        }
+
+        if (!results) {
+          sendEvent(controller, 'error', { message: 'All retry attempts failed' });
           controller.close();
           return;
         }
@@ -320,6 +370,16 @@ export async function POST(req: Request) {
         }).then(t => t.trim()).catch(() => 'Query executed.');
 
         sendEvent(controller, 'explanation', { explanation });
+
+        // 7b. Deterministic chart detection (zero-latency, no LLM call)
+        let chartConfig: any = null;
+        let chartConfigs: any[] | null = null;
+        if (results.rows.length > 0 && results.columns.length >= 1) {
+          const detected = detectChartType(results.columns, results.types, results.rows, results.rowCount);
+          chartConfig = { ...detected };
+          chartConfigs = [chartConfig];
+          sendEvent(controller, 'charts', { chartConfig, chartConfigs });
+        }
 
         // 8. Save to database
         let activeSessionId = sessionId;
