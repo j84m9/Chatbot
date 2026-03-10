@@ -23,8 +23,8 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
   const [profiling, setProfiling] = useState(false);
   const [profileProgress, setProfileProgress] = useState('');
   const [activeTab, setActiveTab] = useState<'catalogue' | 'semantic' | 'examples'>('catalogue');
-  const [semanticYaml, setSemanticYaml] = useState(initialSemanticContext || '');
-  const [examplesYaml, setExamplesYaml] = useState(initialFewShotExamples || '');
+  const semanticYamlRef = useRef(initialSemanticContext || '');
+  const examplesYamlRef = useRef(initialFewShotExamples || '');
   const semanticContainerRef = useRef<HTMLDivElement>(null);
   const semanticViewRef = useRef<any>(null);
   const examplesContainerRef = useRef<HTMLDivElement>(null);
@@ -232,6 +232,7 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
       });
       if (res.ok) {
         setSaveStatus({ type: 'success', message: 'Semantic context saved' });
+        semanticYamlRef.current = content;
         onSaveSemanticContext?.(content);
       } else {
         setSaveStatus({ type: 'error', message: 'Failed to save semantic context' });
@@ -257,6 +258,7 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
       });
       if (res.ok) {
         setSaveStatus({ type: 'success', message: 'Few-shot examples saved' });
+        examplesYamlRef.current = content;
         onSaveFewShotExamples?.(content);
       } else {
         setSaveStatus({ type: 'error', message: 'Failed to save examples' });
@@ -338,7 +340,7 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
 
         if (destroyed || !semanticContainerRef.current) return;
 
-        const defaultYaml = semanticYaml || `# Semantic Context (YAML)
+        const defaultYaml = semanticYamlRef.current || `# Semantic Context (YAML)
 # Define business rules, key metrics, and column descriptions.
 # This context is included in AI prompts for better SQL generation.
 
@@ -381,7 +383,8 @@ example_queries: []
       semanticViewRef.current?.destroy();
       semanticViewRef.current = null;
     };
-  }, [activeTab, semanticYaml, darkMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, darkMode]);
 
   // Initialize examples editor
   useEffect(() => {
@@ -400,7 +403,7 @@ example_queries: []
 
         if (destroyed || !examplesContainerRef.current) return;
 
-        const defaultYaml = examplesYaml || `# Few-Shot Examples (YAML)
+        const defaultYaml = examplesYamlRef.current || `# Few-Shot Examples (YAML)
 # Question -> SQL pairs to improve SQL generation accuracy.
 
 - question: ""
@@ -437,7 +440,8 @@ example_queries: []
       examplesViewRef.current?.destroy();
       examplesViewRef.current = null;
     };
-  }, [activeTab, examplesYaml, darkMode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, darkMode]);
 
   const showTabs = onSaveSemanticContext != null;
 
@@ -580,7 +584,7 @@ example_queries: []
         <FileDropZone
           darkMode={darkMode}
           label="Drop a schema context .yaml file here or click to browse"
-          onFileLoad={(content) => replaceEditorContent(semanticViewRef.current, content)}
+          onFileLoad={(content) => { semanticYamlRef.current = content; replaceEditorContent(semanticViewRef.current, content); }}
         />
         <div
           ref={semanticContainerRef}
@@ -591,7 +595,7 @@ example_queries: []
         <FileDropZone
           darkMode={darkMode}
           label="Drop a few-shot examples .yaml file here or click to browse"
-          onFileLoad={(content) => replaceEditorContent(examplesViewRef.current, content)}
+          onFileLoad={(content) => { examplesYamlRef.current = content; replaceEditorContent(examplesViewRef.current, content); }}
         />
         <div
           ref={examplesContainerRef}
