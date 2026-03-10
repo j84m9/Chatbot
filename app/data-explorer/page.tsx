@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import DataExplorerSidebar, { SavedQuery } from '@/app/components/data-explorer/DataExplorerSidebar';
@@ -24,6 +24,14 @@ interface RefineContext {
 }
 
 export default function DataExplorer() {
+  return (
+    <Suspense>
+      <DataExplorerContent />
+    </Suspense>
+  );
+}
+
+function DataExplorerContent() {
   const supabase = createClient();
   const searchParams = useSearchParams();
 
