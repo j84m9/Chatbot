@@ -1018,14 +1018,66 @@ function DataExplorerContent() {
       throw new Error(data.error || `Chart refinement failed: ${res.status}`);
     }
 
-    // If the refinement requires new data, fall back to a new query
+    // If the refinement requires new data, fall back to SQL refinement
     if (data.needs_new_query) {
-      const combinedQuestion = `${targetExchange.question} — ${instruction}`;
-      if (queryMode === 'agent') {
-        handleSubmitAgentQuestion(combinedQuestion);
-      } else {
-        handleSubmitQuestion(combinedQuestion);
+      if (!targetExchange.sql) {
+        throw new Error('Cannot refine: no SQL query to modify');
       }
+      const exchangeId = crypto.randomUUID();
+      const newExchange: Exchange = {
+        id: exchangeId,
+        question: instruction,
+        sql: null,
+        explanation: null,
+        results: null,
+        chartConfig: null,
+        chartConfigs: null,
+        error: null,
+        isLoading: true,
+        messageType: 'sql_refinement',
+        parentMessageId: targetExchange.id,
+      };
+      setExchanges(prev => [...prev, newExchange]);
+      setSelectedExchangeIndex(exchanges.length);
+
+      const sqlRes = await fetch('/api/data-explorer/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: instruction,
+          connectionId: activeConnectionId,
+          sessionId,
+          messageType: 'sql_refinement',
+          parentMessageId: targetExchange.id,
+          exchangeData: {
+            sql: targetExchange.sql,
+            question: targetExchange.question,
+          },
+        }),
+      });
+
+      const sqlData = await sqlRes.json();
+      if (sqlData.sessionId && !sessionId) {
+        setSessionId(sqlData.sessionId);
+        fetchSessions();
+      }
+
+      setExchanges(prev =>
+        prev.map(ex =>
+          ex.id === exchangeId
+            ? {
+                ...ex,
+                sql: sqlData.sql,
+                explanation: sqlData.explanation,
+                results: sqlData.results,
+                chartConfig: sqlData.chartConfig,
+                chartConfigs: sqlData.chartConfigs,
+                error: sqlData.error,
+                isLoading: false,
+              }
+            : ex
+        )
+      );
       return;
     }
 
@@ -1092,16 +1144,63 @@ function DataExplorerContent() {
 
         const data = await res.json();
 
-        // If the refinement requires new data, fall back to a new query
-        if (data.needs_new_query) {
-          const combinedQuestion = `${targetExchange.question} — ${instruction}`;
-          setRefineContext(null);
-          setIsQuerying(false);
-          if (queryMode === 'agent') {
-            handleSubmitAgentQuestion(combinedQuestion);
-          } else {
-            handleSubmitQuestion(combinedQuestion);
+        // If the refinement requires new data, fall back to SQL refinement
+        if (data.needs_new_query && targetExchange.sql) {
+          const exchangeId = crypto.randomUUID();
+          const newExchange: Exchange = {
+            id: exchangeId,
+            question: instruction,
+            sql: null,
+            explanation: null,
+            results: null,
+            chartConfig: null,
+            chartConfigs: null,
+            error: null,
+            isLoading: true,
+            messageType: 'sql_refinement',
+            parentMessageId: targetExchange.id,
+          };
+          setExchanges(prev => [...prev, newExchange]);
+          setSelectedExchangeIndex(exchanges.length);
+
+          const sqlRes = await fetch('/api/data-explorer/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              question: instruction,
+              connectionId: activeConnectionId,
+              sessionId,
+              messageType: 'sql_refinement',
+              parentMessageId: targetExchange.id,
+              exchangeData: {
+                sql: targetExchange.sql,
+                question: targetExchange.question,
+              },
+            }),
+          });
+
+          const sqlData = await sqlRes.json();
+          if (sqlData.sessionId && !sessionId) {
+            setSessionId(sqlData.sessionId);
+            fetchSessions();
           }
+
+          setExchanges(prev =>
+            prev.map(ex =>
+              ex.id === exchangeId
+                ? {
+                    ...ex,
+                    sql: sqlData.sql,
+                    explanation: sqlData.explanation,
+                    results: sqlData.results,
+                    chartConfig: sqlData.chartConfig,
+                    chartConfigs: sqlData.chartConfigs,
+                    error: sqlData.error,
+                    isLoading: false,
+                  }
+                : ex
+            )
+          );
           return;
         }
 
