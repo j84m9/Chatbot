@@ -31,6 +31,7 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
   const [refiningChart, setRefiningChart] = useState<number | null>(null);
   const [refineInstruction, setRefineInstruction] = useState('');
   const [isRefineLoading, setIsRefineLoading] = useState(false);
+  const [refineError, setRefineError] = useState<string | null>(null);
 
   // Pin feedback
   const [pinFeedback, setPinFeedback] = useState<number | null>(null);
@@ -114,9 +115,11 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
     if (refiningChart === activeIndex) {
       setRefiningChart(null);
       setRefineInstruction('');
+      setRefineError(null);
     } else {
       setRefiningChart(activeIndex);
       setRefineInstruction('');
+      setRefineError(null);
       // Exit annotate mode
       setAnnotatingChart(null);
       setPendingAnnotation(null);
@@ -127,10 +130,13 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
   const handleRefineSubmitInternal = async () => {
     if (!refineInstruction.trim() || !onRefineSubmit || isRefineLoading) return;
     setIsRefineLoading(true);
+    setRefineError(null);
     try {
       await onRefineSubmit(activeIndex, refineInstruction.trim());
       setRefiningChart(null);
       setRefineInstruction('');
+    } catch (err: any) {
+      setRefineError(err.message || 'Chart refinement failed');
     } finally {
       setIsRefineLoading(false);
     }
@@ -320,12 +326,20 @@ export default function ChartGallery({ chartConfigs, rows, darkMode, onRefineSub
             )}
           </button>
           <button
-            onClick={() => { setRefiningChart(null); setRefineInstruction(''); }}
+            onClick={() => { setRefiningChart(null); setRefineInstruction(''); setRefineError(null); }}
             className="px-2 py-1 text-xs rounded-md dark:text-gray-400 text-gray-500 dark:hover:bg-[#2a2b2d] hover:bg-gray-100 cursor-pointer transition-colors"
             disabled={isRefineLoading}
           >
             Cancel
           </button>
+        </div>
+      )}
+
+      {/* Refine error */}
+      {refineError && (
+        <div className="flex items-center gap-1.5 px-2 py-1 mx-1 mb-1 rounded-lg bg-red-500/10 border border-red-500/20">
+          <span className="text-xs text-red-400 flex-1">{refineError}</span>
+          <button onClick={() => setRefineError(null)} className="text-red-400 hover:text-red-300 text-xs cursor-pointer">Dismiss</button>
         </div>
       )}
 

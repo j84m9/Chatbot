@@ -986,7 +986,7 @@ function DataExplorerContent() {
     if (!activeConnectionId) return;
 
     const targetExchange = exchanges[selectedExchangeIndex];
-    if (!targetExchange) return;
+    if (!targetExchange?.results) return;
 
     const currentConfigs = targetExchange.chartConfigs
       || (targetExchange.chartConfig ? [targetExchange.chartConfig] : []);
@@ -1002,16 +1002,20 @@ function DataExplorerContent() {
         parentMessageId: targetExchange.id,
         chartConfigs: currentConfigs,
         exchangeData: {
-          results: targetExchange.results,
+          results: {
+            columns: targetExchange.results.columns,
+            types: targetExchange.results.types,
+            rowCount: targetExchange.results.rowCount,
+          },
         },
       }),
     });
 
-    if (!res.ok) {
-      throw new Error(`Chart refinement failed: ${res.status}`);
-    }
-
     const data = await res.json();
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Chart refinement failed: ${res.status}`);
+    }
 
     if (data.chartConfigs) {
       setExchanges(prev =>
@@ -1065,7 +1069,11 @@ function DataExplorerContent() {
             parentMessageId: targetExchange.id,
             chartConfigs: currentConfigs,
             exchangeData: {
-              results: targetExchange.results,
+              results: targetExchange.results ? {
+                columns: targetExchange.results.columns,
+                types: targetExchange.results.types,
+                rowCount: targetExchange.results.rowCount,
+              } : undefined,
             },
           }),
         });
