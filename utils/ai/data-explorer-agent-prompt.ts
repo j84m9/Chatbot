@@ -80,6 +80,18 @@ ${dialectRules}
 - Limit results to 1000 rows unless specified otherwise
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
 ${compoundQueryGuidance}
+## CRITICAL: Time-Series Query Patterns
+When the user asks about trends, changes over time, or uses words like "over time", "trend", "monthly", "weekly", "daily", "by month", "by year", "growth", "trajectory", "historically", "over the last", or "how has X changed":
+- You MUST GROUP BY a date/time column — never return a single scalar aggregate
+- The result MUST have a date column + a numeric column so it can be plotted as a time-series line chart
+- Choose granularity based on the data range: monthly is the safe default, weekly if specified, daily for short ranges
+- ${dialect === 'sqlite'
+  ? `Use strftime('%Y-%m', date_col) AS month for monthly, date(date_col) AS day for daily`
+  : `Use FORMAT(date_col, 'yyyy-MM') AS month for monthly, CAST(date_col AS DATE) AS day for daily`}
+- ALWAYS ORDER BY the date column ascending
+- "average X over time" means GROUP BY period, AVG(X) — NOT a single SELECT AVG(X)
+- "total X by month" means GROUP BY month, SUM(X) — NOT a single SELECT SUM(X)
+
 ## Guidelines
 - If you're uncertain about table or column names, use get_schema or get_sample_data first
 - Only use table and column names that appear in the schema — do not guess or infer names
@@ -197,6 +209,17 @@ When the question requires data from multiple tables:
 - **Aggregate before joining**: When combining summaries from large tables, aggregate first then join the results — this is much faster than joining raw tables then aggregating
 - **Multi-table JOINs**: Use \`get_join_path\` to find the FK chain, then write JOINs in that order
 - **Subqueries**: Use correlated subqueries for per-row lookups (e.g., "most recent order for each customer")
+
+## CRITICAL: Time-Series Query Patterns
+When the user asks about trends, changes over time, or uses words like "over time", "trend", "monthly", "weekly", "daily", "by month", "by year", "growth", "trajectory", "historically", "over the last", or "how has X changed":
+- You MUST GROUP BY a date/time column — never return a single scalar aggregate
+- The result MUST have a date column + a numeric column so it can be plotted as a time-series line chart
+- Choose granularity based on the data range: monthly is the safe default
+- ${dialect === 'sqlite'
+  ? `Use strftime('%Y-%m', date_col) AS month for monthly, date(date_col) AS day for daily`
+  : `Use FORMAT(date_col, 'yyyy-MM') AS month for monthly, CAST(date_col AS DATE) AS day for daily`}
+- ALWAYS ORDER BY the date column ascending
+- "average X over time" means GROUP BY period, AVG(X) — NOT a single SELECT AVG(X)
 
 ## Guidelines
 - Only use table and column names that appear in the schema — do not guess or infer names

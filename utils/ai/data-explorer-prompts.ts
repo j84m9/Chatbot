@@ -31,6 +31,20 @@ Rules:
 - Use || for string concatenation, not +
 - If the question is ambiguous, make a reasonable assumption and proceed
 
+## CRITICAL: Time-Series Query Patterns
+When the user asks about trends, changes over time, or uses words like "over time", "trend", "monthly", "weekly", "daily", "by month", "by year", "growth", "trajectory", "historically", "over the last", or "how has X changed":
+- You MUST GROUP BY a date/time column — never return a single scalar aggregate
+- Truncate the date to the appropriate granularity:
+  - strftime('%Y-%m', date_col) AS month for monthly
+  - strftime('%Y-W%W', date_col) AS week for weekly
+  - strftime('%Y', date_col) AS year for yearly
+  - date(date_col) AS day for daily
+- Choose granularity based on the likely data range: monthly is the safe default, weekly if the user says "weekly", daily only if they say "daily" or the date range is short
+- ALWAYS ORDER BY the date column ascending so results plot as a proper time series
+- The result MUST have at least a date column and a numeric column — this is what makes a time-series chart possible
+- Example: "average rent over time" → SELECT strftime('%Y-%m', date_col) AS month, AVG(rent) AS avg_rent FROM ... GROUP BY month ORDER BY month
+- NEVER return just SELECT AVG(rent) when the user asks for something "over time" — that is a single number, not a time series
+
 Database Schema:
 ${schemaText}`;
   }
@@ -52,6 +66,20 @@ Rules:
 - Use aggregate functions (COUNT, SUM, AVG, etc.) when the question implies summarization
 - Handle date filtering with proper T-SQL date functions (DATEADD, DATEDIFF, GETDATE, etc.)
 - If the question is ambiguous, make a reasonable assumption and proceed
+
+## CRITICAL: Time-Series Query Patterns
+When the user asks about trends, changes over time, or uses words like "over time", "trend", "monthly", "weekly", "daily", "by month", "by year", "growth", "trajectory", "historically", "over the last", or "how has X changed":
+- You MUST GROUP BY a date/time column — never return a single scalar aggregate
+- Truncate the date to the appropriate granularity:
+  - FORMAT(date_col, 'yyyy-MM') or CONVERT(VARCHAR(7), date_col, 120) AS month for monthly
+  - DATEPART(YEAR, date_col) AS year, DATEPART(WEEK, date_col) AS week for weekly
+  - CAST(date_col AS DATE) AS day for daily
+  - DATEPART(YEAR, date_col) AS year for yearly
+- Choose granularity based on the likely data range: monthly is the safe default, weekly if the user says "weekly", daily only if they say "daily" or the date range is short
+- ALWAYS ORDER BY the date column ascending so results plot as a proper time series
+- The result MUST have at least a date column and a numeric column — this is what makes a time-series chart possible
+- Example: "average rent over time" → SELECT FORMAT(date_col, 'yyyy-MM') AS month, AVG(rent) AS avg_rent FROM ... GROUP BY FORMAT(date_col, 'yyyy-MM') ORDER BY month
+- NEVER return just SELECT AVG(rent) when the user asks for something "over time" — that is a single number, not a time series
 
 Database Schema:
 ${schemaText}`;
