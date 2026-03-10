@@ -120,3 +120,37 @@ export function loadSemanticContextFromString(yamlContent: string): string | nul
     return null;
   }
 }
+
+/**
+ * Parse YAML few-shot examples and format them for prompt injection.
+ * Expects a YAML array of objects with {question, sql, tables?, pattern?, notes?}.
+ * Returns a markdown string or null if parsing fails or content is empty.
+ */
+export function formatFewShotExamples(yamlContent: string): string | null {
+  try {
+    const doc = yaml.load(yamlContent) as any;
+    if (!Array.isArray(doc) || doc.length === 0) return null;
+
+    const entries = doc
+      .filter((item: any) => item?.question && item?.sql)
+      .map((item: any) => {
+        let entry = `Question: ${item.question}\n\`\`\`sql\n${item.sql.trim()}\n\`\`\``;
+        if (item.tables && Array.isArray(item.tables) && item.tables.length > 0) {
+          entry += `\nTables: ${item.tables.join(', ')}`;
+        }
+        if (item.pattern) {
+          entry += `\nPattern: ${item.pattern}`;
+        }
+        if (item.notes) {
+          entry += `\n_${item.notes}_`;
+        }
+        return entry;
+      });
+
+    if (entries.length === 0) return null;
+
+    return `## Few-Shot Examples\nUse these verified query examples as reference for similar questions.\n\n${entries.join('\n\n')}`;
+  } catch {
+    return null;
+  }
+}

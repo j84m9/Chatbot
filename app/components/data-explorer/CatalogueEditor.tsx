@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import yaml from 'js-yaml';
+import FileDropZone from './FileDropZone';
 
 interface CatalogueEditorProps {
   connectionId: string;
@@ -10,19 +11,24 @@ interface CatalogueEditorProps {
   connectionType?: string;
   semanticContext?: string | null;
   onSaveSemanticContext?: (yaml: string) => void;
+  fewShotExamples?: string | null;
+  onSaveFewShotExamples?: (yaml: string) => void;
 }
 
-export default function CatalogueEditor({ connectionId, darkMode, onClose, connectionType, semanticContext: initialSemanticContext, onSaveSemanticContext }: CatalogueEditorProps) {
+export default function CatalogueEditor({ connectionId, darkMode, onClose, connectionType, semanticContext: initialSemanticContext, onSaveSemanticContext, fewShotExamples: initialFewShotExamples, onSaveFewShotExamples }: CatalogueEditorProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [yamlContent, setYamlContent] = useState('');
   const [profiling, setProfiling] = useState(false);
   const [profileProgress, setProfileProgress] = useState('');
-  const [activeTab, setActiveTab] = useState<'catalogue' | 'semantic'>('catalogue');
+  const [activeTab, setActiveTab] = useState<'catalogue' | 'semantic' | 'examples'>('catalogue');
   const [semanticYaml, setSemanticYaml] = useState(initialSemanticContext || '');
+  const [examplesYaml, setExamplesYaml] = useState(initialFewShotExamples || '');
   const semanticContainerRef = useRef<HTMLDivElement>(null);
   const semanticViewRef = useRef<any>(null);
+  const examplesContainerRef = useRef<HTMLDivElement>(null);
+  const examplesViewRef = useRef<any>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<any>(null);
@@ -237,6 +243,31 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
     }
   }, [connectionId, connectionType, onSaveSemanticContext]);
 
+  const handleSaveFewShotExamples = useCallback(async () => {
+    const view = examplesViewRef.current;
+    if (!view || !connectionId) return;
+    const content = view.state.doc.toString();
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/data-explorer/connections?id=${connectionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ few_shot_examples: content, dbType: connectionType || 'mssql' }),
+      });
+      if (res.ok) {
+        setSaveStatus({ type: 'success', message: 'Few-shot examples saved' });
+        onSaveFewShotExamples?.(content);
+      } else {
+        setSaveStatus({ type: 'error', message: 'Failed to save examples' });
+      }
+    } catch {
+      setSaveStatus({ type: 'error', message: 'Network error' });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  }, [connectionId, connectionType, onSaveFewShotExamples]);
+
   const handleSave = useCallback(async () => {
     const view = viewRef.current;
     if (!view || !connectionId) return;
@@ -280,6 +311,14 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
       setTimeout(() => setSaveStatus(null), 3000);
     }
   }, [connectionId]);
+
+  /** Helper: replace the contents of a CodeMirror view with new text */
+  const replaceEditorContent = useCallback((view: any, content: string) => {
+    if (!view) return;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: content },
+    });
+  }, []);
 
   // Initialize semantic context editor
   useEffect(() => {
@@ -342,13 +381,125 @@ example_queries: []
     };
   }, [activeTab, semanticYaml, darkMode]);
 
-  const showSemanticTab = onSaveSemanticContext != null;
+  // Initialize examples editor
+  useEffect(() => {
+    if (activeTab !== 'examples' || !examplesContainerRef.current) return;
+    let destroyed = false;
+
+    (async () => {
+      const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+      const { EditorState } = await import('@codemirror/state');
+      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
+      const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
+      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
+      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+      const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
+      const { oneDark } = await import('@codemirror/theme-one-dark');
+
+      if (destroyed || !examplesContainerRef.current) return;
+
+      const defaultYaml = examplesYaml || `# Few-Shot Examples (YAML)
+# Question -> SQL pairs to improve SQL generation accuracy.
+
+- question: ""
+  sql: ""
+  tables: []
+  pattern: ""
+`;
+
+      const state = EditorState.create({
+        doc: defaultYaml,
+        extensions: [
+          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
+          history(), foldGutter(), drawSelection(),
+          EditorState.allowMultipleSelections.of(true),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
+          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+          yamlLang(),
+          darkMode ? oneDark : EditorView.theme({
+            '&': { backgroundColor: '#ffffff', color: '#1e293b' },
+            '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+          }),
+          EditorView.lineWrapping,
+        ],
+      });
+
+      const view = new EditorView({ state, parent: examplesContainerRef.current! });
+      examplesViewRef.current = view;
+    })();
+
+    return () => {
+      destroyed = true;
+      examplesViewRef.current?.destroy();
+      examplesViewRef.current = null;
+    };
+  }, [activeTab, examplesYaml, darkMode]);
+
+  const showTabs = onSaveSemanticContext != null;
+
+  // Determine save button based on active tab
+  const renderSaveButton = () => {
+    if (activeTab === 'catalogue') {
+      return (
+        <button
+          onClick={handleSave}
+          disabled={saving || loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+        >
+          {saving ? (
+            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          )}
+          Save
+        </button>
+      );
+    }
+    if (activeTab === 'semantic') {
+      return (
+        <button
+          onClick={handleSaveSemanticContext}
+          disabled={saving}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+        >
+          {saving ? (
+            <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          )}
+          Save Context
+        </button>
+      );
+    }
+    // examples tab
+    return (
+      <button
+        onClick={handleSaveFewShotExamples}
+        disabled={saving}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
+      >
+        {saving ? (
+          <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+          </svg>
+        )}
+        Save Examples
+      </button>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b dark:border-[#2a2b2d] border-gray-200 dark:bg-[#1a1b1c] bg-gray-50 flex-shrink-0">
-        {showSemanticTab ? (
+        {showTabs ? (
           <div className="flex items-center gap-0.5 mr-2">
             <button
               onClick={() => setActiveTab('catalogue')}
@@ -362,41 +513,17 @@ example_queries: []
             >
               Semantic Context
             </button>
+            <button
+              onClick={() => setActiveTab('examples')}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer ${activeTab === 'examples' ? 'bg-indigo-500/15 text-indigo-400' : 'dark:text-gray-500 text-gray-400 hover:dark:text-gray-300 hover:text-gray-600'}`}
+            >
+              Examples
+            </button>
           </div>
         ) : (
           <span className="text-xs font-semibold dark:text-gray-300 text-gray-600 mr-1">Catalogue Editor</span>
         )}
-        {activeTab === 'catalogue' ? (
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
-          >
-            {saving ? (
-              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-              </svg>
-            )}
-            Save
-          </button>
-        ) : (
-          <button
-            onClick={handleSaveSemanticContext}
-            disabled={saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-sm"
-          >
-            {saving ? (
-              <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-              </svg>
-            )}
-            Save Context
-          </button>
-        )}
+        {renderSaveButton()}
         <button
           onClick={handleProfile}
           disabled={profiling || loading}
@@ -448,11 +575,30 @@ example_queries: []
             className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
           />
         )
+      ) : activeTab === 'semantic' ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <FileDropZone
+            darkMode={darkMode}
+            label="Drop a schema context .yaml file here or click to browse"
+            onFileLoad={(content) => replaceEditorContent(semanticViewRef.current, content)}
+          />
+          <div
+            ref={semanticContainerRef}
+            className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
+          />
+        </div>
       ) : (
-        <div
-          ref={semanticContainerRef}
-          className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
-        />
+        <div className="flex-1 flex flex-col min-h-0">
+          <FileDropZone
+            darkMode={darkMode}
+            label="Drop a few-shot examples .yaml file here or click to browse"
+            onFileLoad={(content) => replaceEditorContent(examplesViewRef.current, content)}
+          />
+          <div
+            ref={examplesContainerRef}
+            className="flex-1 min-h-0 overflow-auto [&_.cm-editor]:h-full [&_.cm-editor]:outline-none [&_.cm-scroller]:overflow-auto"
+          />
+        </div>
       )}
     </div>
   );

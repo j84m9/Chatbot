@@ -17,7 +17,7 @@ import { buildAgentSystemPrompt } from '@/utils/ai/data-explorer-agent-prompt';
 import { routeTables } from '@/utils/ai/table-router';
 import { buildCatalog, buildCatalogText, buildDescriptionComments, enrichSchemaWithProfiles, TableMetadataRow } from '@/utils/ai/catalog-builder';
 import { buildFKGraph } from '@/utils/ai/fk-graph';
-import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath } from '@/utils/ai/semantic-context';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath, formatFewShotExamples } from '@/utils/ai/semantic-context';
 import { detectChartType, isSimpleQuery } from '@/utils/ai/chart-detector';
 
 const schemaCache = new Map<string, { schema: SchemaTable[]; fetchedAt: number }>();
@@ -291,6 +291,15 @@ export async function POST(req: Request) {
         } else {
           systemPrompt = buildAgentSystemPrompt(dialect, schemaText, conversationContext, domainContext, false);
           maxSteps = 8;
+        }
+
+        // Prepend few-shot examples if available
+        let fewShotBlock: string | null = null;
+        if (conn.few_shot_examples) {
+          fewShotBlock = formatFewShotExamples(conn.few_shot_examples);
+        }
+        if (fewShotBlock) {
+          systemPrompt = `${fewShotBlock}\n\n---\n\n${systemPrompt}`;
         }
 
         // Prepend semantic context if available

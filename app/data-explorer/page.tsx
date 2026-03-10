@@ -2455,6 +2455,15 @@ function DataExplorerContent() {
               connectionId={activeConnectionId || ''}
               darkMode={darkMode}
               onClose={() => setEditorMode('chat')}
+              connectionType={connections.find(c => c.id === activeConnectionId)?.db_type || 'mssql'}
+              semanticContext={connections.find(c => c.id === activeConnectionId)?.semantic_context}
+              onSaveSemanticContext={(yaml) => {
+                setConnections(prev => prev.map(c => c.id === activeConnectionId ? { ...c, semantic_context: yaml } : c));
+              }}
+              fewShotExamples={connections.find(c => c.id === activeConnectionId)?.few_shot_examples}
+              onSaveFewShotExamples={(yaml) => {
+                setConnections(prev => prev.map(c => c.id === activeConnectionId ? { ...c, few_shot_examples: yaml } : c));
+              }}
             />
           </div>
           ) : editorMode === 'sql' ? (

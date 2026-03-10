@@ -17,7 +17,7 @@ export async function GET() {
 
   const { data, error } = await dbAdmin
     .from('db_connections')
-    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at, semantic_context')
+    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at, semantic_context, few_shot_examples')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
@@ -178,12 +178,17 @@ export async function PATCH(req: NextRequest) {
     updateData.semantic_context = body.semantic_context;
   }
 
+  // Handle few_shot_examples if provided
+  if (body.few_shot_examples !== undefined) {
+    updateData.few_shot_examples = body.few_shot_examples;
+  }
+
   const { data, error } = await dbAdmin
     .from('db_connections')
     .update(updateData)
     .eq('id', connectionId)
     .eq('user_id', user.id)
-    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at, semantic_context')
+    .select('id, name, server, port, database_name, username, domain, auth_type, encrypt, trust_server_certificate, db_type, file_path, created_at, semantic_context, few_shot_examples')
     .single();
 
   if (error) {

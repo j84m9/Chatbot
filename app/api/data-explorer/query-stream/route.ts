@@ -14,7 +14,7 @@ import {
 } from '@/utils/ai/data-explorer-prompts';
 import { validateSqlSyntax } from '@/utils/ai/sql-validator';
 import { detectChartType, isSimpleQuery } from '@/utils/ai/chart-detector';
-import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath } from '@/utils/ai/semantic-context';
+import { loadSemanticContext, loadSemanticContextFromString, findMetadataPath, formatFewShotExamples } from '@/utils/ai/semantic-context';
 import { buildDescriptionComments, enrichSchemaWithProfiles, TableMetadataRow } from '@/utils/ai/catalog-builder';
 
 // Reuse the schema cache
@@ -258,7 +258,16 @@ export async function POST(req: Request) {
 
         // 5. Generate SQL with retry loop (up to 3 attempts)
         const dialectLabel = dialect === 'sqlite' ? 'SQLite' : 'T-SQL';
+        // 4a. Load few-shot examples
+        let fewShotBlock: string | null = null;
+        if (conn.few_shot_examples) {
+          fewShotBlock = formatFewShotExamples(conn.few_shot_examples);
+        }
+
         let sqlSystemPrompt = wrapWithDomainContext(buildSqlGenerationSystemPromptWithContext(schemaText, dialect, conversationContext), domainContext);
+        if (fewShotBlock) {
+          sqlSystemPrompt = `${fewShotBlock}\n\n---\n\n${sqlSystemPrompt}`;
+        }
         if (semanticContext) {
           sqlSystemPrompt = `## Semantic Context\n${semanticContext}\n\n---\n\n${sqlSystemPrompt}`;
         }
