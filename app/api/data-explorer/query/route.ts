@@ -426,6 +426,17 @@ async function handleChartRefinement(
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     const parsed = JSON.parse(text);
 
+    // If the LLM determined that new data is needed, signal to the client
+    if (parsed && !Array.isArray(parsed) && parsed.needs_new_query) {
+      return NextResponse.json({
+        needs_new_query: true,
+        reason: parsed.reason || 'This change requires a new query',
+        chartConfig: null,
+        chartConfigs: null,
+        error: null,
+      });
+    }
+
     const chartConfigs = Array.isArray(parsed) ? parsed : [parsed];
     const chartConfig = chartConfigs[0] || null;
 

@@ -1018,6 +1018,17 @@ function DataExplorerContent() {
       throw new Error(data.error || `Chart refinement failed: ${res.status}`);
     }
 
+    // If the refinement requires new data, fall back to a new query
+    if (data.needs_new_query) {
+      const combinedQuestion = `${targetExchange.question} — ${instruction}`;
+      if (queryMode === 'agent') {
+        handleSubmitAgentQuestion(combinedQuestion);
+      } else {
+        handleSubmitQuestion(combinedQuestion);
+      }
+      return;
+    }
+
     if (data.chartConfigs) {
       setExchanges(prev =>
         prev.map((ex, i) =>
@@ -1080,6 +1091,19 @@ function DataExplorerContent() {
         });
 
         const data = await res.json();
+
+        // If the refinement requires new data, fall back to a new query
+        if (data.needs_new_query) {
+          const combinedQuestion = `${targetExchange.question} — ${instruction}`;
+          setRefineContext(null);
+          setIsQuerying(false);
+          if (queryMode === 'agent') {
+            handleSubmitAgentQuestion(combinedQuestion);
+          } else {
+            handleSubmitQuestion(combinedQuestion);
+          }
+          return;
+        }
 
         if (data.chartConfigs) {
           setExchanges(prev =>

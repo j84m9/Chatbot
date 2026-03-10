@@ -412,7 +412,11 @@ Rules:
 - If user asks for a trendline, set "trendline": true
 - If user asks for a reference/target line, set "referenceLine" with value and label
 - If user asks to overlay a second metric, use "secondaryY"
-- Maximum 3 charts total`;
+- Maximum 3 charts total
+
+IMPORTANT: If the user's instruction requires different data (e.g. different date range, additional columns, different filters, different aggregation level, or data that doesn't exist in the current result set), you CANNOT fulfill it with chart config changes alone. In that case, respond with:
+{"needs_new_query": true, "reason": "brief explanation"}
+Do NOT return chart configs that pretend to show data outside the available range.`;
 }
 
 export function buildChartRefinementUserPrompt(
