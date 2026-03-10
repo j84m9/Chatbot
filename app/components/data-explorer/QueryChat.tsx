@@ -307,16 +307,11 @@ export default function QueryChat({
                   </div>
                 ) : (
                   <>
-                    <button
-                      onClick={() => onSelectExchange(i)}
-                      className={`px-4 py-2.5 max-w-[85%] text-sm text-left rounded-2xl rounded-br-sm transition-all cursor-pointer ${
-                        selectedIndex === i
-                          ? 'bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                          : 'bg-gradient-to-br from-indigo-500/80 to-indigo-600/80 text-white/90 hover:from-indigo-500 hover:to-indigo-600'
-                      }`}
+                    <div
+                      className="px-4 py-2.5 max-w-[85%] text-sm text-left rounded-2xl rounded-br-sm bg-gradient-to-br from-indigo-500/80 to-indigo-600/80 text-white/90"
                     >
                       <span className="whitespace-pre-wrap">{ex.question}</span>
-                    </button>
+                    </div>
                     {/* Action buttons — below bubble, visible on hover */}
                     <div className="flex items-center gap-0.5 mt-1 mr-1 opacity-0 group-hover/q:opacity-100 transition-all duration-200">
                       <button
