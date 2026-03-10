@@ -437,6 +437,7 @@ function DataExplorerContent() {
     setRefineContext(null);
     setActiveAgent(null);
     setViewMode('query');
+    setEditorMode('chat');
   };
 
   const handleSelectSession = async (id: string) => {
