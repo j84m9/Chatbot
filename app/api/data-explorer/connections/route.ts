@@ -131,46 +131,53 @@ export async function PATCH(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const dbType = body.dbType || 'mssql';
-  const encryptionKey = process.env.DB_CONNECTIONS_ENCRYPTION_KEY;
-
-  // Encrypt password if provided (a new one)
-  let passwordEncrypted: string | null | undefined = undefined; // undefined = don't update
-  if (body.password && encryptionKey) {
-    const { data: encResult, error: encError } = await dbAdmin.rpc('encrypt_text', {
-      plain_text: body.password,
-      encryption_key: encryptionKey,
-    });
-    if (encError) {
-      return NextResponse.json({ error: 'Failed to encrypt password' }, { status: 500 });
-    }
-    passwordEncrypted = encResult;
-  }
-
   const updateData: Record<string, any> = {
-    name: body.name || body.server || body.filePath || 'Connection',
-    db_type: dbType,
     updated_at: new Date().toISOString(),
   };
 
-  if (dbType === 'sqlite') {
-    updateData.file_path = body.filePath;
-    updateData.server = 'local';
-    updateData.port = 0;
-    updateData.database_name = body.filePath;
-    updateData.auth_type = 'sql';
-  } else {
-    updateData.server = body.server;
-    updateData.port = body.port || 1433;
-    updateData.database_name = body.database || 'default';
-    updateData.username = body.username || null;
-    if (passwordEncrypted !== undefined) {
-      updateData.password_encrypted = passwordEncrypted;
+  // Metadata-only updates (semantic_context, few_shot_examples) — skip connection fields
+  const isMetadataOnly = (body.semantic_context !== undefined || body.few_shot_examples !== undefined)
+    && !body.server && !body.filePath && !body.name;
+
+  if (!isMetadataOnly) {
+    const dbType = body.dbType || 'mssql';
+    const encryptionKey = process.env.DB_CONNECTIONS_ENCRYPTION_KEY;
+
+    // Encrypt password if provided (a new one)
+    let passwordEncrypted: string | null | undefined = undefined; // undefined = don't update
+    if (body.password && encryptionKey) {
+      const { data: encResult, error: encError } = await dbAdmin.rpc('encrypt_text', {
+        plain_text: body.password,
+        encryption_key: encryptionKey,
+      });
+      if (encError) {
+        return NextResponse.json({ error: 'Failed to encrypt password' }, { status: 500 });
+      }
+      passwordEncrypted = encResult;
     }
-    updateData.domain = body.domain || null;
-    updateData.auth_type = body.authType || 'sql';
-    updateData.encrypt = body.encrypt ?? true;
-    updateData.trust_server_certificate = body.trustServerCertificate ?? false;
+
+    updateData.name = body.name || body.server || body.filePath || 'Connection';
+    updateData.db_type = dbType;
+
+    if (dbType === 'sqlite') {
+      updateData.file_path = body.filePath;
+      updateData.server = 'local';
+      updateData.port = 0;
+      updateData.database_name = body.filePath;
+      updateData.auth_type = 'sql';
+    } else {
+      updateData.server = body.server;
+      updateData.port = body.port || 1433;
+      updateData.database_name = body.database || 'default';
+      updateData.username = body.username || null;
+      if (passwordEncrypted !== undefined) {
+        updateData.password_encrypted = passwordEncrypted;
+      }
+      updateData.domain = body.domain || null;
+      updateData.auth_type = body.authType || 'sql';
+      updateData.encrypt = body.encrypt ?? true;
+      updateData.trust_server_certificate = body.trustServerCertificate ?? false;
+    }
   }
 
   // Handle semantic_context if provided
