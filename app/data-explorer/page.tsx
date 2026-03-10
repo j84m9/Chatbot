@@ -2230,7 +2230,7 @@ function DataExplorerContent() {
       />
 
       {/* Main content: split pane */}
-      <div ref={containerRef} className="flex-1 flex flex-col relative">
+      <div ref={containerRef} className="flex-1 flex flex-col relative min-h-0 overflow-hidden">
         {/* Ambient glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-indigo-500/[0.08] dark:bg-indigo-500/[0.03] blur-[100px] pointer-events-none" />
         <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-purple-500/[0.06] dark:bg-purple-500/[0.02] blur-[120px] pointer-events-none" />
@@ -2549,7 +2549,7 @@ function DataExplorerContent() {
 
               {/* Right pane: Results Panel */}
               <div
-                className="flex flex-col min-h-0 min-w-0 overflow-hidden"
+                className="flex flex-col h-full min-h-0 min-w-0 overflow-hidden"
                 style={{ width: `${100 - splitPosition}%` }}
               >
                 <ResultsPanel

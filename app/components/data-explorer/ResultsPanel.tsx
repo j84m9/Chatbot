@@ -298,7 +298,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-auto p-4 min-w-0">
+      <div className={`flex-1 min-h-0 min-w-0 ${activeTab === 'chart' ? 'overflow-hidden p-2' : 'overflow-auto p-4'}`}>
         {activeTab === 'sql' && exchange.sql && (
           <CodeBlock code={exchange.sql} language="sql" onOpenInEditor={onOpenInEditor} />
         )}
@@ -315,21 +315,23 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
         )}
 
         {activeTab === 'chart' && hasCharts && exchange.results && (
-          <div className="w-full min-w-0 overflow-hidden">
+          <div className="w-full h-full min-w-0 min-h-0 overflow-hidden flex flex-col">
             <KPICards results={exchange.results} darkMode={darkMode} />
-            <ChartGallery
-              chartConfigs={resolvedChartConfigs}
-              rows={exchange.results.rows}
-              darkMode={darkMode}
-              onRefineSubmit={onRefineSubmit}
-              onChangeChartType={onChangeChartType}
-              onAddAnnotation={onAddAnnotation}
-              onToggleAnnotations={onToggleAnnotations}
-              onPinChart={onPinChart}
-              onUnpinChart={onUnpinChart}
-              pinnedSourceMap={pinnedSourceMap}
-              exchangeId={exchange.id}
-            />
+            <div className="flex-1 min-h-0">
+              <ChartGallery
+                chartConfigs={resolvedChartConfigs}
+                rows={exchange.results.rows}
+                darkMode={darkMode}
+                onRefineSubmit={onRefineSubmit}
+                onChangeChartType={onChangeChartType}
+                onAddAnnotation={onAddAnnotation}
+                onToggleAnnotations={onToggleAnnotations}
+                onPinChart={onPinChart}
+                onUnpinChart={onUnpinChart}
+                pinnedSourceMap={pinnedSourceMap}
+                exchangeId={exchange.id}
+              />
+            </div>
           </div>
         )}
 
