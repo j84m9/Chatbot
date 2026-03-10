@@ -2549,7 +2549,7 @@ function DataExplorerContent() {
 
               {/* Right pane: Results Panel */}
               <div
-                className="flex flex-col min-h-0"
+                className="flex flex-col min-h-0 min-w-0 overflow-hidden"
                 style={{ width: `${100 - splitPosition}%` }}
               >
                 <ResultsPanel

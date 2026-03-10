@@ -145,7 +145,7 @@ export default function ResultsPanel({ exchange, darkMode, onClose, onRefineSubm
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-0 overflow-hidden">
       {/* Tab bar */}
       <div className="flex items-center gap-1 px-4 py-2 border-b dark:border-[#2a2b2d] border-gray-200 flex-shrink-0">
         {tabs.map(tab => (
