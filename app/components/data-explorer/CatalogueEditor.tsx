@@ -68,72 +68,73 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
 
   // Initialize editor after loading completes and container mounts
   useEffect(() => {
-    if (activeTab !== 'catalogue' || loading || !containerRef.current || !yamlContent) return;
     let destroyed = false;
 
-    (async () => {
-      const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
-      const { EditorState, Compartment } = await import('@codemirror/state');
-      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
-      const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
-      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
-      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
-      const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
-      const { oneDark } = await import('@codemirror/theme-one-dark');
+    if (activeTab === 'catalogue' && !loading && containerRef.current && yamlContent) {
+      (async () => {
+        const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+        const { EditorState, Compartment } = await import('@codemirror/state');
+        const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
+        const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
+        const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
+        const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+        const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
+        const { oneDark } = await import('@codemirror/theme-one-dark');
 
-      if (destroyed || !containerRef.current) return;
+        if (destroyed || !containerRef.current) return;
 
-      const themeCompartment = new Compartment();
-      themeCompartmentRef.current = themeCompartment;
+        const themeCompartment = new Compartment();
+        themeCompartmentRef.current = themeCompartment;
 
-      const lightTheme = EditorView.theme({
-        '&': { backgroundColor: '#ffffff', color: '#1e293b' },
-        '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
-        '.cm-activeLineGutter': { backgroundColor: '#f1f5f9' },
-        '.cm-activeLine': { backgroundColor: '#f8fafc' },
-        '.cm-cursor': { borderLeftColor: '#6366f1' },
-        '.cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
-        '&.cm-focused .cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
-        '.cm-matchingBracket': { backgroundColor: '#c7d2fe', color: '#4338ca' },
-      });
+        const lightTheme = EditorView.theme({
+          '&': { backgroundColor: '#ffffff', color: '#1e293b' },
+          '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+          '.cm-activeLineGutter': { backgroundColor: '#f1f5f9' },
+          '.cm-activeLine': { backgroundColor: '#f8fafc' },
+          '.cm-cursor': { borderLeftColor: '#6366f1' },
+          '.cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
+          '&.cm-focused .cm-selectionBackground': { backgroundColor: '#c7d2fe !important' },
+          '.cm-matchingBracket': { backgroundColor: '#c7d2fe', color: '#4338ca' },
+        });
 
-      const state = EditorState.create({
-        doc: yamlContent,
-        extensions: [
-          lineNumbers(),
-          highlightActiveLineGutter(),
-          highlightSpecialChars(),
-          history(),
-          foldGutter(),
-          drawSelection(),
-          EditorState.allowMultipleSelections.of(true),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          bracketMatching(),
-          closeBrackets(),
-          highlightActiveLine(),
-          highlightSelectionMatches(),
-          keymap.of([
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...searchKeymap,
-            ...historyKeymap,
-            ...foldKeymap,
-            indentWithTab,
-          ]),
-          yamlLang(),
-          themeCompartment.of(darkMode ? oneDark : lightTheme),
-          EditorView.lineWrapping,
-        ],
-      });
+        const state = EditorState.create({
+          doc: yamlContent,
+          extensions: [
+            lineNumbers(),
+            highlightActiveLineGutter(),
+            highlightSpecialChars(),
+            history(),
+            foldGutter(),
+            drawSelection(),
+            EditorState.allowMultipleSelections.of(true),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            bracketMatching(),
+            closeBrackets(),
+            highlightActiveLine(),
+            highlightSelectionMatches(),
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...searchKeymap,
+              ...historyKeymap,
+              ...foldKeymap,
+              indentWithTab,
+            ]),
+            yamlLang(),
+            themeCompartment.of(darkMode ? oneDark : lightTheme),
+            EditorView.lineWrapping,
+          ],
+        });
 
-      const view = new EditorView({
-        state,
-        parent: containerRef.current!,
-      });
+        const view = new EditorView({
+          state,
+          parent: containerRef.current!,
+        });
 
-      viewRef.current = view;
-      setEditorReady(true);
-    })();
+        viewRef.current = view;
+        setEditorReady(true);
+      })();
+    }
 
     return () => {
       destroyed = true;
@@ -322,22 +323,22 @@ export default function CatalogueEditor({ connectionId, darkMode, onClose, conne
 
   // Initialize semantic context editor
   useEffect(() => {
-    if (activeTab !== 'semantic' || !semanticContainerRef.current) return;
     let destroyed = false;
 
-    (async () => {
-      const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
-      const { EditorState } = await import('@codemirror/state');
-      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
-      const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
-      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
-      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
-      const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
-      const { oneDark } = await import('@codemirror/theme-one-dark');
+    if (activeTab === 'semantic' && semanticContainerRef.current) {
+      (async () => {
+        const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+        const { EditorState } = await import('@codemirror/state');
+        const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
+        const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
+        const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
+        const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+        const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
+        const { oneDark } = await import('@codemirror/theme-one-dark');
 
-      if (destroyed || !semanticContainerRef.current) return;
+        if (destroyed || !semanticContainerRef.current) return;
 
-      const defaultYaml = semanticYaml || `# Semantic Context (YAML)
+        const defaultYaml = semanticYaml || `# Semantic Context (YAML)
 # Define business rules, key metrics, and column descriptions.
 # This context is included in AI prompts for better SQL generation.
 
@@ -352,27 +353,28 @@ key_metrics: []
 example_queries: []
 `;
 
-      const state = EditorState.create({
-        doc: defaultYaml,
-        extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
-          history(), foldGutter(), drawSelection(),
-          EditorState.allowMultipleSelections.of(true),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
-          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
-          yamlLang(),
-          darkMode ? oneDark : EditorView.theme({
-            '&': { backgroundColor: '#ffffff', color: '#1e293b' },
-            '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
-          }),
-          EditorView.lineWrapping,
-        ],
-      });
+        const state = EditorState.create({
+          doc: defaultYaml,
+          extensions: [
+            lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
+            history(), foldGutter(), drawSelection(),
+            EditorState.allowMultipleSelections.of(true),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
+            keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+            yamlLang(),
+            darkMode ? oneDark : EditorView.theme({
+              '&': { backgroundColor: '#ffffff', color: '#1e293b' },
+              '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+            }),
+            EditorView.lineWrapping,
+          ],
+        });
 
-      const view = new EditorView({ state, parent: semanticContainerRef.current! });
-      semanticViewRef.current = view;
-    })();
+        const view = new EditorView({ state, parent: semanticContainerRef.current! });
+        semanticViewRef.current = view;
+      })();
+    }
 
     return () => {
       destroyed = true;
@@ -383,22 +385,22 @@ example_queries: []
 
   // Initialize examples editor
   useEffect(() => {
-    if (activeTab !== 'examples' || !examplesContainerRef.current) return;
     let destroyed = false;
 
-    (async () => {
-      const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
-      const { EditorState } = await import('@codemirror/state');
-      const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
-      const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
-      const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
-      const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
-      const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
-      const { oneDark } = await import('@codemirror/theme-one-dark');
+    if (activeTab === 'examples' && examplesContainerRef.current) {
+      (async () => {
+        const { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, highlightActiveLine } = await import('@codemirror/view');
+        const { EditorState } = await import('@codemirror/state');
+        const { defaultKeymap, history, historyKeymap, indentWithTab } = await import('@codemirror/commands');
+        const { yaml: yamlLang } = await import('@codemirror/lang-yaml');
+        const { syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldGutter, foldKeymap } = await import('@codemirror/language');
+        const { closeBrackets, closeBracketsKeymap } = await import('@codemirror/autocomplete');
+        const { searchKeymap, highlightSelectionMatches } = await import('@codemirror/search');
+        const { oneDark } = await import('@codemirror/theme-one-dark');
 
-      if (destroyed || !examplesContainerRef.current) return;
+        if (destroyed || !examplesContainerRef.current) return;
 
-      const defaultYaml = examplesYaml || `# Few-Shot Examples (YAML)
+        const defaultYaml = examplesYaml || `# Few-Shot Examples (YAML)
 # Question -> SQL pairs to improve SQL generation accuracy.
 
 - question: ""
@@ -407,27 +409,28 @@ example_queries: []
   pattern: ""
 `;
 
-      const state = EditorState.create({
-        doc: defaultYaml,
-        extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
-          history(), foldGutter(), drawSelection(),
-          EditorState.allowMultipleSelections.of(true),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
-          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
-          yamlLang(),
-          darkMode ? oneDark : EditorView.theme({
-            '&': { backgroundColor: '#ffffff', color: '#1e293b' },
-            '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
-          }),
-          EditorView.lineWrapping,
-        ],
-      });
+        const state = EditorState.create({
+          doc: defaultYaml,
+          extensions: [
+            lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(),
+            history(), foldGutter(), drawSelection(),
+            EditorState.allowMultipleSelections.of(true),
+            syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+            bracketMatching(), closeBrackets(), highlightActiveLine(), highlightSelectionMatches(),
+            keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+            yamlLang(),
+            darkMode ? oneDark : EditorView.theme({
+              '&': { backgroundColor: '#ffffff', color: '#1e293b' },
+              '.cm-gutters': { backgroundColor: '#f8fafc', color: '#94a3b8', borderRight: '1px solid #e2e8f0' },
+            }),
+            EditorView.lineWrapping,
+          ],
+        });
 
-      const view = new EditorView({ state, parent: examplesContainerRef.current! });
-      examplesViewRef.current = view;
-    })();
+        const view = new EditorView({ state, parent: examplesContainerRef.current! });
+        examplesViewRef.current = view;
+      })();
+    }
 
     return () => {
       destroyed = true;
