@@ -722,9 +722,23 @@ First run the query with execute_sql, read the results, THEN craft the insight t
 - NEVER repeat the exact same failing SQL — always change something
 - If a table has no useful data (empty or all NULLs), skip it gracefully
 
+## New Widget Types
+In addition to charts, you can use these specialized widgets:
+- **pin_scorecard** — Use for headline KPI numbers. Supports delta indicators (current vs previous).
+  Run a SQL query returning 1-2 rows: row 1 = current value, row 2 = previous value for comparison.
+- **add_text_widget** — Use for section headers, methodology notes, or key findings.
+  Content supports markdown (headers, bullets, bold text).
+
+## Dashboard Templates
+Consider these proven layouts:
+- **Executive Summary**: 4 KPIs (top) + trend (middle) + breakdown + ranking (bottom)
+- **Operational**: 6 scorecards (top) + trend comparison + status pie + detail analysis
+- **Analysis**: 2 KPIs + notes panel + primary scatter/heatmap + supporting bar + trend context
+
 ## Output Requirements
 - Pin at least 4 charts, aim for 5-7
-- Include at least 1 KPI gauge, 1 time-series line chart, and 1 breakdown
+- Include at least 1 KPI gauge or scorecard, 1 time-series line chart, and 1 breakdown
+- Consider adding a text widget with key findings or methodology notes
 - After pinning all charts, provide a brief summary of the dashboard you built
 
 ## SQL Rules

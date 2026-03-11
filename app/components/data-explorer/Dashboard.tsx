@@ -3,11 +3,13 @@
 import { useCallback, useRef, useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { ChartConfig } from './PlotlyChart';
-import type { CrossFilter, GlobalFilter, SlicerConfig, DashboardTab } from '@/types/dashboard';
+import type { CrossFilter, CrossFilterSet, GlobalFilter, SlicerConfig, DashboardTab } from '@/types/dashboard';
 import DashboardChartCard from './DashboardChartCard';
 import DashboardSlicerCard from './DashboardSlicerCard';
 import FullscreenChartModal from './FullscreenChartModal';
 import DashboardInsightsCard from './DashboardInsightsCard';
+import DashboardScorecard from './DashboardScorecard';
+import DashboardTextCard from './DashboardTextCard';
 import { applyClientFilters, detectFilterableColumns } from '@/utils/dashboard-filters';
 // CSS imported in globals.css
 type Layout = { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number };
@@ -138,8 +140,8 @@ export default function Dashboard({
     }
   }, [pinnedCharts.length]);
 
-  // Cross-filter state
-  const [crossFilter, setCrossFilter] = useState<CrossFilter | null>(null);
+  // Cross-filter state — multi-dimensional (array of filters, AND logic)
+  const [crossFilters, setCrossFilters] = useState<CrossFilterSet>([]);
 
   // Fullscreen state
   const [fullscreenChart, setFullscreenChart] = useState<PinnedChart | null>(null);
@@ -196,23 +198,31 @@ export default function Dashboard({
       rows = applyClientFilters(rows, globalFilters);
     }
 
-    // Apply cross-filter
-    if (crossFilter && crossFilter.sourceChartId !== pin.id) {
-      const col = crossFilter.column;
+    // Apply multi-dimensional cross-filters (AND logic)
+    for (const cf of crossFilters) {
+      if (cf.sourceChartId === pin.id) continue; // Don't filter the source chart
+      const col = cf.column;
       if (rows.length > 0 && col in rows[0]) {
-        rows = rows.filter(r => String(r[col]) === String(crossFilter.value));
+        rows = rows.filter(r => String(r[col]) === String(cf.value));
       }
     }
     return rows;
-  }, [crossFilter, globalFilters]);
+  }, [crossFilters, globalFilters]);
 
   const handleCrossFilter = useCallback((sourceChartId: string, column: string, value: string | number) => {
-    if (crossFilter && crossFilter.sourceChartId === sourceChartId && crossFilter.column === column && String(crossFilter.value) === String(value)) {
-      setCrossFilter(null);
-    } else {
-      setCrossFilter({ sourceChartId, column, value });
-    }
-  }, [crossFilter]);
+    setCrossFilters(prev => {
+      // Check if this exact filter already exists — if so, remove it (toggle off)
+      const existingIdx = prev.findIndex(
+        cf => cf.sourceChartId === sourceChartId && cf.column === column && String(cf.value) === String(value)
+      );
+      if (existingIdx >= 0) {
+        return prev.filter((_, i) => i !== existingIdx);
+      }
+      // Replace any existing filter from the same chart+column with the new value
+      const filtered = prev.filter(cf => !(cf.sourceChartId === sourceChartId && cf.column === column));
+      return [...filtered, { sourceChartId, column, value }];
+    });
+  }, []);
 
   // Slicer filter changes -> update globalFilters
   const handleSlicerFilterChange = useCallback((column: string, update: Partial<GlobalFilter>) => {
@@ -420,17 +430,30 @@ export default function Dashboard({
             <p className="text-xs dark:text-gray-500 text-gray-400">{connectionName} — {chartItems.length} chart{chartItems.length !== 1 ? 's' : ''}{slicerItems.length > 0 ? `, ${slicerItems.length} slicer${slicerItems.length !== 1 ? 's' : ''}` : ''} · Drag to rearrange, resize from corners</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Cross-filter clear pill */}
-            {crossFilter && (
-              <button
-                onClick={() => setCrossFilter(null)}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-purple-500/15 text-purple-400 hover:bg-purple-500/25 transition-colors cursor-pointer"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                </svg>
-                Filter: {crossFilter.column} = {String(crossFilter.value)}
-              </button>
+            {/* Cross-filter pills */}
+            {crossFilters.length > 0 && (
+              <div className="flex items-center gap-1 flex-wrap">
+                {crossFilters.map((cf, i) => (
+                  <button
+                    key={`${cf.column}-${cf.value}-${i}`}
+                    onClick={() => setCrossFilters(prev => prev.filter((_, idx) => idx !== i))}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-purple-500/15 text-purple-400 hover:bg-purple-500/25 transition-colors cursor-pointer"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                    {cf.column} = {String(cf.value)}
+                  </button>
+                ))}
+                {crossFilters.length > 1 && (
+                  <button
+                    onClick={() => setCrossFilters([])}
+                    className="px-2 py-1 text-[10px] rounded-full dark:text-gray-500 text-gray-400 dark:hover:text-gray-300 hover:text-gray-600 transition-colors cursor-pointer"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Build Dashboard */}
@@ -669,13 +692,26 @@ export default function Dashboard({
                 onRefresh={() => onRefreshInsights?.(pin.id)}
                 onUnpin={() => onUnpin(pin.id)}
               />
+            ) : pin.item_type === 'scorecard' ? (
+              <DashboardScorecard
+                pin={pin}
+                darkMode={darkMode}
+                rows={chartsWithFilteredRows.find(c => c.pin.id === pin.id)?.filteredRows || pin.results_snapshot.rows}
+                onUnpin={onUnpin}
+              />
+            ) : pin.item_type === 'text' ? (
+              <DashboardTextCard
+                pin={pin}
+                darkMode={darkMode}
+                onUnpin={onUnpin}
+              />
             ) : (
               <DashboardChartCard
                 pin={pin}
                 darkMode={darkMode}
                 filteredRows={chartsWithFilteredRows.find(c => c.pin.id === pin.id)?.filteredRows || pin.results_snapshot.rows}
                 isRefreshing={refreshingCharts?.has(pin.id) || false}
-                crossFilter={crossFilter}
+                crossFilters={crossFilters}
                 onUnpin={onUnpin}
                 onChangeChartType={onChangeChartType}
                 onAddAnnotation={onAddAnnotation}

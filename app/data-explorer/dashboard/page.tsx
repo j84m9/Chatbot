@@ -123,7 +123,7 @@ export default function DashboardPage() {
                 darkMode={darkMode}
                 filteredRows={pin.results_snapshot.rows}
                 isRefreshing={false}
-                crossFilter={null}
+                crossFilters={[]}
                 onUnpin={handleDelete}
                 onChangeChartType={handleChangeChartType}
                 onAddAnnotation={handleAddAnnotation}

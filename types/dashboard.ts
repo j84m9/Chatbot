@@ -6,6 +6,9 @@ export interface CrossFilter {
   value: string | number;
 }
 
+/** Multi-dimensional cross-filter set — multiple filters applied with AND logic */
+export type CrossFilterSet = CrossFilter[];
+
 export interface GlobalFilter {
   column: string;
   type: 'date_range' | 'select';

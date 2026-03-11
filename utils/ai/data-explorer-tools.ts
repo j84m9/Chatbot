@@ -590,5 +590,122 @@ export function createDashboardAgentTools(ctx: DashboardAgentToolContext) {
         }
       },
     }),
+
+    pin_scorecard: tool({
+      description: 'Pin a KPI scorecard widget to the dashboard. Executes SQL to get a single metric value with optional comparison. Ideal for headline numbers.',
+      inputSchema: z.object({
+        sql: z.string().describe('SQL query that returns 1-2 rows with a numeric value. Row 1 = current, Row 2 = previous (for delta calculation).'),
+        title: z.string().describe('Display label for the scorecard (e.g. "Total Revenue")'),
+        valueColumn: z.string().describe('Column name containing the numeric value'),
+        deltaColumn: z.string().optional().describe('Optional column containing the previous period value for delta calculation'),
+        format: z.enum(['currency', 'percent', 'number']).optional().describe('Number format'),
+        layout: z.object({
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number(),
+        }).optional().describe('Grid layout position'),
+      }),
+      execute: async ({ sql, title, valueColumn, deltaColumn, format, layout: customLayout }: {
+        sql: string; title: string; valueColumn: string; deltaColumn?: string; format?: string;
+        layout?: { x: number; y: number; w: number; h: number };
+      }) => {
+        try {
+          let queryResult: { rows: Record<string, any>[]; columns: string[]; types: Record<string, string>; rowCount: number; executionTimeMs: number };
+          if (ctx.dialect === 'sqlite' && ctx.filePath) {
+            queryResult = executeSqlite(ctx.filePath, sql);
+          } else if (ctx.mssqlConfig) {
+            queryResult = await executeMssql(ctx.mssqlConfig, sql);
+          } else {
+            return { success: false, error: 'No database connection configured' };
+          }
+
+          if (queryResult.rows.length === 0) {
+            return { success: false, error: 'Query returned no rows' };
+          }
+
+          const scorecardConfig = { valueColumn, deltaColumn, format, label: title };
+          const scLayout = customLayout || { x: (totalChartIndex % 4) * 3, y: 0, w: 3, h: 2 };
+
+          const { data: pinned, error: pinError } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .insert({
+              user_id: ctx.userId,
+              connection_id: ctx.connectionId,
+              title,
+              item_type: 'scorecard',
+              chart_config: { chartType: 'gauge', xColumn: '', yColumn: valueColumn, title, scorecardConfig },
+              results_snapshot: { rows: queryResult.rows, columns: queryResult.columns, types: queryResult.types },
+              source_sql: sql,
+              source_question: title,
+              display_order: 100 + totalChartIndex,
+              layout: scLayout,
+              ...(ctx.dashboardId ? { dashboard_id: ctx.dashboardId } : {}),
+            })
+            .select()
+            .single();
+
+          if (pinError || !pinned) {
+            return { success: false, error: `Failed to pin scorecard: ${pinError?.message || 'Unknown error'}` };
+          }
+
+          totalChartIndex++;
+          ctx.sendEvent('chart_added', { id: pinned.id, title, chartType: 'scorecard', purpose: 'kpi', index: totalChartIndex });
+
+          return { success: true, scorecardId: pinned.id, title, value: queryResult.rows[0][valueColumn] };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to create scorecard' };
+        }
+      },
+    }),
+
+    add_text_widget: tool({
+      description: 'Add a text/markdown annotation widget to the dashboard. Use for section headers, methodology notes, key findings, or contextual information.',
+      inputSchema: z.object({
+        content: z.string().describe('Markdown text content (supports headers, bullets, bold, etc.)'),
+        title: z.string().optional().describe('Optional widget title'),
+        layout: z.object({
+          x: z.number(),
+          y: z.number(),
+          w: z.number(),
+          h: z.number(),
+        }).optional().describe('Grid layout position'),
+      }),
+      execute: async ({ content, title, layout: customLayout }: {
+        content: string; title?: string; layout?: { x: number; y: number; w: number; h: number };
+      }) => {
+        try {
+          const textLayout = customLayout || { x: 0, y: 0, w: 6, h: 2 };
+
+          const { data: pinned, error: pinError } = await ctx.dbAdmin
+            .from('pinned_charts')
+            .insert({
+              user_id: ctx.userId,
+              connection_id: ctx.connectionId,
+              title: title || 'Notes',
+              item_type: 'text',
+              chart_config: { chartType: 'gauge', xColumn: '', yColumn: '', title: title || 'Notes' },
+              results_snapshot: { rows: [], columns: [] },
+              source_question: content,
+              display_order: 200 + totalChartIndex,
+              layout: textLayout,
+              ...(ctx.dashboardId ? { dashboard_id: ctx.dashboardId } : {}),
+            })
+            .select()
+            .single();
+
+          if (pinError || !pinned) {
+            return { success: false, error: `Failed to add text widget: ${pinError?.message || 'Unknown error'}` };
+          }
+
+          totalChartIndex++;
+          ctx.sendEvent('chart_added', { id: pinned.id, title: title || 'Notes', chartType: 'text', purpose: 'text', index: totalChartIndex });
+
+          return { success: true, widgetId: pinned.id, title: title || 'Notes' };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to add text widget' };
+        }
+      },
+    }),
   };
 }

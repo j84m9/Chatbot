@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import type { PinnedChart } from './Dashboard';
-import type { CrossFilter } from '@/types/dashboard';
+import type { CrossFilter, CrossFilterSet } from '@/types/dashboard';
 import ChartTypeSwitcher from './ChartTypeSwitcher';
 import DashboardKPICard from './DashboardKPICard';
 
@@ -46,7 +46,7 @@ interface DashboardChartCardProps {
   darkMode: boolean;
   filteredRows: Record<string, any>[];
   isRefreshing: boolean;
-  crossFilter: CrossFilter | null;
+  crossFilters: CrossFilterSet;
   onUnpin: (id: string) => void;
   onChangeChartType?: (id: string, newType: string) => void;
   onAddAnnotation?: (id: string, x: number | string, y: number | string, text: string) => void;
@@ -61,7 +61,7 @@ interface DashboardChartCardProps {
 }
 
 export default function DashboardChartCard({
-  pin, darkMode, filteredRows, isRefreshing, crossFilter,
+  pin, darkMode, filteredRows, isRefreshing, crossFilters,
   onUnpin, onChangeChartType, onAddAnnotation, onToggleAnnotations,
   onRefresh, onAutoRefreshChange, onCrossFilter, onExpand, onTitleChange, onUpdateSql, onRefineChart,
 }: DashboardChartCardProps) {
@@ -78,6 +78,8 @@ export default function DashboardChartCard({
   const [refiningChart, setRefiningChart] = useState(false);
   const [refineInstruction, setRefineInstruction] = useState('');
   const [isRefineLoading, setIsRefineLoading] = useState(false);
+  // Drill-down state
+  const [drillStack, setDrillStack] = useState<{ column: string; value: string; label: string }[]>([]);
   const sqlContainerRef = useRef<HTMLDivElement>(null);
   const sqlViewRef = useRef<any>(null);
   const wasRefreshing = useRef(false);
@@ -92,14 +94,21 @@ export default function DashboardChartCard({
     wasRefreshing.current = isRefreshing;
   }, [isRefreshing]);
 
-  const columns = filteredRows.length > 0 ? Object.keys(filteredRows[0]) : (pin.results_snapshot.columns || []);
+  // Apply drill-down filters to rows
+  const drillFilteredRows = drillStack.length > 0
+    ? filteredRows.filter(row => drillStack.every(d => String(row[d.column]) === d.value))
+    : filteredRows;
+
+  const columns = drillFilteredRows.length > 0 ? Object.keys(drillFilteredRows[0]) : (pin.results_snapshot.columns || []);
   const hasAnnotations = pin.chart_config.annotations && pin.chart_config.annotations.length > 0;
   const isKPI = isKPIChart(pin);
-  const isSourceChart = crossFilter?.sourceChartId === pin.id;
-  const isFiltered = crossFilter && !isSourceChart && filteredRows.length < pin.results_snapshot.rows.length;
+  const isSourceChart = crossFilters.some(cf => cf.sourceChartId === pin.id);
+  const applicableFilters = crossFilters.filter(cf => cf.sourceChartId !== pin.id);
+  const isFiltered = applicableFilters.length > 0 && filteredRows.length < pin.results_snapshot.rows.length;
   const canRefresh = !!pin.source_sql;
+  const hasDrill = pin.chart_config.drillHierarchy && pin.chart_config.drillHierarchy.levels.length > 1;
 
-  // Click handler: annotate mode or cross-filter
+  // Click handler: annotate mode, drill-down, or cross-filter
   const handleChartClick = useCallback((x: number | string, y: number | string) => {
     if (annotatingCard) {
       setPendingAnnotation({ x, y });
@@ -107,12 +116,23 @@ export default function DashboardChartCard({
       return;
     }
 
+    // Drill-down: if hierarchy exists and there are more levels
+    if (hasDrill) {
+      const hierarchy = pin.chart_config.drillHierarchy!;
+      const currentLevel = drillStack.length;
+      if (currentLevel < hierarchy.levels.length - 1) {
+        const level = hierarchy.levels[currentLevel];
+        setDrillStack(prev => [...prev, { column: level.column, value: String(x), label: level.label }]);
+        return;
+      }
+    }
+
     // Default: cross-filter
     if (onCrossFilter) {
       const col = pin.chart_config.xColumn;
       onCrossFilter(pin.id, col, x);
     }
-  }, [annotatingCard, pin, onCrossFilter]);
+  }, [annotatingCard, pin, onCrossFilter, hasDrill, drillStack]);
 
   const handleTitleDoubleClick = () => {
     if (!onTitleChange) return;
@@ -439,10 +459,33 @@ export default function DashboardChartCard({
 
       {/* Cross-filter badge */}
       {isFiltered && (
-        <div className="flex items-center gap-1.5 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-purple-500/5">
+        <div className="flex items-center gap-1.5 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-purple-500/5 flex-wrap">
           <span className="text-[10px] dark:text-purple-300 text-purple-600">
-            Filtered by: {crossFilter!.column} = {String(crossFilter!.value)}
+            Filtered by: {applicableFilters.map(cf => `${cf.column} = ${String(cf.value)}`).join(' AND ')}
           </span>
+        </div>
+      )}
+
+      {/* Drill-down breadcrumb */}
+      {drillStack.length > 0 && (
+        <div className="flex items-center gap-1 px-3 py-1 border-b dark:border-[#2a2b2d]/50 border-gray-100 bg-indigo-500/5">
+          <button
+            onClick={() => setDrillStack([])}
+            className="text-[10px] dark:text-indigo-300 text-indigo-600 hover:underline cursor-pointer"
+          >
+            All
+          </button>
+          {drillStack.map((d, i) => (
+            <span key={i} className="flex items-center gap-1">
+              <span className="text-[10px] dark:text-gray-600 text-gray-400">&gt;</span>
+              <button
+                onClick={() => setDrillStack(prev => prev.slice(0, i + 1))}
+                className="text-[10px] dark:text-indigo-300 text-indigo-600 hover:underline cursor-pointer"
+              >
+                {d.value}
+              </button>
+            </span>
+          ))}
         </div>
       )}
 
@@ -513,12 +556,12 @@ export default function DashboardChartCard({
           <DashboardKPICard
             pin={pin}
             darkMode={darkMode}
-            rows={filteredRows}
+            rows={drillFilteredRows}
           />
         ) : (
           <PlotlyChart
             chartConfig={pin.chart_config}
-            rows={filteredRows}
+            rows={drillFilteredRows}
             darkMode={darkMode}
             hideTitle
             annotationMode={annotatingCard}

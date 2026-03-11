@@ -147,6 +147,65 @@ export function detectChartType(
   };
 }
 
+// ═══════════════════════════════════════════════════
+// Drill Hierarchy Detection
+// ═══════════════════════════════════════════════════
+
+export interface DrillLevel {
+  column: string;
+  label: string;
+}
+
+/** Auto-detect drill hierarchies from column names */
+export function detectDrillHierarchy(columns: string[], rows: Record<string, any>[]): DrillLevel[] | null {
+  // Date hierarchies: Year > Quarter > Month > Day
+  const datePatterns = [
+    { pattern: /^year$/i, label: 'Year' },
+    { pattern: /^quarter$/i, label: 'Quarter' },
+    { pattern: /^month$/i, label: 'Month' },
+    { pattern: /^(week|week_number)$/i, label: 'Week' },
+    { pattern: /^(day|date)$/i, label: 'Day' },
+  ];
+
+  const dateLevels: DrillLevel[] = [];
+  for (const { pattern, label } of datePatterns) {
+    const col = columns.find(c => pattern.test(c));
+    if (col) dateLevels.push({ column: col, label });
+  }
+  if (dateLevels.length >= 2) return dateLevels;
+
+  // Geographic hierarchies: Country > State > City
+  const geoPatterns = [
+    { pattern: /^(country|country_name|nation)$/i, label: 'Country' },
+    { pattern: /^(state|region|province|state_name)$/i, label: 'State' },
+    { pattern: /^(city|city_name|metro)$/i, label: 'City' },
+    { pattern: /^(zip|zipcode|postal_code|zip_code)$/i, label: 'ZIP' },
+  ];
+
+  const geoLevels: DrillLevel[] = [];
+  for (const { pattern, label } of geoPatterns) {
+    const col = columns.find(c => pattern.test(c));
+    if (col) geoLevels.push({ column: col, label });
+  }
+  if (geoLevels.length >= 2) return geoLevels;
+
+  // Product hierarchies: Category > Subcategory > Product
+  const prodPatterns = [
+    { pattern: /^(category|product_category|dept|department)$/i, label: 'Category' },
+    { pattern: /^(subcategory|sub_category|product_type|type)$/i, label: 'Subcategory' },
+    { pattern: /^(product|product_name|item|sku)$/i, label: 'Product' },
+  ];
+
+  const prodLevels: DrillLevel[] = [];
+  for (const { pattern, label } of prodPatterns) {
+    const col = columns.find(c => pattern.test(c));
+    if (col) prodLevels.push({ column: col, label });
+  }
+  if (prodLevels.length >= 2) return prodLevels;
+
+  return null;
+}
+
 /**
  * Check if a query result is simple enough to skip the LLM chart generation.
  * Simple = <=3 columns with a clear type split (date/categorical + numeric).
